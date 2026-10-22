@@ -3,7 +3,8 @@
 use crate::config::AppConfig;
 use crate::geometry::Vertex;
 use crate::io::load_obj;
-use crate::pipeline::{Projection, Uniforms, render};
+use crate::pipeline::{Projection, Uniforms, render_with_mode};
+use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use raylib::math::Vector3;
 use std::error::Error;
@@ -14,10 +15,13 @@ use std::path::PathBuf;
 /// * `--obj <file>`: render another triangulated OBJ instead of the ship.
 /// * `--screenshot <file>`: save the first presented frame of the real
 ///   window to `file` and exit.
+/// * `--mode wireframe|barycentric|scanline`: triangle rasterization mode
+///   (default: wireframe, the laboratory 4 behaviour).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
     pub obj: Option<PathBuf>,
     pub screenshot: Option<String>,
+    pub mode: TriangleMode,
 }
 
 pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, String> {
@@ -33,6 +37,12 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
             "--screenshot" => {
                 out.screenshot = Some(it.next().ok_or("--screenshot requires a file name")?);
             }
+            "--mode" => {
+                out.mode = it
+                    .next()
+                    .ok_or("--mode requires wireframe, barycentric or scanline")?
+                    .parse()?;
+            }
             other => return Err(format!("unknown argument '{other}'")),
         }
     }
@@ -40,7 +50,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
 }
 
 /// Raylib writes screenshots as `<working dir>/<file name>`, ignoring any
-/// directory; move the file to the path the user actually asked for.
+/// directory; move the file to the path the user actually asked for. Copy
+/// then remove, so a target on another filesystem works too.
 fn save_screenshot(
     rl: &mut raylib::RaylibHandle,
     thread: &raylib::RaylibThread,
@@ -50,7 +61,8 @@ fn save_screenshot(
     let name = target.file_name().ok_or("--screenshot needs a file name")?;
     rl.take_screenshot(thread, &name.to_string_lossy());
     if target.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
-        std::fs::rename(name, target)?;
+        std::fs::copy(name, target)?;
+        std::fs::remove_file(name)?;
     }
     Ok(())
 }
@@ -58,6 +70,7 @@ fn save_screenshot(
 pub fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(std::env::args().skip(1))?;
     let config = AppConfig::default();
+    let mode = args.mode;
     let model_path = args.obj.unwrap_or(config.model_path.clone());
 
     // Load once at start-up; the mesh does not change between frames.
@@ -89,12 +102,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut reported = false;
     while !rl.window_should_close() {
         framebuffer.clear();
-        let stats = render(&mut framebuffer, &uniforms, &vertex_array, projection)?;
+        let stats = render_with_mode(&mut framebuffer, &uniforms, &vertex_array, projection, mode)?;
         if !reported {
             println!(
-                "Rendered {} triangles into {} fragments ({:?} view, {}x{} @ {} FPS)",
+                "Rendered {} triangles into {} fragments (mode {}, {:?} view, {}x{} @ {} FPS)",
                 stats.triangles_processed,
                 stats.fragments_generated,
+                mode,
                 config.view_plane,
                 config.width,
                 config.height,

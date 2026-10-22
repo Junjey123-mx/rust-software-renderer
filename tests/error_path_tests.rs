@@ -5,6 +5,7 @@ use rust_software_renderer::app::{CliArgs, parse_args};
 use rust_software_renderer::geometry::{Mesh, MeshError};
 use rust_software_renderer::io::{ObjError, load_obj, parse_obj};
 use rust_software_renderer::pipeline::{Projection, RenderError, Uniforms, ViewPlane, render};
+use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
 use std::path::{Path, PathBuf};
 
@@ -141,7 +142,8 @@ fn cli_arguments_are_validated() {
         args(&["--obj", "x.obj"]).unwrap(),
         CliArgs {
             obj: Some(PathBuf::from("x.obj")),
-            screenshot: None
+            screenshot: None,
+            mode: TriangleMode::Wireframe,
         }
     );
     assert_eq!(
@@ -154,4 +156,43 @@ fn cli_arguments_are_validated() {
     assert!(args(&["--obj"]).is_err());
     assert!(args(&["--screenshot"]).is_err());
     assert!(args(&["--bogus"]).unwrap_err().contains("--bogus"));
+}
+
+#[test]
+fn mode_argument_selects_a_triangle_mode() {
+    assert_eq!(
+        args(&[]).unwrap().mode,
+        TriangleMode::Wireframe,
+        "default is lab 4"
+    );
+    assert_eq!(
+        args(&["--mode", "wireframe"]).unwrap().mode,
+        TriangleMode::Wireframe
+    );
+    assert_eq!(
+        args(&["--mode", "barycentric"]).unwrap().mode,
+        TriangleMode::FilledBarycentric
+    );
+    assert_eq!(
+        args(&["--mode", "scanline"]).unwrap().mode,
+        TriangleMode::FilledScanline
+    );
+    // Last occurrence wins; other flags still parse alongside.
+    let a = args(&[
+        "--mode",
+        "scanline",
+        "--obj",
+        "m.obj",
+        "--mode",
+        "barycentric",
+    ])
+    .unwrap();
+    assert_eq!(a.mode, TriangleMode::FilledBarycentric);
+    assert_eq!(a.obj.as_deref(), Some(Path::new("m.obj")));
+    assert!(args(&["--mode"]).is_err());
+    assert!(args(&["--mode", "filled"]).unwrap_err().contains("filled"));
+    assert!(
+        args(&["--mode", "Scanline"]).is_err(),
+        "names are lowercase"
+    );
 }
