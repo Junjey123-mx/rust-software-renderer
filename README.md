@@ -2,8 +2,9 @@
 
 Proyecto del curso **Gráficas por Computadora** — **Universidad del Valle de Guatemala (UVG)**, segundo ciclo 2026
 
-Rasterizador por CPU escrito en Rust. Esta rama (`lab5/triangle-filling`) contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos) y, sobre él, el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado).
+Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado) y, como mejora opcional, una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado.
 
+- [Vista interactiva (opcional)](#vista-interactiva-de-la-nave-mejora-opcional)
 - [Laboratorio 5 — Filling triangles](#laboratorio-5--filling-triangles)
 - [Laboratorio 4 — Carga de modelos OBJ](#laboratorio-4--carga-de-modelos-obj)
 - [Arquitectura](#arquitectura-implementada)
@@ -117,6 +118,34 @@ Lectura: el baricéntrico gasta casi todo el tiempo evaluando tres funciones de 
 
 ---
 
+## Vista interactiva de la nave (mejora opcional)
+
+No es un requisito de los laboratorios: es una ampliación posterior al Lab 5 para explorar el OBJ real desde cualquier ángulo con los **mismos tres algoritmos**. Todo sigue en CPU: cámara orbital ortográfica propia, Z-buffer en el framebuffer y sombreado plano por cara. Raylib solo presenta la textura.
+
+```bash
+cargo run --release -- --scene ship --interactive --mode wireframe
+cargo run --release -- --scene ship --interactive --mode barycentric
+cargo run --release -- --scene ship --interactive --mode scanline
+```
+
+| Tecla | Acción |
+|---|---|
+| `←` `→` / `↑` `↓` | Orbitar / inclinar (según el tiempo entre cuadros) |
+| `Q` / `E` | Alejar / acercar |
+| `1` `2` `3` | Wireframe / baricéntrico / scanline, sin reiniciar la cámara |
+| `R` | Restaurar vista inicial y zoom |
+| `T` / `F` / `S` | Vista superior / frontal / lateral |
+
+Misma vista oblicua (`--interactive --view oblique`) en los tres modos:
+
+| Wireframe | FilledBarycentric | FilledScanline |
+|---|---|---|
+| ![Nave wireframe oblicua](docs/screenshots/lab5/04-ship-wireframe-oblique.png) | ![Nave baricéntrico oblicua](docs/screenshots/lab5/05-ship-barycentric-oblique.png) | ![Nave scanline oblicua](docs/screenshots/lab5/06-ship-scanline-oblique.png) |
+
+`--view oblique|top|front|side` fija el preset inicial (también sirve sin `--interactive` para capturas reproducibles con `--screenshot`). Los colores son un **sombreado calculado** a partir de la normal de cada cara y una luz direccional fija, no los materiales de Blender. La proyección es ortográfica (sin perspectiva) y el wireframe dibuja todas las aristas. Los dos rellenos siguen siendo independientes y producen la misma imagen con profundidad. Detalles, módulos y límites: [docs/interactive-views.md](docs/interactive-views.md).
+
+---
+
 ## Laboratorio 4 — Carga de modelos OBJ
 
 ### Objetivo
@@ -191,32 +220,35 @@ rust-software-renderer/
 │   ├── laboratorio4.md                     guía técnica Lab 4
 │   ├── laboratorio5.md                     guía técnica Lab 5
 │   ├── screenshots/lab4/                   final_render.png, 01-nave-wireframe.png
-│   ├── screenshots/lab5/                   01-wireframe.png, 02-barycentric.png, 03-scanline.png
+│   ├── screenshots/lab5/                   01..03 escena sintética; 04..06 nave oblicua interactiva
+│   ├── interactive-views.md                cámara orbital, Z-buffer y sombreado (opcional)
 │   ├── results/lab5/                       benchmark_raw.csv, benchmark_summary.csv
 │   └── profiles/                           lab5-stack-sampler.sh, muestras y resúmenes
 ├── src/
 │   ├── main.rs                             punto de entrada → app::run()
-│   ├── app.rs                              ventana, CLI (--obj, --screenshot, --mode, --scene, --benchmark-triangles, --profile)
+│   ├── app.rs                              ventana, teclado, CLI (--obj, --screenshot, --mode, --scene, --interactive, --view, --benchmark-triangles, --profile, --help)
 │   ├── config.rs                           resolución, FPS, ruta del modelo, plano de vista, margen
 │   ├── lib.rs
 │   ├── geometry/                           Mesh, Vertex, demo.rs (escena de triángulos)
 │   ├── io/obj.rs                           cargador OBJ propio
 │   ├── pipeline/
 │   │   ├── uniforms.rs, vertex_shader.rs   etapa 1
-│   │   ├── screen_mapping.rs               vista plana XY/XZ, centrado y escala
+│   │   ├── screen_mapping.rs               vista plana XY/XZ (Lab 4) y proyección orbital (opcional)
+│   │   ├── orbit_camera.rs                 cámara orbital ortográfica y presets (opcional)
+│   │   ├── face_shading.rs                 sombreado plano por cara (opcional)
 │   │   ├── primitive.rs                    etapa 2
 │   │   ├── rasterizer.rs                   etapa 3: rasterize (wireframe) y rasterize_with_mode
 │   │   ├── fragment_shader.rs              etapa 4
-│   │   └── render.rs                       render (Lab 4) y render_with_mode (Lab 5)
+│   │   └── render.rs                       render (Lab 4), render_with_mode (Lab 5), render_interactive
 │   ├── rasterization/
 │   │   ├── line.rs, triangle.rs            Lab 4: Bresenham y contorno de tres líneas
 │   │   ├── mode.rs                         TriangleMode
 │   │   ├── coverage.rs                     función de arista, orientación, regla top-left, rangos de centros
 │   │   ├── barycentric.rs                  relleno baricéntrico
 │   │   └── scanline.rs                     relleno por scanline
-│   ├── rendering/                          Fragment, Framebuffer (CPU), Presenter (textura Raylib)
+│   ├── rendering/                          Fragment, Framebuffer (CPU, con Z-buffer opcional), Presenter (textura Raylib)
 │   └── benchmark/                          carga de trabajo, cronómetro, medianas, CSV, modo de perfilado
-└── tests/                                  23 archivos de pruebas de integración + fixture
+└── tests/                                  32 archivos de pruebas de integración + fixture
 ```
 
 Raylib se usa únicamente para la ventana, los tipos `Vector2`/`Vector3`/`Matrix` y para presentar la textura final. Toda la rasterización es código propio.
@@ -233,6 +265,8 @@ cargo run --release -- --scene triangles --mode barycentric
 cargo run --release -- --scene triangles --mode scanline
 cargo run --release -- --scene triangles --mode scanline --screenshot captura.png
 cargo run -- --obj ruta/otro_modelo.obj                       # otro OBJ triangulado
+cargo run --release -- --scene ship --interactive --mode scanline   # vista interactiva (opcional)
+cargo run --release -- --view top --mode barycentric --screenshot top.png
 cargo run --release -- --benchmark-triangles                  # benchmark sin ventana → docs/results/lab5/*.csv
 docs/profiles/lab5-stack-sampler.sh scanline 1000 /tmp/perfil # perfilado por muestreo de pilas
 ```
@@ -242,19 +276,19 @@ Una ruta inexistente, un OBJ inválido o un argumento desconocido terminan con m
 ### Pruebas y validación
 
 ```bash
-cargo test                                   # 156 pruebas
+cargo test                                   # 207 pruebas (156 de los laboratorios + 51 de la vista interactiva)
 cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings
 cargo build --release
 ```
 
-Las pruebas cubren: configuración, malla e índices, parser OBJ, integración con la nave real, framebuffer, líneas, triángulos, shader de vértices, ensamblaje, mapeo a pantalla, pipeline, contratos del Lab 4, política de cobertura, baricéntrico, scanline, paridad T01–T09, estrés determinista, despacho de modos, escena, benchmark, perfilado y contratos finales del Lab 5.
+Las pruebas cubren: configuración, malla e índices, parser OBJ, integración con la nave real, framebuffer, líneas, triángulos, shader de vértices, ensamblaje, mapeo a pantalla, pipeline, contratos del Lab 4, política de cobertura, baricéntrico, scanline, paridad T01–T09, estrés determinista, despacho de modos, escena, benchmark, perfilado, contratos finales del Lab 5 y, para la vista opcional, cámara orbital, proyección, controles, profundidad, Z-buffer, sombreado, presets y regresión.
 
 ## Restricciones respetadas
 
 - **No** se usa carga ni dibujo automático de modelos 3D de Raylib.
-- **No** se agregó z-buffer, texturas, iluminación ni perspectiva 3D.
+- **No** se agregó perspectiva 3D ni texturas. El Z-buffer y el sombreado plano existen solo en la vista interactiva opcional; `cargo run`, `--scene triangles`, el benchmark y el perfil del Lab 5 no los usan.
 - **No** se agregaron crates adicionales: solo `raylib` y la biblioteca estándar.
 - El Laboratorio 4 permanece intacto: `cargo run` sin argumentos sigue mostrando la nave en wireframe y sus 91 pruebas originales siguen pasando.
 
