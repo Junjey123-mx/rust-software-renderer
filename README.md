@@ -248,7 +248,7 @@ rust-software-renderer/
 │   │   └── scanline.rs                     relleno por scanline
 │   ├── rendering/                          Fragment, Framebuffer (CPU, con Z-buffer opcional), Presenter (textura Raylib)
 │   └── benchmark/                          carga de trabajo, cronómetro, medianas, CSV, modo de perfilado
-└── tests/                                  32 archivos de pruebas de integración + fixture
+└── tests/                                  33 archivos de pruebas de integración + fixture
 ```
 
 Raylib se usa únicamente para la ventana, los tipos `Vector2`/`Vector3`/`Matrix` y para presentar la textura final. Toda la rasterización es código propio.
