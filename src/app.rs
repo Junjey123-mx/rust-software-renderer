@@ -1,6 +1,8 @@
 //! Application lifecycle and orchestration.
 
-use crate::benchmark::{BenchmarkConfig, build_workload, run_benchmark, write_csv};
+use crate::benchmark::{
+    BenchmarkConfig, build_workload, profile_workload, run_benchmark, write_csv,
+};
 use crate::config::AppConfig;
 use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
 use crate::io::load_obj;
@@ -24,6 +26,9 @@ use std::path::PathBuf;
 ///   window is created.
 /// * `--benchmark-output <dir>`: where `benchmark_raw.csv` and
 ///   `benchmark_summary.csv` are written (default `docs/results/lab5`).
+/// * `--profile [--profile-mode barycentric|scanline] [--profile-iterations N]`:
+///   with `--benchmark-triangles`, run the workload repeatedly without timing
+///   so an external profiler can sample it. Default: both fills, 300 each.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
     pub obj: Option<PathBuf>,
@@ -32,6 +37,9 @@ pub struct CliArgs {
     pub scene: Scene,
     pub benchmark: bool,
     pub benchmark_output: Option<PathBuf>,
+    pub profile: bool,
+    pub profile_mode: Option<TriangleMode>,
+    pub profile_iterations: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -69,6 +77,30 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
                 out.screenshot = Some(it.next().ok_or("--screenshot requires a file name")?);
             }
             "--benchmark-triangles" => out.benchmark = true,
+            "--profile" => out.profile = true,
+            "--profile-mode" => {
+                let mode: TriangleMode = it
+                    .next()
+                    .ok_or("--profile-mode requires barycentric or scanline")?
+                    .parse()?;
+                if mode == TriangleMode::Wireframe {
+                    return Err(
+                        "--profile-mode expects a filled mode (barycentric or scanline)".into(),
+                    );
+                }
+                out.profile_mode = Some(mode);
+            }
+            "--profile-iterations" => {
+                let n: usize = it
+                    .next()
+                    .ok_or("--profile-iterations requires a number")?
+                    .parse()
+                    .map_err(|e| format!("--profile-iterations: {e}"))?;
+                if n == 0 {
+                    return Err("--profile-iterations must be at least 1".into());
+                }
+                out.profile_iterations = Some(n);
+            }
             "--benchmark-output" => {
                 out.benchmark_output = Some(PathBuf::from(
                     it.next().ok_or("--benchmark-output requires a directory")?,
@@ -106,6 +138,29 @@ fn save_screenshot(
     if target.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
         std::fs::copy(name, target)?;
         std::fs::remove_file(name)?;
+    }
+    Ok(())
+}
+
+/// Headless profiling workload: no window, no timer, just rasterization.
+fn run_profile_cli(mode: Option<TriangleMode>, iterations: usize) -> Result<(), Box<dyn Error>> {
+    let workload = build_workload();
+    let modes: Vec<TriangleMode> = match mode {
+        Some(m) => vec![m],
+        None => vec![
+            TriangleMode::FilledBarycentric,
+            TriangleMode::FilledScanline,
+        ],
+    };
+    println!(
+        "Profiling workload: {} triangles, {} iterations per mode, modes {:?}",
+        workload.triangles.len(),
+        iterations,
+        modes.iter().map(|m| m.name()).collect::<Vec<_>>()
+    );
+    for m in modes {
+        let total = profile_workload(&workload, m, iterations);
+        println!("{m}: {total} fragments generated in {iterations} iterations");
     }
     Ok(())
 }
@@ -159,6 +214,12 @@ fn run_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>>
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(std::env::args().skip(1))?;
+    if args.profile && !args.benchmark {
+        return Err("--profile requires --benchmark-triangles".into());
+    }
+    if args.benchmark && args.profile {
+        return run_profile_cli(args.profile_mode, args.profile_iterations.unwrap_or(300));
+    }
     if args.benchmark {
         let dir = args
             .benchmark_output

@@ -147,6 +147,9 @@ fn cli_arguments_are_validated() {
             scene: Default::default(),
             benchmark: false,
             benchmark_output: None,
+            profile: false,
+            profile_mode: None,
+            profile_iterations: None,
         }
     );
     assert_eq!(

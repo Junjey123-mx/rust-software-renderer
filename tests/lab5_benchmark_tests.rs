@@ -1,6 +1,7 @@
 use rust_software_renderer::app::parse_args;
 use rust_software_renderer::benchmark::{
-    BenchmarkConfig, build_workload, median_ns, run_benchmark, time_mode, verify_parity, write_csv,
+    BenchmarkConfig, build_workload, median_ns, profile_workload, run_benchmark, time_mode,
+    verify_parity, write_csv,
 };
 use rust_software_renderer::pipeline::rasterize_with_mode;
 use rust_software_renderer::rasterization::TriangleMode;
@@ -128,4 +129,37 @@ fn csv_export_matches_the_report() {
         srows[1]
     );
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn profile_workload_runs_the_real_rasterizer() {
+    let w = build_workload();
+    let once = rasterize_with_mode(&w.triangles, TriangleMode::FilledBarycentric, w.bounds).len();
+    assert_eq!(
+        profile_workload(&w, TriangleMode::FilledBarycentric, 2),
+        2 * once
+    );
+    assert_eq!(profile_workload(&w, TriangleMode::FilledScanline, 1), once);
+}
+
+#[test]
+fn profile_flags_are_parsed_and_validated() {
+    let a = parse_args(
+        [
+            "--benchmark-triangles",
+            "--profile",
+            "--profile-mode",
+            "scanline",
+            "--profile-iterations",
+            "5",
+        ]
+        .map(String::from),
+    )
+    .unwrap();
+    assert!(a.benchmark && a.profile);
+    assert_eq!(a.profile_mode, Some(TriangleMode::FilledScanline));
+    assert_eq!(a.profile_iterations, Some(5));
+    assert!(parse_args(["--profile-mode", "wireframe"].map(String::from)).is_err());
+    assert!(parse_args(["--profile-iterations", "0"].map(String::from)).is_err());
+    assert!(parse_args(["--profile-iterations", "x"].map(String::from)).is_err());
 }

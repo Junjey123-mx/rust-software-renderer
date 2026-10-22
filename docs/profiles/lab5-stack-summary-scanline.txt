@@ -1,0 +1,34 @@
+mode=scanline samples=375 (eu-stack snapshots of the main thread, ~10 ms apart)
+workload: --benchmark-triangles --profile on the fixed 207-triangle set (release build)
+
+SELF (leaf frame)        samples   %
+     287   76.5%  rust_software_renderer[2c9c56d49638c3a9]::rasterization::scanline::fill_scanline
+      68   18.1%  __memcpy_avx_unaligned_erms
+      11    2.9%  ceil
+       3    0.8%  _int_realloc
+       2    0.5%  _int_free_chunk
+       2    0.5%  _int_free_merge_chunk
+       1    0.3%  floor
+       1    0.3%  unlink_chunk.isra.0
+
+INCLUSIVE (frame anywhere on the stack)
+     375  100.0%  rust_software_renderer[2c9c56d49638c3a9]::app::run
+     375  100.0%  rust_software_renderer[e160bb2db140428e]::main
+     375  100.0%  __libc_start_main@@GLIBC_2.34
+     375  100.0%  std[bcb96dfbba0ab899]::sys::backtrace::__rust_begin_short_backtrace::<fn() -> std[bcb96dfbba0ab899]::process::ExitCode, std[bcb96dfbba0ab899]::process::ExitCode>
+     375  100.0%  _start
+     375  100.0%  std[bcb96dfbba0ab899]::rt::lang_start_internal
+     375  100.0%  std[bcb96dfbba0ab899]::rt::lang_start::<std[bcb96dfbba0ab899]::process::ExitCode>::{closure#0}
+     375  100.0%  rust_software_renderer[2c9c56d49638c3a9]::pipeline::rasterizer::rasterize_with_mode
+     375  100.0%  __libc_start_call_main
+     375  100.0%  main
+     305   81.3%  rust_software_renderer[2c9c56d49638c3a9]::rasterization::scanline::fill_scanline
+      68   18.1%  __memcpy_avx_unaligned_erms
+      11    2.9%  ceil
+       7    1.9%  _int_realloc
+       7    1.9%  <alloc[2ea6bcb46fca0c42]::raw_vec::RawVecInner>::finish_grow
+       7    1.9%  realloc
+       6    1.6%  <alloc[2ea6bcb46fca0c42]::raw_vec::RawVec<rust_software_renderer[2c9c56d49638c3a9]::rendering::fragment::Fragment>>::grow_one
+       4    1.1%  _int_free_chunk
+       2    0.5%  _int_free_merge_chunk
+       1    0.3%  <alloc[2ea6bcb46fca0c42]::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc[2ea6bcb46fca0c42]::alloc::Global>

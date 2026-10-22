@@ -6,6 +6,6 @@
 pub mod triangles;
 
 pub use triangles::{
-    BenchmarkConfig, BenchmarkReport, Round, Workload, build_workload, median_ns, run_benchmark,
-    time_mode, verify_parity, write_csv,
+    BenchmarkConfig, BenchmarkReport, Round, Workload, build_workload, median_ns, profile_workload,
+    run_benchmark, time_mode, verify_parity, write_csv,
 };

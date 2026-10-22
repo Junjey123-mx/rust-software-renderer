@@ -1,0 +1,32 @@
+mode=barycentric samples=356 (eu-stack snapshots of the main thread, ~10 ms apart)
+workload: --benchmark-triangles --profile on the fixed 207-triangle set (release build)
+
+SELF (leaf frame)        samples   %
+     310   87.1%  rust_software_renderer[2c9c56d49638c3a9]::rasterization::barycentric::fill_barycentric
+      42   11.8%  __memcpy_avx_unaligned_erms
+       1    0.3%  malloc_consolidate
+       1    0.3%  _int_malloc
+       1    0.3%  _int_realloc
+       1    0.3%  <alloc[2ea6bcb46fca0c42]::raw_vec::RawVecInner>::finish_grow
+
+INCLUSIVE (frame anywhere on the stack)
+     356  100.0%  rust_software_renderer[2c9c56d49638c3a9]::app::run
+     356  100.0%  main
+     356  100.0%  rust_software_renderer[2c9c56d49638c3a9]::pipeline::rasterizer::rasterize_with_mode
+     356  100.0%  std[bcb96dfbba0ab899]::rt::lang_start::<std[bcb96dfbba0ab899]::process::ExitCode>::{closure#0}
+     356  100.0%  __libc_start_call_main
+     356  100.0%  _start
+     356  100.0%  std[bcb96dfbba0ab899]::rt::lang_start_internal
+     356  100.0%  std[bcb96dfbba0ab899]::sys::backtrace::__rust_begin_short_backtrace::<fn() -> std[bcb96dfbba0ab899]::process::ExitCode, std[bcb96dfbba0ab899]::process::ExitCode>
+     356  100.0%  rust_software_renderer[e160bb2db140428e]::main
+     356  100.0%  __libc_start_main@@GLIBC_2.34
+     314   88.2%  rust_software_renderer[2c9c56d49638c3a9]::rasterization::barycentric::fill_barycentric
+      42   11.8%  __memcpy_avx_unaligned_erms
+       4    1.1%  <alloc[2ea6bcb46fca0c42]::raw_vec::RawVecInner>::finish_grow
+       4    1.1%  <alloc[2ea6bcb46fca0c42]::raw_vec::RawVec<rust_software_renderer[2c9c56d49638c3a9]::rendering::fragment::Fragment>>::grow_one
+       2    0.6%  _int_realloc
+       2    0.6%  realloc
+       1    0.3%  _int_free_chunk
+       1    0.3%  _int_free_maybe_consolidate.part.0
+       1    0.3%  malloc_consolidate
+       1    0.3%  __libc_malloc2

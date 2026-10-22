@@ -155,6 +155,21 @@ pub fn verify_parity(workload: &Workload) -> Result<usize, String> {
     Ok(total)
 }
 
+/// Profiling workload: repeat the real rasterizer `iterations` times without
+/// timing, so a sampling profiler sees fragment generation and nothing else.
+/// Returns the total number of fragments produced (consumed via `black_box`).
+pub fn profile_workload(workload: &Workload, mode: TriangleMode, iterations: usize) -> usize {
+    let triangles = black_box(&workload.triangles);
+    let bounds = black_box(workload.bounds);
+    let mut total = 0;
+    for _ in 0..iterations {
+        let fragments = rasterize_with_mode(triangles, mode, bounds);
+        total += fragments.len();
+        black_box(fragments);
+    }
+    total
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BenchmarkConfig {
     pub warmup_rounds: usize,
