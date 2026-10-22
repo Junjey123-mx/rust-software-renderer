@@ -1,0 +1,3 @@
+mode,rounds,iterations_per_round,triangles,fragments_per_iteration,median_round_ns,median_ns_per_iteration,min_round_ns,max_round_ns
+barycentric,7,100,207,858033,1394561562,13945615.6,1381687937,1457516051
+scanline,7,100,207,858033,526267211,5262672.1,512528121,604893163

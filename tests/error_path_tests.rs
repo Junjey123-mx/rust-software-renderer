@@ -146,6 +146,7 @@ fn cli_arguments_are_validated() {
             mode: TriangleMode::Wireframe,
             scene: Default::default(),
             benchmark: false,
+            benchmark_output: None,
         }
     );
     assert_eq!(

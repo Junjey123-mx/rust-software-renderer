@@ -1,6 +1,6 @@
 //! Application lifecycle and orchestration.
 
-use crate::benchmark::{BenchmarkConfig, build_workload, run_benchmark};
+use crate::benchmark::{BenchmarkConfig, build_workload, run_benchmark, write_csv};
 use crate::config::AppConfig;
 use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
 use crate::io::load_obj;
@@ -22,6 +22,8 @@ use std::path::PathBuf;
 ///   triangle scene used to compare the modes.
 /// * `--benchmark-triangles`: headless timing of both fill algorithms; no
 ///   window is created.
+/// * `--benchmark-output <dir>`: where `benchmark_raw.csv` and
+///   `benchmark_summary.csv` are written (default `docs/results/lab5`).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
     pub obj: Option<PathBuf>,
@@ -29,6 +31,7 @@ pub struct CliArgs {
     pub mode: TriangleMode,
     pub scene: Scene,
     pub benchmark: bool,
+    pub benchmark_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -66,6 +69,11 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
                 out.screenshot = Some(it.next().ok_or("--screenshot requires a file name")?);
             }
             "--benchmark-triangles" => out.benchmark = true,
+            "--benchmark-output" => {
+                out.benchmark_output = Some(PathBuf::from(
+                    it.next().ok_or("--benchmark-output requires a directory")?,
+                ));
+            }
             "--scene" => {
                 out.scene = it
                     .next()
@@ -103,7 +111,7 @@ fn save_screenshot(
 }
 
 /// Headless benchmark: measured before any raylib initialisation.
-fn run_benchmark_cli() -> Result<(), Box<dyn Error>> {
+fn run_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>> {
     let workload = build_workload();
     let config = BenchmarkConfig::default();
     println!(
@@ -142,13 +150,20 @@ fn run_benchmark_cli() -> Result<(), Box<dyn Error>> {
             med / config.iterations as f64
         );
     }
+    let raw = output_dir.join("benchmark_raw.csv");
+    let summary = output_dir.join("benchmark_summary.csv");
+    write_csv(&report, &raw, &summary)?;
+    println!("Wrote {} and {}", raw.display(), summary.display());
     Ok(())
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(std::env::args().skip(1))?;
     if args.benchmark {
-        return run_benchmark_cli();
+        let dir = args
+            .benchmark_output
+            .unwrap_or_else(|| PathBuf::from("docs/results/lab5"));
+        return run_benchmark_cli(&dir);
     }
     let config = AppConfig::default();
     let mode = args.mode;

@@ -1,6 +1,6 @@
 use rust_software_renderer::app::parse_args;
 use rust_software_renderer::benchmark::{
-    BenchmarkConfig, build_workload, median_ns, run_benchmark, time_mode, verify_parity,
+    BenchmarkConfig, build_workload, median_ns, run_benchmark, time_mode, verify_parity, write_csv,
 };
 use rust_software_renderer::pipeline::rasterize_with_mode;
 use rust_software_renderer::rasterization::TriangleMode;
@@ -80,4 +80,52 @@ fn benchmark_flag_is_parsed() {
     let a = parse_args(["--benchmark-triangles".to_string()]).unwrap();
     assert!(a.benchmark);
     assert!(!parse_args(Vec::<String>::new()).unwrap().benchmark);
+}
+
+#[test]
+fn csv_export_matches_the_report() {
+    let w = build_workload();
+    let cfg = BenchmarkConfig {
+        warmup_rounds: 0,
+        rounds: 2,
+        iterations: 1,
+    };
+    let report = run_benchmark(&w, cfg).unwrap();
+    let dir = std::env::temp_dir().join(format!("rsr_bench_{}", std::process::id()));
+    let raw = dir.join("raw.csv");
+    let summary = dir.join("summary.csv");
+    write_csv(&report, &raw, &summary).unwrap();
+    let raw_text = std::fs::read_to_string(&raw).unwrap();
+    let lines: Vec<&str> = raw_text.lines().collect();
+    assert_eq!(lines.len(), 1 + 4, "header + 2 modes x 2 rounds");
+    assert!(
+        lines[0].starts_with("mode,round,iterations,triangles,fragments_per_iteration,elapsed_ns")
+    );
+    for (line, r) in lines[1..].iter().zip(&report.rounds) {
+        assert!(
+            line.starts_with(&format!(
+                "{},{},{},{},{},{}",
+                r.mode,
+                r.round,
+                r.iterations,
+                report.triangles,
+                r.fragments_per_iteration,
+                r.elapsed_ns
+            )),
+            "{line}"
+        );
+    }
+    let summary_text = std::fs::read_to_string(&summary).unwrap();
+    let srows: Vec<&str> = summary_text.lines().collect();
+    assert_eq!(srows.len(), 3);
+    let bary_med = report.median_round_ns(TriangleMode::FilledBarycentric);
+    assert!(
+        srows[1].starts_with(&format!(
+            "barycentric,2,1,{},{},{:.0}",
+            report.triangles, report.fragments_per_iteration, bary_med
+        )),
+        "{}",
+        srows[1]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
 }

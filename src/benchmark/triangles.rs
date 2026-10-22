@@ -11,6 +11,8 @@ use crate::rasterization::{RasterBounds, TriangleMode, coverage};
 use raylib::math::Vector3;
 use std::collections::HashSet;
 use std::hint::black_box;
+use std::io::Write;
+use std::path::Path;
 use std::time::Instant;
 
 /// The same triangles for every algorithm, already in screen space.
@@ -250,4 +252,59 @@ pub fn run_benchmark(
         fragments_per_iteration,
         rounds,
     })
+}
+/// Writes one raw row per (mode, round) and a summary row per mode derived
+/// from those same rows. Times are nanoseconds.
+pub fn write_csv(report: &BenchmarkReport, raw: &Path, summary: &Path) -> std::io::Result<()> {
+    if let Some(dir) = raw.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    if let Some(dir) = summary.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut f = std::fs::File::create(raw)?;
+    writeln!(
+        f,
+        "mode,round,iterations,triangles,fragments_per_iteration,elapsed_ns,ns_per_iteration"
+    )?;
+    for r in &report.rounds {
+        writeln!(
+            f,
+            "{},{},{},{},{},{},{:.1}",
+            r.mode,
+            r.round,
+            r.iterations,
+            report.triangles,
+            r.fragments_per_iteration,
+            r.elapsed_ns,
+            r.ns_per_iteration()
+        )?;
+    }
+    let mut s = std::fs::File::create(summary)?;
+    writeln!(
+        s,
+        "mode,rounds,iterations_per_round,triangles,fragments_per_iteration,median_round_ns,median_ns_per_iteration,min_round_ns,max_round_ns"
+    )?;
+    for mode in [
+        TriangleMode::FilledBarycentric,
+        TriangleMode::FilledScanline,
+    ] {
+        let rounds = report.rounds_for(mode);
+        let ns: Vec<u128> = rounds.iter().map(|r| r.elapsed_ns).collect();
+        let med = median_ns(&ns);
+        writeln!(
+            s,
+            "{},{},{},{},{},{:.0},{:.1},{},{}",
+            mode,
+            rounds.len(),
+            report.config.iterations,
+            report.triangles,
+            report.fragments_per_iteration,
+            med,
+            med / report.config.iterations as f64,
+            ns.iter().min().copied().unwrap_or(0),
+            ns.iter().max().copied().unwrap_or(0)
+        )?;
+    }
+    Ok(())
 }
