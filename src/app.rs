@@ -13,7 +13,7 @@ use std::path::PathBuf;
 ///
 /// * `--obj <file>`: render another triangulated OBJ instead of the ship.
 /// * `--screenshot <file>`: save the first presented frame of the real
-///   window (path relative to the working directory) and exit.
+///   window to `file` and exit.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
     pub obj: Option<PathBuf>,
@@ -37,6 +37,22 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
         }
     }
     Ok(out)
+}
+
+/// Raylib writes screenshots as `<working dir>/<file name>`, ignoring any
+/// directory; move the file to the path the user actually asked for.
+fn save_screenshot(
+    rl: &mut raylib::RaylibHandle,
+    thread: &raylib::RaylibThread,
+    file: &str,
+) -> Result<(), Box<dyn Error>> {
+    let target = std::path::Path::new(file);
+    let name = target.file_name().ok_or("--screenshot needs a file name")?;
+    rl.take_screenshot(thread, &name.to_string_lossy());
+    if target.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
+        std::fs::rename(name, target)?;
+    }
+    Ok(())
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -88,7 +104,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         presenter.present(&mut rl, &thread, &framebuffer)?;
         if let Some(file) = &args.screenshot {
-            rl.take_screenshot(&thread, file);
+            save_screenshot(&mut rl, &thread, file)?;
             println!("Saved window screenshot to {file}");
             break;
         }
