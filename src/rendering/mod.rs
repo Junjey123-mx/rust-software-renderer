@@ -5,6 +5,8 @@
 
 pub mod fragment;
 pub mod framebuffer;
+pub mod presenter;
 
 pub use fragment::Fragment;
 pub use framebuffer::Framebuffer;
+pub use presenter::Presenter;
