@@ -14,7 +14,7 @@ pub mod vertex_shader;
 
 pub use fragment_shader::fragment_shader;
 pub use primitive::{IncompletePrimitive, primitive_assembly};
-pub use rasterizer::rasterize;
+pub use rasterizer::{rasterize, rasterize_with_mode};
 pub use render::{Projection, RenderError, RenderStats, render};
 pub use screen_mapping::{MappingError, ScreenFit, ViewPlane, Viewport, fit_to_viewport};
 pub use uniforms::Uniforms;
