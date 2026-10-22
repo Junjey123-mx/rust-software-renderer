@@ -459,6 +459,6 @@ Además, la solución no solo cumple funcionalmente con la entrega, sino que dej
 
 ## Autor
 
-**Vernel Josue**
+**Vernel Josue Hernández Cáceres** — Carné 24584
 
 Universidad del Valle de Guatemala (UVG) — Gráficas por Computadora — 2026
