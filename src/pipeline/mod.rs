@@ -5,6 +5,7 @@
 //! and fragment processing.
 
 pub mod fragment_shader;
+pub mod orbit_camera;
 pub mod primitive;
 pub mod rasterizer;
 pub mod render;
@@ -13,6 +14,7 @@ pub mod uniforms;
 pub mod vertex_shader;
 
 pub use fragment_shader::fragment_shader;
+pub use orbit_camera::{CameraBasis, OrbitCamera, ViewPreset};
 pub use primitive::{IncompletePrimitive, primitive_assembly};
 pub use rasterizer::{rasterize, rasterize_with_mode};
 pub use render::{Projection, RenderError, RenderStats, render, render_with_mode};
