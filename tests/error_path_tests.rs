@@ -144,6 +144,7 @@ fn cli_arguments_are_validated() {
             obj: Some(PathBuf::from("x.obj")),
             screenshot: None,
             mode: TriangleMode::Wireframe,
+            scene: Default::default(),
         }
     );
     assert_eq!(
