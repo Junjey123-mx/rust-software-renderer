@@ -1,5 +1,6 @@
 //! Application lifecycle and orchestration.
 
+use crate::benchmark::{BenchmarkConfig, build_workload, run_benchmark};
 use crate::config::AppConfig;
 use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
 use crate::io::load_obj;
@@ -19,12 +20,15 @@ use std::path::PathBuf;
 ///   (default: wireframe, the laboratory 4 behaviour).
 /// * `--scene ship|triangles`: the OBJ model (default) or the controlled
 ///   triangle scene used to compare the modes.
+/// * `--benchmark-triangles`: headless timing of both fill algorithms; no
+///   window is created.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
     pub obj: Option<PathBuf>,
     pub screenshot: Option<String>,
     pub mode: TriangleMode,
     pub scene: Scene,
+    pub benchmark: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -61,6 +65,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
             "--screenshot" => {
                 out.screenshot = Some(it.next().ok_or("--screenshot requires a file name")?);
             }
+            "--benchmark-triangles" => out.benchmark = true,
             "--scene" => {
                 out.scene = it
                     .next()
@@ -97,8 +102,54 @@ fn save_screenshot(
     Ok(())
 }
 
+/// Headless benchmark: measured before any raylib initialisation.
+fn run_benchmark_cli() -> Result<(), Box<dyn Error>> {
+    let workload = build_workload();
+    let config = BenchmarkConfig::default();
+    println!(
+        "Benchmark: {} triangles, {}x{}, {} warm-up rounds, {} rounds x {} iterations",
+        workload.triangles.len(),
+        workload.bounds.width,
+        workload.bounds.height,
+        config.warmup_rounds,
+        config.rounds,
+        config.iterations
+    );
+    let report = run_benchmark(&workload, config)?;
+    println!(
+        "Fragments per iteration (both fills, parity verified): {}",
+        report.fragments_per_iteration
+    );
+    for r in &report.rounds {
+        println!(
+            "{:<12} round {} : {:>12} ns total, {:>10.1} ns/iteration",
+            r.mode.to_string(),
+            r.round,
+            r.elapsed_ns,
+            r.ns_per_iteration()
+        );
+    }
+    for mode in [
+        TriangleMode::FilledBarycentric,
+        TriangleMode::FilledScanline,
+    ] {
+        let med = report.median_round_ns(mode);
+        println!(
+            "{:<12} median of {} rounds: {:.0} ns/round = {:.1} ns/iteration",
+            mode.to_string(),
+            config.rounds,
+            med,
+            med / config.iterations as f64
+        );
+    }
+    Ok(())
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(std::env::args().skip(1))?;
+    if args.benchmark {
+        return run_benchmark_cli();
+    }
     let config = AppConfig::default();
     let mode = args.mode;
     let (vertex_array, projection, width, height) = match args.scene {
