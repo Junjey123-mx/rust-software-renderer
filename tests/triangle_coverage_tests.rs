@@ -8,6 +8,7 @@ use rust_software_renderer::rendering::Fragment;
 use std::collections::HashSet;
 
 type P = (f32, f32);
+type Coords = Vec<(i32, i32)>;
 
 const CASES: [(&str, P, P, P); 9] = [
     ("T01 small", (10.0, 10.0), (18.0, 12.0), (12.0, 20.0)),
@@ -67,7 +68,7 @@ fn coords(frags: &[Fragment]) -> Vec<(i32, i32)> {
         .collect()
 }
 
-fn both(a: P, b: P, c: P) -> (Vec<(i32, i32)>, Vec<(i32, i32)>) {
+fn both(a: P, b: P, c: P) -> (Coords, Coords) {
     (
         coords(&fill_barycentric(&v(a), &v(b), &v(c), B)),
         coords(&fill_scanline(&v(a), &v(b), &v(c), B)),
