@@ -2,15 +2,21 @@
 
 use crate::config::AppConfig;
 use crate::geometry::Vertex;
+use crate::io::load_obj;
 use crate::pipeline::{Projection, Uniforms, render};
 use crate::rendering::{Framebuffer, Presenter};
 use raylib::math::Vector3;
 use std::error::Error;
+use std::path::PathBuf;
 
-/// Command-line options. `--screenshot <file>` saves the first presented
-/// frame of the real window (relative to the working directory) and exits.
+/// Command-line options.
+///
+/// * `--obj <file>`: render another triangulated OBJ instead of the ship.
+/// * `--screenshot <file>`: save the first presented frame of the real
+///   window (path relative to the working directory) and exit.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
+    pub obj: Option<PathBuf>,
     pub screenshot: Option<String>,
 }
 
@@ -19,6 +25,11 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
+            "--obj" => {
+                out.obj = Some(PathBuf::from(
+                    it.next().ok_or("--obj requires a file path")?,
+                ));
+            }
             "--screenshot" => {
                 out.screenshot = Some(it.next().ok_or("--screenshot requires a file name")?);
             }
@@ -28,20 +39,26 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
     Ok(out)
 }
 
-/// Lesson diagnostic triangle in screen coordinates; replaced by the OBJ
-/// model once the loader is wired in.
-fn diagnostic_triangle() -> Vec<Vertex> {
-    [(300.0, 200.0), (400.0, 400.0), (500.0, 200.0)]
-        .into_iter()
-        .map(|(x, y)| Vertex::new(Vector3::new(x, y, 0.0)))
-        .collect()
-}
-
 pub fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(std::env::args().skip(1))?;
     let config = AppConfig::default();
-    let vertex_array = diagnostic_triangle();
+    let model_path = args.obj.unwrap_or(config.model_path.clone());
+
+    // Load once at start-up; the mesh does not change between frames.
+    let mesh = load_obj(&model_path)?;
+    println!(
+        "Loaded {}: {} vertices, {} indices, {} triangles",
+        model_path.display(),
+        mesh.vertices.len(),
+        mesh.indices.len(),
+        mesh.triangle_count()
+    );
+    let vertex_array = mesh.expand_vertices(Vertex::DEFAULT_COLOR);
     let uniforms = Uniforms::default();
+    let projection = Projection::Fit {
+        plane: config.view_plane,
+        margin_ratio: config.margin_ratio,
+    };
 
     let (mut rl, thread) = raylib::init()
         .size(config.width as i32, config.height as i32)
@@ -56,17 +73,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut reported = false;
     while !rl.window_should_close() {
         framebuffer.clear();
-        let stats = render(
-            &mut framebuffer,
-            &uniforms,
-            &vertex_array,
-            Projection::Screen,
-        )?;
+        let stats = render(&mut framebuffer, &uniforms, &vertex_array, projection)?;
         if !reported {
             println!(
-                "Rendered {} triangles, {} fragments ({}x{} @ {} FPS)",
+                "Rendered {} triangles into {} fragments ({:?} view, {}x{} @ {} FPS)",
                 stats.triangles_processed,
                 stats.fragments_generated,
+                config.view_plane,
                 config.width,
                 config.height,
                 config.target_fps
