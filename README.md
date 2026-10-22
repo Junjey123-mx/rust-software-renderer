@@ -5,6 +5,7 @@ Proyecto del curso **Gráficas por Computadora** — **Universidad del Valle de 
 Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado) y, como mejora opcional, una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado.
 
 - [Vista interactiva (opcional)](#vista-interactiva-de-la-nave-mejora-opcional)
+- [Demostración en video: tres modos](#demostración-interactiva--tres-modos-de-rasterización)
 - [Laboratorio 5 — Filling triangles](#laboratorio-5--filling-triangles)
 - [Laboratorio 4 — Carga de modelos OBJ](#laboratorio-4--carga-de-modelos-obj)
 - [Arquitectura](#arquitectura-implementada)
@@ -146,6 +147,22 @@ Misma vista oblicua (`--interactive --view oblique`) en los tres modos:
 
 ---
 
+## Demostración interactiva — Tres modos de rasterización
+
+Además de las pruebas de cobertura y rendimiento, el renderizador permite explorar la nave espacial desde diferentes perspectivas mediante una cámara orbital implementada sobre nuestro pipeline de rasterización por CPU.
+
+Los videos son salida real del programa, no capturas de escritorio ni animaciones externas. Cada fotograma lo produce `render_interactive` (el mismo que usa la ventana con `--interactive`) a partir del OBJ de 708 triángulos, moviendo la misma `OrbitCamera` por una trayectoria fija y suavizada: vista superior → oblicua → rotación horizontal → lateral → frontal → acercamiento → alejamiento → regreso a la oblicua. FFmpeg solo codifica los fotogramas del framebuffer a H.264 y añade el título y el nombre de cada fase. Todos los videos comparten modelo, resolución (800×600), 30 FPS, duración (32 s) y recorrido de cámara, así que se pueden comparar fotograma a fotograma.
+
+### Wireframe
+
+`triangle()` del Lab 4 dibuja cada cara con tres llamadas a `line()` (Bresenham) y los fragmentos se escriben sin prueba de profundidad: por eso se ven a la vez las aristas delanteras y posteriores del fuselaje, las alas y los motores. En la ventana: `--mode wireframe` o tecla `1`.
+
+<a href="docs/videos/lab5/01-wireframe-interactive.mp4"><img src="docs/videos/lab5/01-wireframe-preview.png" width="480" alt="Vista previa del video wireframe: la nave en contornos en vista oblicua"></a>
+
+▶ [Ver el video wireframe](docs/videos/lab5/01-wireframe-interactive.mp4) (MP4 H.264, 32 s, 11,9 MB)
+
+---
+
 ## Laboratorio 4 — Carga de modelos OBJ
 
 ### Objetivo
@@ -222,6 +239,7 @@ rust-software-renderer/
 │   ├── screenshots/lab4/                   final_render.png, 01-nave-wireframe.png
 │   ├── screenshots/lab5/                   01..03 escena sintética; 04..06 nave oblicua interactiva
 │   ├── interactive-views.md                cámara orbital, Z-buffer y sombreado (opcional)
+│   ├── videos/lab5/                        videos demostrativos MP4 de la vista interactiva y sus miniaturas
 │   ├── results/lab5/                       benchmark_raw.csv, benchmark_summary.csv
 │   └── profiles/                           lab5-stack-sampler.sh, muestras y resúmenes
 ├── src/
