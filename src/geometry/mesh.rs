@@ -1,5 +1,6 @@
 //! Indexed triangle mesh.
 
+use crate::geometry::Vertex;
 use raylib::math::Vector3;
 use std::fmt;
 
@@ -62,5 +63,15 @@ impl Mesh {
 
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
+    }
+
+    /// Expands the index list into one `Vertex` per face corner, in face
+    /// order, so consecutive triples form the mesh's triangles. Shared
+    /// positions are repeated; the compact mesh itself is left untouched.
+    pub fn expand_vertices(&self, color: Vector3) -> Vec<Vertex> {
+        self.indices
+            .iter()
+            .map(|&i| Vertex::new_with_color(self.vertices[i], color))
+            .collect()
     }
 }

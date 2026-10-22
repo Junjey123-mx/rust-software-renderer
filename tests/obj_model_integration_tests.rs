@@ -48,3 +48,27 @@ fn ship_bounding_box_matches_export() {
     assert!((min.z - -4.4).abs() < eps, "min.z = {}", min.z);
     assert!((max.z - 1.8).abs() < eps, "max.z = {}", max.z);
 }
+
+#[test]
+fn ship_expands_to_2124_vertices_and_708_triangles() {
+    use rust_software_renderer::geometry::Vertex;
+    use rust_software_renderer::pipeline::primitive_assembly;
+
+    let mesh = load_obj(Path::new(SHIP)).unwrap();
+    let expanded = mesh.expand_vertices(Vertex::DEFAULT_COLOR);
+    assert_eq!(expanded.len(), 2124);
+
+    let triangles = primitive_assembly(&expanded).unwrap();
+    assert_eq!(triangles.len(), 708);
+
+    // Every assembled corner must equal the position its index points to.
+    for (t, tri) in triangles.iter().enumerate() {
+        for (k, corner) in tri.iter().enumerate() {
+            let index = mesh.indices[t * 3 + k];
+            assert_eq!(
+                corner.position, mesh.vertices[index],
+                "triangle {t} corner {k}"
+            );
+        }
+    }
+}
