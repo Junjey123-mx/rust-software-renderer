@@ -4,5 +4,7 @@
 //! Laboratory 4 focuses on wireframe rendering.
 
 pub mod line;
+pub mod triangle;
 
 pub use line::line;
+pub use triangle::triangle;
