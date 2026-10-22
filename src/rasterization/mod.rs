@@ -7,10 +7,12 @@ pub mod barycentric;
 pub mod coverage;
 pub mod line;
 pub mod mode;
+pub mod scanline;
 pub mod triangle;
 
 pub use barycentric::fill_barycentric;
 pub use coverage::RasterBounds;
 pub use line::line;
 pub use mode::TriangleMode;
+pub use scanline::fill_scanline;
 pub use triangle::triangle;
