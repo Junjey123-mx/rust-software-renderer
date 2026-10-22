@@ -6,9 +6,13 @@ use crate::benchmark::{
 use crate::config::AppConfig;
 use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
 use crate::io::load_obj;
-use crate::pipeline::{Projection, Uniforms, render_with_mode};
+use crate::pipeline::{
+    OrbitCamera, OrbitView, Projection, Uniforms, ViewPreset, Viewport, model_bounds,
+    render_with_mode,
+};
 use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
+use raylib::consts::KeyboardKey;
 use raylib::math::Vector3;
 use std::error::Error;
 use std::path::PathBuf;
@@ -29,6 +33,8 @@ use std::path::PathBuf;
 /// * `--profile [--profile-mode barycentric|scanline] [--profile-iterations N]`:
 ///   with `--benchmark-triangles`, run the workload repeatedly without timing
 ///   so an external profiler can sample it. Default: both fills, 300 each.
+/// * `--interactive`: orbit camera around the ship with keyboard controls
+///   (arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
     pub obj: Option<PathBuf>,
@@ -40,6 +46,7 @@ pub struct CliArgs {
     pub profile: bool,
     pub profile_mode: Option<TriangleMode>,
     pub profile_iterations: Option<usize>,
+    pub interactive: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -78,6 +85,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
             }
             "--benchmark-triangles" => out.benchmark = true,
             "--profile" => out.profile = true,
+            "--interactive" => out.interactive = true,
             "--profile-mode" => {
                 let mode: TriangleMode = it
                     .next()
@@ -122,6 +130,85 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
         }
     }
     Ok(out)
+}
+
+/// Camera commands produced by the keyboard. Continuous actions are scaled
+/// by the frame delta; discrete ones fire once per key press.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraAction {
+    OrbitLeft,
+    OrbitRight,
+    TiltUp,
+    TiltDown,
+    ZoomIn,
+    ZoomOut,
+    Reset,
+    View(ViewPreset),
+}
+
+/// Radians per second for orbit and tilt.
+pub const ORBIT_SPEED: f32 = 1.6;
+/// Zoom factor per second (exponential, so in/out are symmetric).
+pub const ZOOM_SPEED: f32 = 2.0;
+/// Longest frame delta applied, so a stall never teleports the camera.
+pub const MAX_DT: f32 = 0.05;
+
+/// Applies one action to the camera. Pure: no window, no raylib.
+pub fn apply_input(camera: &mut OrbitCamera, action: CameraAction, dt: f32) {
+    let dt = if dt.is_finite() {
+        dt.clamp(0.0, MAX_DT)
+    } else {
+        0.0
+    };
+    match action {
+        CameraAction::OrbitLeft => camera.orbit(-ORBIT_SPEED * dt),
+        CameraAction::OrbitRight => camera.orbit(ORBIT_SPEED * dt),
+        CameraAction::TiltUp => camera.tilt(ORBIT_SPEED * dt),
+        CameraAction::TiltDown => camera.tilt(-ORBIT_SPEED * dt),
+        CameraAction::ZoomIn => camera.zoom_by(ZOOM_SPEED.powf(dt)),
+        CameraAction::ZoomOut => camera.zoom_by(ZOOM_SPEED.powf(-dt)),
+        CameraAction::Reset => camera.reset(),
+        CameraAction::View(preset) => camera.set_preset(preset),
+    }
+}
+
+/// Reads the keyboard state of this frame into camera actions and an
+/// optional mode change.
+fn poll_input(rl: &raylib::RaylibHandle) -> (Vec<CameraAction>, Option<TriangleMode>) {
+    let held = [
+        (KeyboardKey::KEY_LEFT, CameraAction::OrbitLeft),
+        (KeyboardKey::KEY_RIGHT, CameraAction::OrbitRight),
+        (KeyboardKey::KEY_UP, CameraAction::TiltUp),
+        (KeyboardKey::KEY_DOWN, CameraAction::TiltDown),
+        (KeyboardKey::KEY_E, CameraAction::ZoomIn),
+        (KeyboardKey::KEY_Q, CameraAction::ZoomOut),
+    ];
+    let pressed = [
+        (KeyboardKey::KEY_R, CameraAction::Reset),
+        (KeyboardKey::KEY_T, CameraAction::View(ViewPreset::Top)),
+        (KeyboardKey::KEY_F, CameraAction::View(ViewPreset::Front)),
+        (KeyboardKey::KEY_S, CameraAction::View(ViewPreset::Side)),
+    ];
+    let mut actions: Vec<CameraAction> = held
+        .iter()
+        .filter(|(k, _)| rl.is_key_down(*k))
+        .map(|(_, a)| *a)
+        .collect();
+    actions.extend(
+        pressed
+            .iter()
+            .filter(|(k, _)| rl.is_key_pressed(*k))
+            .map(|(_, a)| *a),
+    );
+    let mode = [
+        (KeyboardKey::KEY_ONE, TriangleMode::Wireframe),
+        (KeyboardKey::KEY_TWO, TriangleMode::FilledBarycentric),
+        (KeyboardKey::KEY_THREE, TriangleMode::FilledScanline),
+    ]
+    .iter()
+    .find(|(k, _)| rl.is_key_pressed(*k))
+    .map(|(_, m)| *m);
+    (actions, mode)
 }
 
 /// Raylib writes screenshots as `<working dir>/<file name>`, ignoring any
@@ -240,20 +327,26 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 mesh.indices.len(),
                 mesh.triangle_count()
             );
-            let projection = Projection::Fit {
-                plane: config.view_plane,
-                margin_ratio: config.margin_ratio,
+            let vertices = mesh.expand_vertices(Vertex::DEFAULT_COLOR);
+            let projection = if args.interactive {
+                let bounds = model_bounds(&vertices).ok_or("model has no finite geometry")?;
+                let camera = OrbitCamera::new(bounds.center, ViewPreset::default());
+                let viewport = Viewport::new(config.width, config.height, config.margin_ratio);
+                Projection::Orbit(OrbitView::new(camera, &bounds, viewport)?)
+            } else {
+                Projection::Fit {
+                    plane: config.view_plane,
+                    margin_ratio: config.margin_ratio,
+                }
             };
-            (
-                mesh.expand_vertices(Vertex::DEFAULT_COLOR),
-                projection,
-                config.width,
-                config.height,
-            )
+            (vertices, projection, config.width, config.height)
         }
         Scene::Triangles => {
             if args.obj.is_some() {
                 return Err("--obj cannot be combined with --scene triangles".into());
+            }
+            if args.interactive {
+                return Err("--interactive requires --scene ship".into());
             }
             let scene = triangle_scene();
             println!(
@@ -266,9 +359,19 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     let uniforms = Uniforms::default();
 
+    let title = if args.interactive {
+        "Rust Software Renderer - Lab 5 Interactive"
+    } else {
+        config.window_title
+    };
+    if args.interactive {
+        println!(
+            "Controls: arrows orbit/tilt, Q/E zoom, 1/2/3 wireframe/barycentric/scanline, R reset, T top, F front, S side, ESC quit"
+        );
+    }
     let (mut rl, thread) = raylib::init()
         .size(width as i32, height as i32)
-        .title(config.window_title)
+        .title(title)
         .build();
     rl.set_target_fps(config.target_fps);
 
@@ -276,8 +379,23 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     framebuffer.set_background_color(Vector3::new(0.05, 0.05, 0.08));
     let mut presenter = Presenter::new(&mut rl, &thread, &framebuffer)?;
 
+    let mut mode = mode;
+    let mut projection = projection;
     let mut reported = false;
     while !rl.window_should_close() {
+        if let Projection::Orbit(view) = &mut projection {
+            let dt = rl.get_frame_time();
+            let (actions, new_mode) = poll_input(&rl);
+            for action in actions {
+                apply_input(&mut view.camera, action, dt);
+            }
+            if let Some(m) = new_mode
+                && m != mode
+            {
+                mode = m;
+                println!("Mode: {mode} (camera unchanged)");
+            }
+        }
         framebuffer.clear();
         let stats = render_with_mode(&mut framebuffer, &uniforms, &vertex_array, projection, mode)?;
         if !reported {
