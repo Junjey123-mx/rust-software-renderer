@@ -1,4 +1,3 @@
 fn main() {
-    println!("Rust Software Renderer");
-    println!("Initial project foundation.");
+    rust_software_renderer::app::run();
 }
