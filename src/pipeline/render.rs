@@ -53,6 +53,14 @@ impl fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
+/// Options of the final stage. Defaults reproduce laboratories 4 and 5.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct RenderSettings {
+    /// Resolve overlapping filled faces with the depth buffer (nearest wins).
+    /// Wireframe always draws every edge regardless of this flag.
+    pub depth_test: bool,
+}
+
 /// Laboratory 4 entry point: wireframe rendering.
 pub fn render(
     framebuffer: &mut Framebuffer,
@@ -70,13 +78,50 @@ pub fn render(
 }
 
 /// Full pipeline with a selectable rasterization algorithm. Filled modes
-/// clip against the framebuffer size.
+/// clip against the framebuffer size. Last write wins (laboratory 5).
 pub fn render_with_mode(
     framebuffer: &mut Framebuffer,
     uniforms: &Uniforms,
     vertex_array: &[Vertex],
     projection: Projection,
     mode: TriangleMode,
+) -> Result<RenderStats, RenderError> {
+    render_with_settings(
+        framebuffer,
+        uniforms,
+        vertex_array,
+        projection,
+        mode,
+        RenderSettings::default(),
+    )
+}
+
+/// Interactive view: orbit projection plus depth testing for filled modes.
+pub fn render_interactive(
+    framebuffer: &mut Framebuffer,
+    uniforms: &Uniforms,
+    vertex_array: &[Vertex],
+    view: OrbitView,
+    mode: TriangleMode,
+) -> Result<RenderStats, RenderError> {
+    render_with_settings(
+        framebuffer,
+        uniforms,
+        vertex_array,
+        Projection::Orbit(view),
+        mode,
+        RenderSettings { depth_test: true },
+    )
+}
+
+/// The single pipeline body shared by every entry point.
+pub fn render_with_settings(
+    framebuffer: &mut Framebuffer,
+    uniforms: &Uniforms,
+    vertex_array: &[Vertex],
+    projection: Projection,
+    mode: TriangleMode,
+    settings: RenderSettings,
 ) -> Result<RenderStats, RenderError> {
     // 1. Vertex processing.
     let mut transformed: Vec<Vertex> = vertex_array
@@ -111,13 +156,15 @@ pub fn render_with_mode(
     let fragments = rasterize_with_mode(&triangles, mode, bounds);
 
     // 4. Fragment processing.
+    let depth_test = settings.depth_test && mode != TriangleMode::Wireframe;
     for fragment in &fragments {
         let color = fragment_shader(fragment);
-        framebuffer.point(
-            fragment.position.x as i32,
-            fragment.position.y as i32,
-            color,
-        );
+        let (x, y) = (fragment.position.x as i32, fragment.position.y as i32);
+        if depth_test {
+            framebuffer.point_depth(x, y, color, fragment.depth);
+        } else {
+            framebuffer.point(x, y, color);
+        }
     }
 
     Ok(RenderStats {

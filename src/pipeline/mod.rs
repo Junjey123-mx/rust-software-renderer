@@ -17,7 +17,10 @@ pub use fragment_shader::fragment_shader;
 pub use orbit_camera::{CameraBasis, OrbitCamera, ViewPreset};
 pub use primitive::{IncompletePrimitive, primitive_assembly};
 pub use rasterizer::{rasterize, rasterize_with_mode};
-pub use render::{Projection, RenderError, RenderStats, render, render_with_mode};
+pub use render::{
+    Projection, RenderError, RenderSettings, RenderStats, render, render_interactive,
+    render_with_mode, render_with_settings,
+};
 pub use screen_mapping::{
     MappingError, ModelBounds, OrbitView, ScreenFit, ViewPlane, Viewport, fit_to_viewport,
     model_bounds, project_orbit,

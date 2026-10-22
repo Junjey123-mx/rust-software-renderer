@@ -1,4 +1,6 @@
-//! CPU framebuffer: a row-major grid of RGB colors.
+//! CPU framebuffer: a row-major grid of RGB colors plus an optional depth
+//! buffer. `point` is the laboratory 4/5 path (last write wins, depth
+//! untouched); `point_depth` keeps the nearest fragment (smallest depth).
 
 use raylib::math::Vector3;
 
@@ -8,6 +10,7 @@ pub struct Framebuffer {
     height: u32,
     background: Vector3,
     pixels: Vec<Vector3>,
+    depth: Vec<f32>,
 }
 
 impl Framebuffer {
@@ -18,6 +21,7 @@ impl Framebuffer {
             height,
             background,
             pixels: vec![background; (width * height) as usize],
+            depth: vec![f32::INFINITY; (width * height) as usize],
         }
     }
 
@@ -37,9 +41,15 @@ impl Framebuffer {
         self.background = color;
     }
 
-    /// Fills every pixel with the background color.
+    /// Fills every pixel with the background color and resets the depth
+    /// buffer to "infinitely far".
     pub fn clear(&mut self) {
         self.pixels.fill(self.background);
+        self.clear_depth();
+    }
+
+    pub fn clear_depth(&mut self) {
+        self.depth.fill(f32::INFINITY);
     }
 
     fn index(&self, x: i32, y: i32) -> Option<usize> {
@@ -55,6 +65,25 @@ impl Framebuffer {
         if let Some(i) = self.index(x, y) {
             self.pixels[i] = color;
         }
+    }
+
+    /// Depth-tested write: the pixel is updated only when `depth` is finite
+    /// and strictly smaller than the stored depth (ties keep the first
+    /// fragment). Out-of-range coordinates are discarded.
+    pub fn point_depth(&mut self, x: i32, y: i32, color: Vector3, depth: f32) {
+        if !depth.is_finite() {
+            return;
+        }
+        if let Some(i) = self.index(x, y)
+            && depth < self.depth[i]
+        {
+            self.pixels[i] = color;
+            self.depth[i] = depth;
+        }
+    }
+
+    pub fn get_depth(&self, x: i32, y: i32) -> Option<f32> {
+        self.index(x, y).map(|i| self.depth[i])
     }
 
     pub fn get_pixel(&self, x: i32, y: i32) -> Option<Vector3> {

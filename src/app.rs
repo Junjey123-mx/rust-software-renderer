@@ -8,7 +8,7 @@ use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
 use crate::io::load_obj;
 use crate::pipeline::{
     OrbitCamera, OrbitView, Projection, Uniforms, ViewPreset, Viewport, model_bounds,
-    render_with_mode,
+    render_interactive, render_with_mode,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
@@ -397,7 +397,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             }
         }
         framebuffer.clear();
-        let stats = render_with_mode(&mut framebuffer, &uniforms, &vertex_array, projection, mode)?;
+        let stats = match projection {
+            Projection::Orbit(view) => {
+                render_interactive(&mut framebuffer, &uniforms, &vertex_array, view, mode)?
+            }
+            other => render_with_mode(&mut framebuffer, &uniforms, &vertex_array, other, mode)?,
+        };
         if !reported {
             println!(
                 "Rendered {} triangles into {} fragments (mode {}, {:?}, {}x{} @ {} FPS)",
