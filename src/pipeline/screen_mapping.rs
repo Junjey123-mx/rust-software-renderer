@@ -143,3 +143,113 @@ pub fn fit_to_viewport(
         span_v,
     })
 }
+
+// ---------------------------------------------------------------------------
+// Orbit projection (interactive view). Independent of `fit_to_viewport`.
+// ---------------------------------------------------------------------------
+
+use crate::pipeline::OrbitCamera;
+
+/// Bounding sphere of a vertex list in model space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModelBounds {
+    pub center: Vector3,
+    pub radius: f32,
+}
+
+/// Center of the axis-aligned bounding box and the radius of the sphere
+/// around it that contains every `position`. `None` for empty or non-finite
+/// input.
+pub fn model_bounds(vertices: &[Vertex]) -> Option<ModelBounds> {
+    let first = vertices.first()?.position;
+    let (mut min, mut max) = (first, first);
+    for v in vertices {
+        let p = v.position;
+        if !(p.x.is_finite() && p.y.is_finite() && p.z.is_finite()) {
+            return None;
+        }
+        min = Vector3::new(min.x.min(p.x), min.y.min(p.y), min.z.min(p.z));
+        max = Vector3::new(max.x.max(p.x), max.y.max(p.y), max.z.max(p.z));
+    }
+    let center = (min + max) * 0.5;
+    let radius = vertices
+        .iter()
+        .map(|v| (v.position - center).length())
+        .fold(0.0_f32, f32::max);
+    Some(ModelBounds { center, radius })
+}
+
+/// Camera plus a fixed pixels-per-world-unit scale derived once from the
+/// model radius, so rotating never re-fits (no zoom pulsing) and the zoom
+/// factor is the only thing that changes apparent size.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrbitView {
+    pub camera: OrbitCamera,
+    pub base_scale: f32,
+}
+
+impl OrbitView {
+    /// Scale such that the bounding sphere fits the viewport minus margin at
+    /// zoom 1 from any orientation.
+    pub fn new(
+        camera: OrbitCamera,
+        bounds: &ModelBounds,
+        viewport: Viewport,
+    ) -> Result<Self, MappingError> {
+        if viewport.width == 0
+            || viewport.height == 0
+            || !(0.0..0.5).contains(&viewport.margin_ratio)
+        {
+            return Err(MappingError::InvalidViewport);
+        }
+        if !bounds.radius.is_finite() {
+            return Err(MappingError::NonFinitePosition);
+        }
+        let available =
+            (viewport.width.min(viewport.height) as f32) * (1.0 - 2.0 * viewport.margin_ratio);
+        let radius = if bounds.radius > 0.0 {
+            bounds.radius
+        } else {
+            1.0
+        };
+        Ok(Self {
+            camera,
+            base_scale: available / (2.0 * radius),
+        })
+    }
+
+    pub fn scale(&self) -> f32 {
+        self.base_scale * self.camera.zoom
+    }
+}
+
+/// Rewrites every `transformed_position` into `(screen_x, screen_y, depth)`:
+/// the point is expressed in the camera basis, scaled by `base_scale * zoom`
+/// and centered in the viewport; `depth` is the view-space distance along
+/// `forward` (smaller is nearer). Call once per frame after the vertex
+/// shader and before primitive assembly.
+pub fn project_orbit(
+    vertices: &mut [Vertex],
+    view: &OrbitView,
+    width: u32,
+    height: u32,
+) -> Result<(), MappingError> {
+    if width == 0 || height == 0 {
+        return Err(MappingError::InvalidViewport);
+    }
+    let s = view.scale();
+    if !s.is_finite() || s <= 0.0 {
+        return Err(MappingError::NonFinitePosition);
+    }
+    let cx = width as f32 / 2.0;
+    let cy = height as f32 / 2.0;
+    for v in vertices.iter_mut() {
+        let p = v.transformed_position;
+        if !(p.x.is_finite() && p.y.is_finite() && p.z.is_finite()) {
+            return Err(MappingError::NonFinitePosition);
+        }
+        let e = view.camera.world_to_view(p);
+        v.transformed_position = Vector3::new(cx + e.x * s, cy - e.y * s, e.z);
+    }
+    Ok(())
+}

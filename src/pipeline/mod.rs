@@ -18,6 +18,9 @@ pub use orbit_camera::{CameraBasis, OrbitCamera, ViewPreset};
 pub use primitive::{IncompletePrimitive, primitive_assembly};
 pub use rasterizer::{rasterize, rasterize_with_mode};
 pub use render::{Projection, RenderError, RenderStats, render, render_with_mode};
-pub use screen_mapping::{MappingError, ScreenFit, ViewPlane, Viewport, fit_to_viewport};
+pub use screen_mapping::{
+    MappingError, ModelBounds, OrbitView, ScreenFit, ViewPlane, Viewport, fit_to_viewport,
+    model_bounds, project_orbit,
+};
 pub use uniforms::Uniforms;
 pub use vertex_shader::vertex_shader;

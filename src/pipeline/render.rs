@@ -10,8 +10,8 @@
 
 use crate::geometry::Vertex;
 use crate::pipeline::{
-    IncompletePrimitive, MappingError, Uniforms, ViewPlane, Viewport, fit_to_viewport,
-    fragment_shader, primitive_assembly, rasterize_with_mode, vertex_shader,
+    IncompletePrimitive, MappingError, OrbitView, Uniforms, ViewPlane, Viewport, fit_to_viewport,
+    fragment_shader, primitive_assembly, project_orbit, rasterize_with_mode, vertex_shader,
 };
 use crate::rasterization::{RasterBounds, TriangleMode};
 use crate::rendering::Framebuffer;
@@ -24,6 +24,8 @@ pub enum Projection {
     Screen,
     /// Orthographic fit of the chosen plane into the framebuffer.
     Fit { plane: ViewPlane, margin_ratio: f32 },
+    /// Orbit camera with a fixed model-derived scale; writes view depth.
+    Orbit(OrbitView),
 }
 
 /// Real counts from the run, for diagnostics and tests.
@@ -81,13 +83,24 @@ pub fn render_with_mode(
         .iter()
         .map(|v| vertex_shader(v, uniforms))
         .collect();
-    if let Projection::Fit {
-        plane,
-        margin_ratio,
-    } = projection
-    {
-        let viewport = Viewport::new(framebuffer.width(), framebuffer.height(), margin_ratio);
-        fit_to_viewport(&mut transformed, plane, viewport).map_err(RenderError::Mapping)?;
+    match projection {
+        Projection::Screen => {}
+        Projection::Fit {
+            plane,
+            margin_ratio,
+        } => {
+            let viewport = Viewport::new(framebuffer.width(), framebuffer.height(), margin_ratio);
+            fit_to_viewport(&mut transformed, plane, viewport).map_err(RenderError::Mapping)?;
+        }
+        Projection::Orbit(view) => {
+            project_orbit(
+                &mut transformed,
+                &view,
+                framebuffer.width(),
+                framebuffer.height(),
+            )
+            .map_err(RenderError::Mapping)?;
+        }
     }
 
     // 2. Primitive assembly.
