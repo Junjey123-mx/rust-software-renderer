@@ -4,10 +4,13 @@
 //! compute the three barycentric weights `w_i = E(opposite edge, P) / area2`
 //! and emit a fragment when the point is inside under the shared top-left
 //! rule. Winding is normalised locally; zero-area triangles emit nothing.
+//! The fragment depth is the barycentric interpolation of the vertices'
+//! `transformed_position.z` (view depth when the orbit projection is used).
 
 use crate::geometry::Vertex;
 use crate::rasterization::coverage::{
-    Point, RasterBounds, center_range, edge, edge_accepts, orient, pixel_center, vertex_point,
+    Point, RasterBounds, center_range, edge, edge_accepts, orient_with_depth, pixel_center,
+    vertex_point,
 };
 use crate::rendering::Fragment;
 
@@ -29,7 +32,10 @@ pub fn fill_barycentric(a: &Vertex, b: &Vertex, c: &Vertex, bounds: RasterBounds
     if bounds.is_empty() {
         return Vec::new();
     }
-    let Some((tri, area2)) = orient(vertex_point(a), vertex_point(b), vertex_point(c)) else {
+    let depths = [a, b, c].map(|v| v.transformed_position.z as f64);
+    let Some((tri, z, area2)) =
+        orient_with_depth(vertex_point(a), vertex_point(b), vertex_point(c), depths)
+    else {
         return Vec::new();
     };
     let xs = tri.map(|p| p.0);
@@ -54,8 +60,9 @@ pub fn fill_barycentric(a: &Vertex, b: &Vertex, c: &Vertex, bounds: RasterBounds
         let py = pixel_center(y);
         for x in x0..=x1 {
             let p = (pixel_center(x), py);
-            if barycentric_weights(&tri, area2, p).is_some() {
-                fragments.push(Fragment::new(x as f32, y as f32, a.color, 0.0));
+            if let Some([wa, wb, wc]) = barycentric_weights(&tri, area2, p) {
+                let depth = (wa * z[0] + wb * z[1] + wc * z[2]) as f32;
+                fragments.push(Fragment::new(x as f32, y as f32, a.color, depth));
             }
         }
     }

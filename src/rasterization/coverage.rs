@@ -67,6 +67,52 @@ pub fn orient(a: Point, b: Point, c: Point) -> Option<([Point; 3], f64)> {
     }
 }
 
+/// `orient` plus the per-vertex depths reordered to match the returned
+/// triangle (B and C are swapped together with their depths).
+pub fn orient_with_depth(
+    a: Point,
+    b: Point,
+    c: Point,
+    z: [f64; 3],
+) -> Option<([Point; 3], [f64; 3], f64)> {
+    let (tri, area2) = orient(a, b, c)?;
+    let depths = if tri[1] == b { z } else { [z[0], z[2], z[1]] };
+    Some((tri, depths, area2))
+}
+
+/// Plane `z(x, y) = z0 + dzdx * (x - x0) + dzdy * (y - y0)` through the three
+/// vertices of a non-degenerate triangle. Used by the scanline fill to carry
+/// view depth across a span without evaluating barycentric weights.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DepthPlane {
+    x0: f64,
+    y0: f64,
+    z0: f64,
+    dzdx: f64,
+    dzdy: f64,
+}
+
+impl DepthPlane {
+    pub fn new(tri: &[Point; 3], z: [f64; 3], area2: f64) -> Self {
+        let [(x0, y0), (x1, y1), (x2, y2)] = *tri;
+        // Solve the 2x2 system for the gradient; the determinant is -area2.
+        let det = -area2;
+        let dzdx = ((z[1] - z[0]) * (y2 - y0) - (z[2] - z[0]) * (y1 - y0)) / det;
+        let dzdy = ((x1 - x0) * (z[2] - z[0]) - (x2 - x0) * (z[1] - z[0])) / det;
+        Self {
+            x0,
+            y0,
+            z0: z[0],
+            dzdx,
+            dzdy,
+        }
+    }
+
+    pub fn at(&self, p: Point) -> f64 {
+        self.z0 + self.dzdx * (p.0 - self.x0) + self.dzdy * (p.1 - self.y0)
+    }
+}
+
 /// Top-left rule for edge `a -> b` of a positively oriented triangle.
 pub fn edge_accepts(a: Point, b: Point, e: f64) -> bool {
     e > 0.0 || (e == 0.0 && (b.1 > a.1 || (b.1 == a.1 && b.0 < a.0)))
@@ -150,6 +196,24 @@ mod tests {
         assert!(covers(&t, (0.0, 0.0)));
         assert!(!covers(&t, (10.0, 0.0)));
         assert!(!covers(&t, (0.0, 10.0)));
+    }
+
+    #[test]
+    fn depth_plane_reproduces_vertex_depths_and_orient_keeps_them_aligned() {
+        let (tri, z, area2) =
+            orient_with_depth((0.0, 0.0), (10.0, 0.0), (0.0, 10.0), [1.0, 2.0, 3.0]).unwrap();
+        // Input was negatively oriented, so B and C (and their depths) swapped.
+        assert_eq!(tri, [(0.0, 0.0), (0.0, 10.0), (10.0, 0.0)]);
+        assert_eq!(z, [1.0, 3.0, 2.0]);
+        let plane = DepthPlane::new(&tri, z, area2);
+        for (p, zz) in tri.iter().zip(z) {
+            assert!((plane.at(*p) - zz).abs() < 1e-9);
+        }
+        assert!((plane.at((5.0, 5.0)) - 2.5).abs() < 1e-9);
+        let (tri2, z2, _) =
+            orient_with_depth((0.0, 0.0), (0.0, 10.0), (10.0, 0.0), [1.0, 3.0, 2.0]).unwrap();
+        assert_eq!((tri2, z2), (tri, z));
+        assert!(orient_with_depth((0.0, 0.0), (5.0, 5.0), (10.0, 10.0), [0.0; 3]).is_none());
     }
 
     #[test]

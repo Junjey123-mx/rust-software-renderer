@@ -7,11 +7,13 @@
 //! only the one or two pixels at each end are classified with the shared
 //! top-left edge rule. A horizontal edge lying exactly on the sample line is
 //! owned or rejected as a whole according to the same rule. This never walks
-//! the full bounding box and never calls the barycentric routine.
+//! the full bounding box and never calls the barycentric routine. Depth is
+//! carried by the triangle's plane equation evaluated at each pixel center.
 
 use crate::geometry::Vertex;
 use crate::rasterization::coverage::{
-    Point, RasterBounds, center_range, covers, edge_accepts, orient, pixel_center, vertex_point,
+    DepthPlane, Point, RasterBounds, center_range, covers, edge_accepts, orient_with_depth,
+    pixel_center, vertex_point,
 };
 use crate::rendering::Fragment;
 
@@ -46,9 +48,13 @@ pub fn fill_scanline(a: &Vertex, b: &Vertex, c: &Vertex, bounds: RasterBounds) -
     if bounds.is_empty() {
         return Vec::new();
     }
-    let Some((tri, _area2)) = orient(vertex_point(a), vertex_point(b), vertex_point(c)) else {
+    let depths = [a, b, c].map(|v| v.transformed_position.z as f64);
+    let Some((tri, z, area2)) =
+        orient_with_depth(vertex_point(a), vertex_point(b), vertex_point(c), depths)
+    else {
         return Vec::new();
     };
+    let plane = DepthPlane::new(&tri, z, area2);
     let min_y = tri.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
     let max_y = tri.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
     let Some((row0, row1)) = center_range(min_y, max_y, bounds.height) else {
@@ -71,8 +77,14 @@ pub fn fill_scanline(a: &Vertex, b: &Vertex, c: &Vertex, bounds: RasterBounds) -
         };
         for x in c0..=c1 {
             let at_end = x < c0 + 2 || x > c1 - 2;
-            if !at_end || covers(&tri, (pixel_center(x), sy)) {
-                fragments.push(Fragment::new(x as f32, y as f32, a.color, 0.0));
+            let p = (pixel_center(x), sy);
+            if !at_end || covers(&tri, p) {
+                fragments.push(Fragment::new(
+                    x as f32,
+                    y as f32,
+                    a.color,
+                    plane.at(p) as f32,
+                ));
             }
         }
     }
