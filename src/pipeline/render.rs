@@ -10,8 +10,9 @@
 
 use crate::geometry::Vertex;
 use crate::pipeline::{
-    IncompletePrimitive, MappingError, OrbitView, Uniforms, ViewPlane, Viewport, fit_to_viewport,
-    fragment_shader, primitive_assembly, project_orbit, rasterize_with_mode, vertex_shader,
+    DirectionalLight, IncompletePrimitive, MappingError, OrbitView, Uniforms, ViewPlane, Viewport,
+    fit_to_viewport, fragment_shader, primitive_assembly, project_orbit, rasterize_with_mode,
+    shade_faces, vertex_shader,
 };
 use crate::rasterization::{RasterBounds, TriangleMode};
 use crate::rendering::Framebuffer;
@@ -59,6 +60,9 @@ pub struct RenderSettings {
     /// Resolve overlapping filled faces with the depth buffer (nearest wins).
     /// Wireframe always draws every edge regardless of this flag.
     pub depth_test: bool,
+    /// Flat-shade filled faces from their normals. Wireframe keeps the
+    /// vertex colors so outlines stay bright.
+    pub shading: Option<DirectionalLight>,
 }
 
 /// Laboratory 4 entry point: wireframe rendering.
@@ -110,7 +114,10 @@ pub fn render_interactive(
         vertex_array,
         Projection::Orbit(view),
         mode,
-        RenderSettings { depth_test: true },
+        RenderSettings {
+            depth_test: true,
+            shading: Some(DirectionalLight::default()),
+        },
     )
 }
 
@@ -146,6 +153,15 @@ pub fn render_with_settings(
             )
             .map_err(RenderError::Mapping)?;
         }
+    }
+
+    // Demonstration shading (interactive filled modes): per-face color from
+    // the model-space normal, computed before assembly so every fragment of
+    // the face inherits it through the unchanged passthrough shader.
+    if let Some(light) = settings.shading
+        && mode != TriangleMode::Wireframe
+    {
+        shade_faces(&mut transformed, &light);
     }
 
     // 2. Primitive assembly.

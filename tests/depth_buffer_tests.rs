@@ -92,7 +92,10 @@ fn crossing_triangles_render_the_same_in_both_draw_orders() {
         TriangleMode::FilledBarycentric,
         TriangleMode::FilledScanline,
     ] {
-        let settings = RenderSettings { depth_test: true };
+        let settings = RenderSettings {
+            depth_test: true,
+            shading: None,
+        };
         let mut f1 = Framebuffer::new(100, 100);
         let mut f2 = Framebuffer::new(100, 100);
         render_with_settings(
@@ -141,7 +144,10 @@ fn moving_a_face_closer_changes_the_visible_winner() {
         BLUE,
         [(10.0, 10.0, 9.0), (90.0, 10.0, 9.0), (50.0, 90.0, 9.0)],
     );
-    let settings = RenderSettings { depth_test: true };
+    let settings = RenderSettings {
+        depth_test: true,
+        shading: None,
+    };
     let mut scene = red.clone();
     scene.extend(near_blue);
     let mut fb = Framebuffer::new(100, 100);
@@ -184,7 +190,10 @@ fn wireframe_ignores_the_depth_flag_and_draws_every_edge() {
         &red,
         Projection::Screen,
         TriangleMode::Wireframe,
-        RenderSettings { depth_test: true },
+        RenderSettings {
+            depth_test: true,
+            shading: None,
+        },
     )
     .unwrap();
     render_with_mode(

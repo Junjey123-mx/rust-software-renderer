@@ -4,6 +4,7 @@
 //! screen mapping, rasterization coordination,
 //! and fragment processing.
 
+pub mod face_shading;
 pub mod fragment_shader;
 pub mod orbit_camera;
 pub mod primitive;
@@ -13,6 +14,7 @@ pub mod screen_mapping;
 pub mod uniforms;
 pub mod vertex_shader;
 
+pub use face_shading::{DirectionalLight, face_normal, intensity, shade_faces};
 pub use fragment_shader::fragment_shader;
 pub use orbit_camera::{CameraBasis, OrbitCamera, ViewPreset};
 pub use primitive::{IncompletePrimitive, primitive_assembly};
