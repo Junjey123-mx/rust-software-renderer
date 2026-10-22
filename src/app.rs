@@ -35,6 +35,9 @@ use std::path::PathBuf;
 ///   so an external profiler can sample it. Default: both fills, 300 each.
 /// * `--interactive`: orbit camera around the ship with keyboard controls
 ///   (arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top).
+/// * `--view oblique|top|front|side`: starting orbit preset (implies the
+///   orbit projection; add `--interactive` for keyboard control).
+/// * `--help`: print this summary and exit.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct CliArgs {
     pub obj: Option<PathBuf>,
@@ -47,7 +50,22 @@ pub struct CliArgs {
     pub profile_mode: Option<TriangleMode>,
     pub profile_iterations: Option<usize>,
     pub interactive: bool,
+    pub view: Option<ViewPreset>,
+    pub help: bool,
 }
+
+pub const USAGE: &str = "\
+Usage: rust-software-renderer [options]
+  --scene ship|triangles         model (default ship) or the Lab 5 triangle scene
+  --mode wireframe|barycentric|scanline   rasterization mode (default wireframe)
+  --obj <file>                   another triangulated OBJ (scene ship only)
+  --screenshot <file>            save the first frame and exit
+  --interactive                  orbit camera with keyboard control (scene ship)
+  --view oblique|top|front|side  starting camera preset (scene ship)
+  --benchmark-triangles [--benchmark-output <dir>]   headless timing, CSV output
+  --benchmark-triangles --profile [--profile-mode m] [--profile-iterations N]
+  --help                         this text
+Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Scene {
@@ -86,6 +104,14 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<CliArgs, St
             "--benchmark-triangles" => out.benchmark = true,
             "--profile" => out.profile = true,
             "--interactive" => out.interactive = true,
+            "--help" | "-h" => out.help = true,
+            "--view" => {
+                out.view = Some(
+                    it.next()
+                        .ok_or("--view requires oblique, top, front or side")?
+                        .parse()?,
+                );
+            }
             "--profile-mode" => {
                 let mode: TriangleMode = it
                     .next()
@@ -301,6 +327,10 @@ fn run_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>>
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(std::env::args().skip(1))?;
+    if args.help {
+        println!("{USAGE}");
+        return Ok(());
+    }
     if args.profile && !args.benchmark {
         return Err("--profile requires --benchmark-triangles".into());
     }
@@ -328,9 +358,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 mesh.triangle_count()
             );
             let vertices = mesh.expand_vertices(Vertex::DEFAULT_COLOR);
-            let projection = if args.interactive {
+            let projection = if args.interactive || args.view.is_some() {
                 let bounds = model_bounds(&vertices).ok_or("model has no finite geometry")?;
-                let camera = OrbitCamera::new(bounds.center, ViewPreset::default());
+                let camera = OrbitCamera::new(bounds.center, args.view.unwrap_or_default());
                 let viewport = Viewport::new(config.width, config.height, config.margin_ratio);
                 Projection::Orbit(OrbitView::new(camera, &bounds, viewport)?)
             } else {
@@ -345,8 +375,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             if args.obj.is_some() {
                 return Err("--obj cannot be combined with --scene triangles".into());
             }
-            if args.interactive {
-                return Err("--interactive requires --scene ship".into());
+            if args.interactive || args.view.is_some() {
+                return Err("--interactive and --view require --scene ship".into());
             }
             let scene = triangle_scene();
             println!(
@@ -359,7 +389,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     let uniforms = Uniforms::default();
 
-    let title = if args.interactive {
+    let title = if matches!(projection, Projection::Orbit(_)) {
         "Rust Software Renderer - Lab 5 Interactive"
     } else {
         config.window_title
@@ -383,7 +413,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut projection = projection;
     let mut reported = false;
     while !rl.window_should_close() {
-        if let Projection::Orbit(view) = &mut projection {
+        if let (Projection::Orbit(view), true) = (&mut projection, args.interactive) {
             let dt = rl.get_frame_time();
             let (actions, new_mode) = poll_input(&rl);
             for action in actions {

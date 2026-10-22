@@ -151,6 +151,8 @@ fn cli_arguments_are_validated() {
             profile_mode: None,
             profile_iterations: None,
             interactive: false,
+            view: None,
+            help: false,
         }
     );
     assert_eq!(
