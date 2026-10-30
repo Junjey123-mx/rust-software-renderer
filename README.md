@@ -157,9 +157,9 @@ Los videos son salida real del programa, no capturas de escritorio ni animacione
 
 `triangle()` del Lab 4 dibuja cada cara con tres llamadas a `line()` (Bresenham) y los fragmentos se escriben sin prueba de profundidad: por eso se ven a la vez las aristas delanteras y posteriores del fuselaje, las alas y los motores. En la ventana: `--mode wireframe` o tecla `1`.
 
-<a href="docs/videos/lab5/01-wireframe-interactive.mp4"><img src="docs/videos/lab5/01-wireframe-preview.png" width="480" alt="Vista previa del video wireframe: la nave en contornos en vista oblicua"></a>
+<a href="docs/videos/lab5/01-wireframe-interactive.mp4"><img src="docs/videos/lab5/01-wireframe-interactive.gif" width="480" alt="Animación del recorrido wireframe: la nave en contornos desde arriba, oblicua, lateral, frontal y con zoom"></a>
 
-▶ [Ver el video wireframe](docs/videos/lab5/01-wireframe-interactive.mp4) (MP4 H.264, 32 s, 11,9 MB)
+▶ [Ver el video wireframe](docs/videos/lab5/01-wireframe-interactive.mp4) (MP4 H.264, 800×600, 30 FPS, 32 s, 11,9 MB). La animación de arriba es el mismo video en GIF a 480×360 y 15 FPS (6,1 MB).
 
 ### FilledBarycentric
 
