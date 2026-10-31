@@ -165,9 +165,9 @@ Los videos son salida real del programa, no capturas de escritorio ni animacione
 
 Cada triángulo se recorre dentro de su caja delimitadora recortada a la pantalla. En el centro de cada píxel se evalúan las tres funciones de arista con la regla top-left, y los pesos baricéntricos interpolan la profundidad que decide el Z-buffer. El color es el sombreado plano por cara (normal del modelo y luz direccional fija), así que las caras posteriores quedan ocultas por las delanteras en todos los ángulos. En la ventana: `--mode barycentric` o tecla `2`.
 
-<a href="docs/videos/lab5/02-barycentric-interactive.mp4"><img src="docs/videos/lab5/02-barycentric-preview.png" width="480" alt="Vista previa del video baricéntrico: la nave rellena y sombreada en vista oblicua"></a>
+<a href="docs/videos/lab5/02-barycentric-interactive.mp4"><img src="docs/videos/lab5/02-barycentric-interactive.gif" width="480" alt="Animación del recorrido baricéntrico: la nave rellena y sombreada desde arriba, oblicua, lateral, frontal y con zoom"></a>
 
-▶ [Ver el video baricéntrico](docs/videos/lab5/02-barycentric-interactive.mp4) (MP4 H.264, 32 s, 1,8 MB)
+▶ [Ver el video baricéntrico](docs/videos/lab5/02-barycentric-interactive.mp4) (MP4 H.264, 800×600, 30 FPS, 32 s, 1,8 MB). La animación de arriba es el mismo video en GIF a 480×360 y 15 FPS (3,2 MB).
 
 ### FilledScanline
 
