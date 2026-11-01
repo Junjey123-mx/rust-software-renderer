@@ -173,19 +173,19 @@ Cada triángulo se recorre dentro de su caja delimitadora recortada a la pantall
 
 El triángulo se recorre fila por fila: en cada línea de centros de píxel se calcula dónde la cruzan las aristas y se escribe el tramo horizontal completo. Solo los píxeles de los extremos se clasifican con la misma regla top-left. No llama al código baricéntrico y la profundidad se interpola con un plano en lugar de pesos. Con la misma cámara, los 960 fotogramas del framebuffer salieron idénticos byte a byte a los del video baricéntrico antes de codificarse (0 píxeles distintos), así que la equivalencia se comprobó con los datos y no solo a la vista. En la ventana: `--mode scanline` o tecla `3`.
 
-<a href="docs/videos/lab5/03-scanline-interactive.mp4"><img src="docs/videos/lab5/03-scanline-preview.png" width="480" alt="Vista previa del video scanline: la nave rellena y sombreada en vista oblicua"></a>
+<a href="docs/videos/lab5/03-scanline-interactive.mp4"><img src="docs/videos/lab5/03-scanline-interactive.gif" width="480" alt="Animación del recorrido scanline: la nave rellena y sombreada desde arriba, oblicua, lateral, frontal y con zoom"></a>
 
-▶ [Ver el video scanline](docs/videos/lab5/03-scanline-interactive.mp4) (MP4 H.264, 32 s, 1,8 MB)
+▶ [Ver el video scanline](docs/videos/lab5/03-scanline-interactive.mp4) (MP4 H.264, 800×600, 30 FPS, 32 s, 1,8 MB). La animación de arriba es el mismo video en GIF a 480×360 y 15 FPS (3,2 MB).
 
 ### Galería y reproducción
 
-| Modo | Video | Tamaño |
-|---|---|---|
-| Wireframe | [01-wireframe-interactive.mp4](docs/videos/lab5/01-wireframe-interactive.mp4) | 11,9 MB |
-| FilledBarycentric | [02-barycentric-interactive.mp4](docs/videos/lab5/02-barycentric-interactive.mp4) | 1,8 MB |
-| FilledScanline | [03-scanline-interactive.mp4](docs/videos/lab5/03-scanline-interactive.mp4) | 1,8 MB |
+| Modo | Video MP4 | Tamaño | Animación GIF | Tamaño |
+|---|---|---|---|---|
+| Wireframe | [01-wireframe-interactive.mp4](docs/videos/lab5/01-wireframe-interactive.mp4) | 11,9 MB | [01-wireframe-interactive.gif](docs/videos/lab5/01-wireframe-interactive.gif) | 6,1 MB |
+| FilledBarycentric | [02-barycentric-interactive.mp4](docs/videos/lab5/02-barycentric-interactive.mp4) | 1,8 MB | [02-barycentric-interactive.gif](docs/videos/lab5/02-barycentric-interactive.gif) | 3,2 MB |
+| FilledScanline | [03-scanline-interactive.mp4](docs/videos/lab5/03-scanline-interactive.mp4) | 1,8 MB | [03-scanline-interactive.gif](docs/videos/lab5/03-scanline-interactive.gif) | 3,2 MB |
 
-Los tres son H.264 High, yuv420p, 800×600, 30 FPS y 960 fotogramas, con `faststart` para reproducción progresiva en el navegador. El wireframe pesa más porque sus líneas de un píxel cambian en cada fotograma y no se comprimen como las superficies lisas.
+Los tres son H.264 High, yuv420p, 800×600, 30 FPS y 960 fotogramas, con `faststart` para reproducción progresiva en el navegador. El wireframe pesa más porque sus líneas de un píxel cambian en cada fotograma y no se comprimen como las superficies lisas. Los GIF son conversiones directas de esos MP4 (480×360, 15 FPS, 64 colores, en bucle) para que el recorrido se vea animado en GitHub, que no reproduce MP4 dentro de la página.
 
 Para recorrer las mismas vistas a mano en la ventana:
 
@@ -273,7 +273,7 @@ rust-software-renderer/
 │   ├── screenshots/lab4/                   final_render.png, 01-nave-wireframe.png
 │   ├── screenshots/lab5/                   01..03 escena sintética; 04..06 nave oblicua interactiva
 │   ├── interactive-views.md                cámara orbital, Z-buffer y sombreado (opcional)
-│   ├── videos/lab5/                        videos demostrativos MP4 de la vista interactiva y sus miniaturas
+│   ├── videos/lab5/                        videos demostrativos MP4 de la vista interactiva y sus GIF animados
 │   ├── results/lab5/                       benchmark_raw.csv, benchmark_summary.csv
 │   └── profiles/                           lab5-stack-sampler.sh, muestras y resúmenes
 ├── src/
