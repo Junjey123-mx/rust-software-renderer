@@ -2,9 +2,9 @@
 
 Esta funcionalidad **no es un requisito** del Ing. Dennis para los Laboratorios
 4 o 5; es una ampliación para explorar la nave `NaveBimotor` desde cualquier
-ángulo con los tres modos de rasterización ya entregados. Vive en la rama
-`feature/lab5-interactive-view` y no altera los oráculos de las pruebas, los
-CSV del benchmark ni las capturas anteriores.
+ángulo con los tres modos de rasterización ya entregados. Está integrada en la
+rama `lab5/triangle-filling` y no altera los oráculos de las pruebas, los CSV
+del benchmark ni las capturas anteriores.
 
 ## Uso
 
