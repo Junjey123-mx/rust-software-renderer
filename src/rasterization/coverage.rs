@@ -141,6 +141,24 @@ pub fn center_range(min: f64, max: f64, limit: u32) -> Option<(i32, i32)> {
     (first <= last).then_some((first, last))
 }
 
+/// Interpolation weights `(la, lb, lc)` of `p` with respect to the triangle
+/// `a, b, c` as given (it does not need to be oriented: swapping the winding
+/// swaps the matching weights only). The weights sum to one, are one-hot at
+/// the vertices and reproduce linear attributes exactly. Used after coverage,
+/// at the same pixel centers, by the laboratory six shaded stage. `None` for
+/// a degenerate or non-finite triangle or point.
+pub fn interpolation_weights(a: Point, b: Point, c: Point, p: Point) -> Option<[f64; 3]> {
+    let area2 = edge(a, b, c);
+    if !area2.is_finite() || area2 == 0.0 || !(p.0.is_finite() && p.1.is_finite()) {
+        return None;
+    }
+    Some([
+        edge(b, c, p) / area2,
+        edge(c, a, p) / area2,
+        edge(a, b, p) / area2,
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
