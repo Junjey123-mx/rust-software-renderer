@@ -1,7 +1,8 @@
 //! Application lifecycle and orchestration.
 
 use crate::benchmark::{
-    BenchmarkConfig, build_workload, profile_workload, run_benchmark, write_csv,
+    BenchmarkConfig, ShaderBenchConfig, build_workload, profile_workload, run_benchmark,
+    run_shader_benchmark, write_csv, write_shader_csv,
 };
 use crate::config::AppConfig;
 use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
@@ -70,6 +71,7 @@ Usage: rust-software-renderer [options]
   --time <s> --freeze-time --light-azimuth <deg> --light-elevation <deg>
   --set <param>=<value>   --debug-view <view>   --threads <n>
   --record <s> [--fps n] [--timeline material|orbit|light|showcase]   raw rgb24 frames on stdout
+  --benchmark-shaders [--benchmark-output <dir>]   headless shader timing (default docs/results/lab6)
 Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit
 Celestial keys: TAB body, SPACE pause, J/L I/K light, N debug view, [ ] main parameter, C/H/B/P toggle clouds, shadows, bump and parallax when the body provides them";
 
@@ -335,6 +337,32 @@ fn run_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// Headless laboratory 6 shader benchmark (no window).
+fn run_shader_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>> {
+    let config = ShaderBenchConfig::default();
+    println!(
+        "Shader benchmark: 3 bodies x 2 filled modes x threads {:?} (0 = all), {}x{}, {} warm-up + {} rounds, t = {} s",
+        config.threads, config.width, config.height, config.warmup, config.rounds, config.time
+    );
+    let rows = run_shader_benchmark(&config)?;
+    for r in &rows {
+        println!(
+            "{:<9} {:<12} {:>2} threads: {:>7} fragments, raster {:>8.2} ms, shading {:>8.2} ms, total {:>8.2} ms",
+            r.body.name(),
+            r.mode.name(),
+            r.threads,
+            r.fragments_shaded,
+            r.median_raster.as_secs_f64() * 1e3,
+            r.median_shade.as_secs_f64() * 1e3,
+            r.median_total.as_secs_f64() * 1e3
+        );
+    }
+    let path = output_dir.join("shader_benchmark.csv");
+    write_shader_csv(&rows, &path)?;
+    println!("Wrote {}", path.display());
+    Ok(())
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let (lab6, rest) = crate::celestial::cli::extract(raw)?;
@@ -344,6 +372,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     crate::celestial::cli::validate(&args, &lab6)?;
+    if lab6.benchmark_shaders {
+        let dir = args
+            .benchmark_output
+            .unwrap_or_else(|| PathBuf::from("docs/results/lab6"));
+        return run_shader_benchmark_cli(&dir);
+    }
     if args.profile && !args.benchmark {
         return Err("--profile requires --benchmark-triangles".into());
     }

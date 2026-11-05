@@ -27,6 +27,8 @@ pub struct CelestialArgs {
     pub fps: Option<u32>,
     /// `--timeline <t>` of the recording (default material).
     pub timeline: Option<Timeline>,
+    /// `--benchmark-shaders`: headless timing of the three shaders.
+    pub benchmark_shaders: bool,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -74,6 +76,7 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
                 out.time = Some(t);
             }
             "--freeze-time" => out.freeze_time = true,
+            "--benchmark-shaders" => out.benchmark_shaders = true,
             "--light-azimuth" => {
                 out.light_azimuth = Some(number(
                     value(&mut it, "--light-azimuth")?,
@@ -144,7 +147,15 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
 /// Cross-checks the laboratory 6 options against the parsed scene.
 pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     let celestial = matches!(cli.scene, Scene::Celestial(_));
-    if !celestial && !lab6.is_empty() {
+    if lab6.benchmark_shaders && cli.benchmark {
+        return Err("--benchmark-shaders cannot be combined with --benchmark-triangles".into());
+    }
+    // The shader benchmark renders every body itself, so it needs no scene.
+    let scene_options = CelestialArgs {
+        benchmark_shaders: false,
+        ..lab6.clone()
+    };
+    if !celestial && !scene_options.is_empty() {
         return Err(
             "--time, --freeze-time, --light-azimuth, --light-elevation, --set, --debug-view, --threads and --record require --scene crown, entrance or house"
                 .into(),

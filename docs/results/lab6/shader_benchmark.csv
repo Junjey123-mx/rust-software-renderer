@@ -1,0 +1,13 @@
+body,mode,threads,width,height,rounds,fragments_shaded,median_raster_ms,median_shade_ms,median_total_ms
+crown,barycentric,1,800,600,5,172152,6.376,241.853,251.583
+crown,barycentric,20,800,600,5,172152,12.524,54.250,66.139
+crown,scanline,1,800,600,5,172152,4.656,246.863,251.744
+crown,scanline,20,800,600,5,172152,7.513,55.545,63.058
+entrance,barycentric,1,800,600,5,172152,5.640,1371.226,1376.838
+entrance,barycentric,20,800,600,5,172152,8.143,227.903,234.935
+entrance,scanline,1,800,600,5,172152,4.316,1410.525,1414.841
+entrance,scanline,20,800,600,5,172152,6.064,262.962,269.026
+house,barycentric,1,800,600,5,172152,5.686,91.462,97.141
+house,barycentric,20,800,600,5,172152,5.628,11.315,16.933
+house,scanline,1,800,600,5,172152,4.239,89.391,93.629
+house,scanline,20,800,600,5,172152,9.165,21.784,30.494
