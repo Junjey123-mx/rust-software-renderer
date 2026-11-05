@@ -118,9 +118,11 @@ fn cloud_layer_is_a_rigid_rotation_without_evolution() {
 #[test]
 fn clouds_switch_matches_zero_opacity() {
     let off = frame_at(EntranceParams { clouds: 0.0, ..p() }, 4.0);
+    // The switch removes the whole layer: invisible clouds and no shadows.
     let clear = frame_at(
         EntranceParams {
             cloud_opacity: 0.0,
+            cloud_shadows: 0.0,
             ..p()
         },
         4.0,
@@ -159,4 +161,138 @@ fn clouds_add_no_geometry() {
         counts.push(scene.vertices.len());
     }
     assert_eq!(counts, vec![576, 576]);
+}
+
+// ---- C17: light-aligned cloud shadows (E08) ----
+
+use rust_software_renderer::pipeline::SurfaceSample;
+use rust_software_renderer::shading::lighting::shell_exit;
+use rust_software_renderer::shading::math::smoothstep;
+use rust_software_renderer::shading::sphere::angular_distance;
+
+fn surface(n: Vector3) -> SurfaceSample {
+    SurfaceSample {
+        x: 0,
+        y: 0,
+        depth: 0.0,
+        object_position: n,
+        normal: n,
+        face_normal: n,
+    }
+}
+
+#[test]
+fn shadow_is_the_cloud_mask_sampled_toward_the_light() {
+    let f = frame_at(p(), 6.0);
+    let l = default_light();
+    let mut shadowed = 0;
+    for n in directions(4096) {
+        let mu = n.dot(l);
+        if mu <= 0.0 {
+            continue;
+        }
+        let q = shell_exit(n, l, p().cloud_altitude);
+        let expected = 1.0 - p().shadow_strength * f.clouds.mask(q) * smoothstep(0.0, 0.1, mu);
+        assert_eq!(f.clouds.shadow(n, l), expected);
+        if expected < 0.9 {
+            shadowed += 1;
+        }
+    }
+    assert!(shadowed > 100, "{shadowed}");
+}
+
+#[test]
+fn zero_strength_or_switch_casts_no_shadow() {
+    let l = default_light();
+    for params in [
+        EntranceParams {
+            shadow_strength: 0.0,
+            ..p()
+        },
+        EntranceParams {
+            cloud_shadows: 0.0,
+            ..p()
+        },
+    ] {
+        let f = frame_at(params, 6.0);
+        for n in directions(1024) {
+            assert_eq!(f.clouds.shadow(n, l), 1.0);
+        }
+    }
+}
+
+#[test]
+fn turning_the_light_moves_shadows_not_clouds() {
+    let l1 = default_light();
+    let l2 = direction_from_angles(-150.0_f32.to_radians(), 20.0_f32.to_radians());
+    let a = prepare(&p(), &uniforms(6.0, l1), DebugView::None);
+    let b = prepare(&p(), &uniforms(6.0, l2), DebugView::None);
+    let mut moved = 0;
+    let dirs = directions(4096);
+    for &n in &dirs {
+        assert_eq!(
+            a.clouds.mask(n),
+            b.clouds.mask(n),
+            "clouds ignore the light"
+        );
+        if n.dot(l1) > 0.2
+            && n.dot(l2) > 0.2
+            && (a.clouds.shadow(n, l1) - b.clouds.shadow(n, l2)).abs() > 0.05
+        {
+            moved += 1;
+        }
+    }
+    assert!(moved > 100, "{moved}");
+}
+
+#[test]
+fn subsolar_shadow_has_no_offset_and_terminator_shadow_stretches() {
+    let h = p().cloud_altitude;
+    let l = default_light();
+    assert!(
+        (shell_exit(l, l, h) - l).length() < 1e-6,
+        "q = n under the sun"
+    );
+    // A direction with n . l = 0.05, close to the terminator.
+    let (t, _) = rust_software_renderer::shading::sphere::tangent_frame(l);
+    let mu: f32 = 0.05;
+    let n = (l * mu + t * (1.0 - mu * mu).sqrt()).normalized();
+    let offset = angular_distance(n, shell_exit(n, l, h));
+    assert!(offset > 0.25, "{offset}");
+}
+
+#[test]
+fn night_side_is_not_shadowed() {
+    let f = frame_at(p(), 6.0);
+    let l = default_light();
+    for n in directions(2048) {
+        if n.dot(l) <= 0.0 {
+            assert_eq!(f.clouds.shadow(n, l), 1.0);
+        }
+    }
+}
+
+#[test]
+fn shadows_only_darken_direct_light() {
+    let with = frame_at(p(), 6.0);
+    let without = frame_at(
+        EntranceParams {
+            cloud_shadows: 0.0,
+            ..p()
+        },
+        6.0,
+    );
+    let l = default_light();
+    let mut darker = 0;
+    for n in directions(4096) {
+        let (a, b) = (with.surface_color(n), without.surface_color(n));
+        assert!(a.x <= b.x + 1e-6 && a.y <= b.y + 1e-6 && a.z <= b.z + 1e-6);
+        if n.dot(l) <= 0.0 {
+            assert_eq!(a, b, "night side and emission unchanged");
+        } else if (b - a).length() > 1e-3 {
+            darker += 1;
+        }
+        assert!(with.shade(&surface(n)).x.is_finite());
+    }
+    assert!(darker > 100, "{darker}");
 }

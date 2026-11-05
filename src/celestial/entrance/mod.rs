@@ -40,6 +40,9 @@ params! {
         cloud_evolution: 0.05, 0.0, 0.5, "slow change of the cloud shapes per second";
         cloud_softness: 0.12, 0.01, 0.4, "softness of the cloud edges";
         cloud_opacity: 0.85, 0.0, 1.0, "opacity of the densest clouds";
+        cloud_shadows: 1.0, 0.0, 1.0, "switch: shadows cast by the clouds (0 or 1)";
+        shadow_strength: 0.65, 0.0, 1.0, "how much a dense cloud blocks direct light";
+        cloud_altitude: 0.07, 0.0, 0.3, "height of the cloud shell; offsets the shadows";
     }
 }
 
@@ -94,6 +97,12 @@ impl Frame {
 
     /// Lit ground color without clouds.
     pub fn surface_color(&self, n: Vector3) -> Vector3 {
+        let l = self.uniforms.light_direction;
+        // Cloud shadows attenuate direct light only; emission is untouched.
+        let shadow = self.clouds.shadow(n, l);
+        if self.debug == DebugView::Shadows {
+            return Vector3::one() * (1.0 - shadow);
+        }
         let ground = terrain::ground(n, self);
         match self.debug {
             DebugView::Height => {
@@ -103,7 +112,7 @@ impl Frame {
             _ => {}
         }
         let albedo = terrain::albedo(ground.material, n, self);
-        let mut color = albedo * (0.06 + lambert(n, self.uniforms.light_direction));
+        let mut color = albedo * (0.06 + lambert(n, l) * shadow);
         if ground.material == TerrainMaterial::Crack {
             color += hex(0xFF7A00) * 0.15;
         }
