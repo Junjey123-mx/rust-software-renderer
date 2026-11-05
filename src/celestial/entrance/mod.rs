@@ -10,7 +10,7 @@ pub mod terrain;
 
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample, ViewPreset, direction_from_angles};
-use crate::shading::lighting::{lambert, wrap_lambert};
+use crate::shading::lighting::{bump_normal, lambert, wrap_lambert};
 use crate::shading::math::{hex, mix3};
 use crate::shading::sphere::hash_direction;
 use raylib::math::Vector3;
@@ -43,6 +43,9 @@ params! {
         cloud_shadows: 1.0, 0.0, 1.0, "switch: shadows cast by the clouds (0 or 1)";
         shadow_strength: 0.65, 0.0, 1.0, "how much a dense cloud blocks direct light";
         cloud_altitude: 0.07, 0.0, 0.3, "height of the cloud shell; offsets the shadows";
+        bump: 1.0, 0.0, 1.0, "switch: bump-mapped relief (0 or 1)";
+        bump_strength: 0.8, 0.0, 4.0, "how strongly the height gradient tilts the normal";
+        bump_epsilon: 0.004, 0.0005, 0.05, "finite-difference step of the gradient, radians";
     }
 }
 
@@ -95,6 +98,22 @@ impl Frame {
         mix3(surface, cloud, self.clouds.alpha(n))
     }
 
+    /// Normal used for lighting the ground: the geometric normal tilted by
+    /// the gradient of the full height field (bump mapping). Night, cloud
+    /// and shadow terms keep the geometric normal.
+    pub fn shading_normal(&self, n: Vector3) -> Vector3 {
+        let p = &self.params;
+        if p.bump < 0.5 {
+            return n;
+        }
+        bump_normal(
+            n,
+            |q| terrain::height(q, self),
+            p.bump_epsilon,
+            p.bump_strength,
+        )
+    }
+
     /// Lit ground color without clouds.
     pub fn surface_color(&self, n: Vector3) -> Vector3 {
         let l = self.uniforms.light_direction;
@@ -104,7 +123,9 @@ impl Frame {
             return Vector3::one() * (1.0 - shadow);
         }
         let ground = terrain::ground(n, self);
+        let lit_normal = self.shading_normal(n);
         match self.debug {
+            DebugView::Normals => return lit_normal * 0.5 + Vector3::new(0.5, 0.5, 0.5),
             DebugView::Height => {
                 return Vector3::one() * (0.5 + 0.5 * ground.height).clamp(0.0, 1.0);
             }
@@ -112,7 +133,7 @@ impl Frame {
             _ => {}
         }
         let albedo = terrain::albedo(ground.material, n, self);
-        let mut color = albedo * (0.06 + lambert(n, l) * shadow);
+        let mut color = albedo * (0.06 + lambert(lit_normal, l) * shadow);
         if ground.material == TerrainMaterial::Crack {
             color += hex(0xFF7A00) * 0.15;
         }
