@@ -104,3 +104,61 @@ fn specular_switch_makes_obsidian_matte() {
     let basalt = f.reflect_light(TerrainMaterial::Basalt, ALBEDO, n, l, mirror, 1.0);
     assert_eq!(a, basalt, "matte obsidian reflects like rock");
 }
+
+// ---- C20: glowing fissures on the night side (E02) ----
+
+/// Normal at a chosen angle to the light: `n . l = cos_angle`.
+fn normal_with(l: Vector3, n_dot_l: f32) -> Vector3 {
+    let (t, _) = rust_software_renderer::shading::sphere::tangent_frame(l);
+    (l * n_dot_l + t * (1.0 - n_dot_l * n_dot_l).sqrt()).normalized()
+}
+
+#[test]
+fn fissures_glow_brighter_at_night() {
+    let f = frame(p());
+    let l = unit(0.6, 0.4, 0.7);
+    let night = f.emission(1.0, 0.0, normal_with(l, -0.5), l);
+    let day = f.emission(1.0, 0.0, normal_with(l, 0.5), l);
+    assert!(
+        night.x >= 3.0 * day.x && day.x > 0.0,
+        "{night:?} vs {day:?}"
+    );
+    let off = frame(EntranceParams {
+        night_glow: 0.0,
+        ..p()
+    });
+    assert_eq!(
+        off.emission(1.0, 0.0, normal_with(l, -0.9), l),
+        Vector3::zero()
+    );
+}
+
+#[test]
+fn night_glow_is_monotonic_across_the_terminator() {
+    let f = frame(p());
+    let l = unit(0.6, 0.4, 0.7);
+    let mut previous = -1.0;
+    for i in 0..=200 {
+        let n_dot_l = 1.0 - 2.0 * i as f32 / 200.0;
+        let factor = f.night_factor(normal_with(l, n_dot_l), l);
+        assert!((0.0..=1.0).contains(&factor));
+        assert!(factor >= previous - 1e-6, "not monotonic at {n_dot_l}");
+        previous = factor;
+    }
+    assert_eq!(f.night_factor(normal_with(l, 0.5), l), 0.0);
+    assert_eq!(f.night_factor(normal_with(l, -0.5), l), 1.0);
+}
+
+#[test]
+fn night_lights_switch_keeps_day_level() {
+    let off = frame(EntranceParams {
+        night_lights: 0.0,
+        ..p()
+    });
+    let on = frame(p());
+    let l = unit(0.6, 0.4, 0.7);
+    let day = on.emission(1.0, 0.0, normal_with(l, 0.7), l);
+    for n_dot_l in [0.7, 0.0, -0.4, -0.95] {
+        assert_eq!(off.emission(1.0, 0.0, normal_with(l, n_dot_l), l), day);
+    }
+}

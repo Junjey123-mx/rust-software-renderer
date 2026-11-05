@@ -11,7 +11,7 @@ pub mod terrain;
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample, ViewPreset, direction_from_angles};
 use crate::shading::lighting::{blinn_phong, bump_normal, lambert, wrap_lambert};
-use crate::shading::math::{hex, mix3};
+use crate::shading::math::{hex, mix3, mixf, saturate, smoothstep};
 use crate::shading::sphere::hash_direction;
 use raylib::math::Vector3;
 use terrain::TerrainMaterial;
@@ -49,8 +49,14 @@ params! {
         specular: 1.0, 0.0, 1.0, "switch: glassy highlights on the obsidian plains (0 or 1)";
         specular_strength: 1.4, 0.0, 3.0, "brightness of the obsidian highlights";
         shininess: 24.0, 2.0, 256.0, "Blinn-Phong exponent: higher = tighter highlight";
+        night_lights: 1.0, 0.0, 1.0, "switch: fissures glow brighter on the night side (0 or 1)";
+        night_glow: 1.0, 0.0, 3.0, "emission of fissures and magma at full night";
+        terminator_width: 0.25, 0.02, 0.8, "softness of the day-night transition";
     }
 }
+
+/// Emission of fissures and magma on the day side.
+pub const DAY_GLOW: f32 = 0.12;
 
 /// Per-frame state of the rocky planet shader.
 #[derive(Debug, Clone)]
@@ -148,13 +154,35 @@ impl Frame {
         color
     }
 
+    /// Night factor in `[0, 1]` from the geometric normal: 0 on the day side,
+    /// rising smoothly across a terminator of width `terminator_width`.
+    pub fn night_factor(&self, n: Vector3, l: Vector3) -> f32 {
+        smoothstep(0.05, -self.params.terminator_width, n.dot(l))
+    }
+
+    /// Self-emission of fissures and molten crater floors: a dim day level
+    /// that rises to `night_glow` on the night side. A separate term, never
+    /// a darkened diffuse.
+    pub fn emission(&self, crack: f32, magma: f32, n: Vector3, l: Vector3) -> Vector3 {
+        let p = &self.params;
+        let level = if p.night_lights >= 0.5 {
+            mixf(DAY_GLOW, p.night_glow, self.night_factor(n, l))
+        } else {
+            DAY_GLOW
+        };
+        let core = saturate(crack.max(magma));
+        mix3(hex(0xD21F2B), hex(0xFF7A00), core) * ((crack + magma) * level)
+    }
+
     /// Lit ground color without clouds.
     pub fn surface_color(&self, n: Vector3) -> Vector3 {
         let l = self.uniforms.light_direction;
         // Cloud shadows attenuate direct light only; emission is untouched.
         let shadow = self.clouds.shadow(n, l);
-        if self.debug == DebugView::Shadows {
-            return Vector3::one() * (1.0 - shadow);
+        match self.debug {
+            DebugView::Shadows => return Vector3::one() * (1.0 - shadow),
+            DebugView::Night => return Vector3::one() * self.night_factor(n, l),
+            _ => {}
         }
         let ground = terrain::ground(n, self);
         let lit_normal = self.shading_normal(n);
@@ -168,10 +196,7 @@ impl Frame {
         }
         let albedo = terrain::albedo(ground.material, n, self);
         let v = self.uniforms.eye_direction;
-        let mut color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
-        if ground.material == TerrainMaterial::Crack {
-            color += hex(0xFF7A00) * 0.15;
-        }
-        color + mix3(hex(0xD21F2B), hex(0xFF7A00), ground.magma) * (0.4 * ground.magma)
+        let color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
+        color + self.emission(ground.crack, ground.magma, n, l)
     }
 }
