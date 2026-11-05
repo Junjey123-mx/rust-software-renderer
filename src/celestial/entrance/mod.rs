@@ -4,12 +4,13 @@
 //! `terrain`): obsidian plains, basalt, crimson highlands, slate mesas, ash
 //! rims and glowing fissures. Its only symbol is the spade.
 
+pub mod events;
 pub mod terrain;
 
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample, ViewPreset, direction_from_angles};
 use crate::shading::lighting::lambert;
-use crate::shading::math::hex;
+use crate::shading::math::{hex, mix3};
 use crate::shading::sphere::hash_direction;
 use raylib::math::Vector3;
 use terrain::TerrainMaterial;
@@ -24,6 +25,13 @@ params! {
         basin_radius: 0.62, 0.2, 1.2, "angular radius of the basin, radians";
         crack_width: 0.035, 0.005, 0.15, "width of the fissures";
         crack_scale: 7.0, 2.0, 20.0, "frequency of the fissure network";
+        events: 1.0, 0.0, 1.0, "switch: migrating craters and spade mesas (0 or 1)";
+        crater_period: 12.0, 2.0, 60.0, "seconds per crater life cycle";
+        crater_radius: 0.28, 0.05, 0.6, "angular radius of a mature crater, radians";
+        crater_depth: 0.45, 0.0, 1.0, "depth of a crater bowl";
+        spade_period: 16.0, 2.0, 60.0, "seconds per spade mesa life cycle";
+        spade_size: 0.42, 0.1, 0.8, "size of the spade mesa in its tangent plane";
+        spade_height: 0.6, 0.0, 1.0, "height of the spade mesa at its apogee";
     }
 }
 
@@ -37,6 +45,8 @@ pub struct Frame {
     /// Direction the default camera looks at; events are seeded around it.
     pub focus: Vector3,
     pub basin_center: Vector3,
+    /// Craters and spade mesas of this frame (boxed: built once per frame).
+    pub events: Box<[events::ActiveEvent; events::CRATER_SLOTS + events::SPADE_SLOTS]>,
 }
 
 pub fn prepare(params: &EntranceParams, uniforms: &ShaderUniforms, debug: DebugView) -> Frame {
@@ -50,6 +60,7 @@ pub fn prepare(params: &EntranceParams, uniforms: &ShaderUniforms, debug: DebugV
         seed,
         focus,
         basin_center: hash_direction(seed, 0, 0, focus, 25.0_f32.to_radians()),
+        events: Box::new(events::active_events(params, seed, focus, uniforms.time)),
     }
 }
 
@@ -69,6 +80,6 @@ impl Frame {
         if ground.material == TerrainMaterial::Crack {
             color += hex(0xFF7A00) * 0.15;
         }
-        color
+        color + mix3(hex(0xD21F2B), hex(0xFF7A00), ground.magma) * (0.4 * ground.magma)
     }
 }

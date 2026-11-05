@@ -6,6 +6,7 @@
 //! relief, regions and lighting always agree.
 
 use crate::celestial::entrance::Frame;
+use crate::celestial::entrance::events::{Relief, event_relief};
 use crate::shading::math::{hex, mix3, smoothstep};
 use crate::shading::noise::{fbm, gradient3};
 use crate::shading::sphere::angular_distance;
@@ -27,11 +28,23 @@ fn basin_distance(n: Vector3, f: &Frame) -> f32 {
     angular_distance(n, f.basin_center) / f.params.basin_radius
 }
 
-/// Large-scale relief: the basin and low-frequency hills.
+/// Large-scale relief: the basin, low-frequency hills and, when `events`
+/// is on, the migrating craters and spade mesas.
 pub fn macro_height(n: Vector3, f: &Frame) -> f32 {
+    macro_parts(n, f).0
+}
+
+fn macro_parts(n: Vector3, f: &Frame) -> (f32, Relief) {
     let p = &f.params;
-    crater_profile(basin_distance(n, f), p.basin_depth)
+    let relief = if p.events >= 0.5 {
+        event_relief(n, f.events.as_slice(), f.seed)
+    } else {
+        Relief::default()
+    };
+    let h = crater_profile(basin_distance(n, f), p.basin_depth)
         + MACRO_AMPLITUDE * fbm(n * p.terrain_scale, 2, f.seed)
+        + relief.height;
+    (h, relief)
 }
 
 /// Amplitude of the low-frequency hills of the macro height.
@@ -39,14 +52,20 @@ const MACRO_AMPLITUDE: f32 = 0.6;
 
 /// Full height: macro relief plus fine detail.
 pub fn height(n: Vector3, f: &Frame) -> f32 {
+    height_parts(n, f).0
+}
+
+fn height_parts(n: Vector3, f: &Frame) -> (f32, Relief) {
     let p = &f.params;
-    macro_height(n, f)
+    let (macro_h, relief) = macro_parts(n, f);
+    let h = macro_h
         + p.detail_amplitude
             * fbm(
                 n * (3.0 * p.terrain_scale),
                 p.terrain_octaves.round() as u32,
                 f.seed.wrapping_add(5),
-            )
+            );
+    (h, relief)
 }
 
 /// Fissure network in `[0, 1]`: thin zero crossings of an fBm, kept to low
@@ -132,20 +151,24 @@ pub struct Ground {
     pub height: f32,
     pub rim: f32,
     pub crack: f32,
+    /// Molten crater floor glow in `[0, 1]`.
+    pub magma: f32,
     pub material: TerrainMaterial,
 }
 
 pub fn ground(n: Vector3, f: &Frame) -> Ground {
-    let h = height(n, f);
+    let (h, relief) = height_parts(n, f);
     // Irregular dusty edge: a narrow rim band broken up by noise.
     let d = basin_distance(n, f);
     let rim = (-((d - 1.0) / 0.1).powi(2)).exp()
         * (0.5 + 1.4 * fbm(n * 5.0, 2, f.seed.wrapping_add(11))).clamp(0.0, 1.0);
-    let crack = crack_mask(n, h, f);
+    let rim = rim.max(relief.rim * (0.6 + 0.4 * gradient3(n * 13.0, f.seed.wrapping_add(12))));
+    let crack = crack_mask(n, h, f).max(relief.fracture);
     Ground {
         height: h,
         rim,
         crack,
-        material: classify(h, rim, crack),
+        magma: relief.magma,
+        material: classify(h, rim, crack.max(relief.magma)),
     }
 }
