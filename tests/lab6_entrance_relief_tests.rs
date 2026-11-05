@@ -132,3 +132,101 @@ fn opposite_lights_reverse_bump_shading() {
     // (1 - cos tilt) term keeps the coefficient away from -1.
     assert!(correlation < -0.25, "{correlation}");
 }
+
+// ---- C21: view-dependent parallax (E07) ----
+
+use rust_software_renderer::celestial::entrance::events::CRATER_SLOTS;
+use rust_software_renderer::celestial::entrance::terrain;
+
+fn frame_seen_from(params: EntranceParams, time: f32, eye: Vector3) -> Frame {
+    prepare(&params, &uniforms(time, eye), DebugView::None)
+}
+
+/// Unit view direction at `angle` radians from `n`, tilted along `t`.
+fn tilted(n: Vector3, t: Vector3, angle: f32) -> Vector3 {
+    (n * angle.cos() + t * angle.sin()).normalized()
+}
+
+#[test]
+fn parallax_is_identity_without_scale_or_at_normal_incidence() {
+    let flat = frame_at(
+        EntranceParams {
+            parallax_scale: 0.0,
+            ..p()
+        },
+        8.0,
+    );
+    let off = frame_at(
+        EntranceParams {
+            parallax: 0.0,
+            ..p()
+        },
+        8.0,
+    );
+    for n in directions(512) {
+        assert_eq!(flat.parallax_direction(n), n);
+        assert_eq!(off.parallax_direction(n), n);
+        let facing = frame_seen_from(p(), 8.0, n);
+        assert!((facing.parallax_direction(n) - n).length() < 1e-5);
+    }
+}
+
+#[test]
+fn raised_spades_shift_toward_the_view_and_craters_away() {
+    // Spade slot 0 at its apogee (t = 8) and crater slot 0 mature (t = 6).
+    let spade_frame = frame_at(p(), 8.0);
+    let spade = spade_frame.events[CRATER_SLOTS].center;
+    let crater_frame = frame_at(p(), 6.0);
+    let crater = crater_frame.events[0].center;
+    assert!(terrain::macro_height(spade, &spade_frame) > 0.0);
+    assert!(terrain::macro_height(crater, &crater_frame) < 0.0);
+    for (n, time, toward) in [(spade, 8.0, true), (crater, 6.0, false)] {
+        let (t, _) = tangent_frame(n);
+        let v = tilted(n, t, std::f32::consts::FRAC_PI_4);
+        let f = frame_seen_from(p(), time, v);
+        let np = f.parallax_direction(n);
+        assert!(
+            angular_distance(n, np) > 0.1_f32.to_radians(),
+            "shift too small"
+        );
+        let along = (np - n).dot(v - n * n.dot(v));
+        assert_eq!(along > 0.0, toward, "shift direction at t = {time}");
+    }
+}
+
+#[test]
+fn parallax_fades_near_the_limb() {
+    let f0 = frame_at(p(), 8.0);
+    let n = f0.events[CRATER_SLOTS].center;
+    let (t, _) = tangent_frame(n);
+    // V . N = 0.05: grazing, the approximation is faded out completely.
+    let grazing = frame_seen_from(p(), 8.0, tilted(n, t, 0.05_f32.acos()));
+    assert!((grazing.parallax_direction(n) - n).length() < 1e-6);
+    let steep = frame_seen_from(p(), 8.0, tilted(n, t, 0.8));
+    assert!(angular_distance(n, steep.parallax_direction(n)) > 1e-4);
+}
+
+#[test]
+fn parallax_offset_changes_with_the_camera_at_frozen_time() {
+    let a = frame_seen_from(p(), 8.0, direction_from_angles(-2.45, 0.55));
+    let b = frame_seen_from(p(), 8.0, direction_from_angles(-2.0, 0.55));
+    let eye_a = direction_from_angles(-2.45, 0.55);
+    let changed = directions(4096)
+        .into_iter()
+        .filter(|&n| n.dot(eye_a) > 0.3)
+        .filter(|&n| angular_distance(a.parallax_direction(n), b.parallax_direction(n)) > 1e-4)
+        .count();
+    assert!(changed > 200, "{changed}");
+}
+
+#[test]
+fn parallax_changes_the_rendered_relief() {
+    let (with, verts_with) = render(&[("parallax", 1.0)]);
+    let (without, verts_without) = render(&[("parallax", 0.0)]);
+    assert_eq!(verts_with, verts_without);
+    let pixels = with.len() / 4;
+    assert!(
+        differing_pixels(&with, &without) * 50 >= pixels,
+        "at least 2 % of the image"
+    );
+}

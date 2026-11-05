@@ -135,7 +135,9 @@ fn height_debug_view_is_grayscale() {
     for n in directions(512) {
         let c = f.shade(&sample(n));
         assert!(c.x == c.y && c.y == c.z && (0.0..=1.0).contains(&c.x));
-        let material = terrain::ground(n, &m).material;
+        // The view shows the material looked up where the final image does
+        // (the parallax-shifted direction since laboratory 6 adds parallax).
+        let material = terrain::ground(m.parallax_direction(n), &m).material;
         assert_eq!(m.shade(&sample(n)), material.debug_color());
     }
 }

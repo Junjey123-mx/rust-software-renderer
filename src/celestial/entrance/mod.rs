@@ -10,9 +10,9 @@ pub mod terrain;
 
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample, ViewPreset, direction_from_angles};
-use crate::shading::lighting::{blinn_phong, bump_normal, lambert, wrap_lambert};
+use crate::shading::lighting::{blinn_phong, bump_normal, lambert, parallax_shift, wrap_lambert};
 use crate::shading::math::{hex, mix3, mixf, saturate, smoothstep};
-use crate::shading::sphere::hash_direction;
+use crate::shading::sphere::{angular_distance, hash_direction};
 use raylib::math::Vector3;
 use terrain::TerrainMaterial;
 
@@ -52,6 +52,9 @@ params! {
         night_lights: 1.0, 0.0, 1.0, "switch: fissures glow brighter on the night side (0 or 1)";
         night_glow: 1.0, 0.0, 3.0, "emission of fissures and magma at full night";
         terminator_width: 0.25, 0.02, 0.8, "softness of the day-night transition";
+        parallax: 1.0, 0.0, 1.0, "switch: view-dependent parallax of the relief (0 or 1)";
+        parallax_scale: 0.06, 0.0, 0.25, "apparent depth of the macro relief";
+        parallax_steps: 8.0, 2.0, 32.0, "linear search steps of the parallax (rounded)";
     }
 }
 
@@ -105,6 +108,24 @@ impl Frame {
         let cloud =
             mix3(hex(0x6E6468), hex(0xD6D0C4), 0.35) * (0.08 + 0.92 * wrap_lambert(n, l, 0.3));
         mix3(surface, cloud, self.clouds.alpha(n))
+    }
+
+    /// Lookup direction of the ground seen along the view: the geometric
+    /// direction shifted by a stepped search of the macro height field
+    /// (parallax). Identity when disabled, at zero scale or facing the eye.
+    pub fn parallax_direction(&self, n: Vector3) -> Vector3 {
+        let p = &self.params;
+        if p.parallax < 0.5 {
+            return n;
+        }
+        parallax_shift(
+            n,
+            self.uniforms.eye_direction,
+            |q| terrain::macro_height(q, self),
+            p.parallax_scale,
+            p.parallax_steps.round() as u32,
+            3,
+        )
     }
 
     /// Normal used for lighting the ground: the geometric normal tilted by
@@ -184,8 +205,14 @@ impl Frame {
             DebugView::Night => return Vector3::one() * self.night_factor(n, l),
             _ => {}
         }
-        let ground = terrain::ground(n, self);
-        let lit_normal = self.shading_normal(n);
+        // Every ground lookup uses the parallax-shifted direction; night,
+        // clouds and shadows keep the geometric one.
+        let np = self.parallax_direction(n);
+        if self.debug == DebugView::Parallax {
+            return Vector3::one() * (angular_distance(n, np) * 40.0).min(1.0);
+        }
+        let ground = terrain::ground(np, self);
+        let lit_normal = self.shading_normal(np);
         match self.debug {
             DebugView::Normals => return lit_normal * 0.5 + Vector3::new(0.5, 0.5, 0.5),
             DebugView::Height => {
@@ -194,7 +221,7 @@ impl Frame {
             DebugView::Materials => return ground.material.debug_color(),
             _ => {}
         }
-        let albedo = terrain::albedo(ground.material, n, self);
+        let albedo = terrain::albedo(ground.material, np, self);
         let v = self.uniforms.eye_direction;
         let color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
         color + self.emission(ground.crack, ground.magma, n, l)
