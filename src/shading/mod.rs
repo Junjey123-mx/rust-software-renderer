@@ -6,6 +6,7 @@
 //! Nothing here opens a window or knows about a specific body.
 
 pub mod cycle;
+pub mod lighting;
 pub mod math;
 pub mod noise;
 pub mod sdf;
