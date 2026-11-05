@@ -10,3 +10,4 @@ pub mod io;
 pub mod pipeline;
 pub mod rasterization;
 pub mod rendering;
+pub mod shading;
