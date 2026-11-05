@@ -101,6 +101,33 @@ impl TerrainMaterial {
         Self::Crack,
     ];
 
+    /// How the material reflects light: glassy obsidian, wrapped ash,
+    /// self-lit fissures and matte rock.
+    pub fn response(self) -> Response {
+        match self {
+            Self::Obsidian => Response {
+                specular: 1.0,
+                wrap: 0.0,
+                emissive: false,
+            },
+            Self::Ash => Response {
+                specular: 0.0,
+                wrap: 0.3,
+                emissive: false,
+            },
+            Self::Crack => Response {
+                specular: 0.0,
+                wrap: 0.0,
+                emissive: true,
+            },
+            Self::Basalt | Self::Highland | Self::Slate => Response {
+                specular: 0.0,
+                wrap: 0.0,
+                emissive: false,
+            },
+        }
+    }
+
     /// Saturated flat color of the `materials` debug view.
     pub fn debug_color(self) -> Vector3 {
         match self {
@@ -112,6 +139,17 @@ impl TerrainMaterial {
             Self::Crack => hex(0xFF9000),
         }
     }
+}
+
+/// Reflection model of a terrain material.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Response {
+    /// Weight of the Blinn-Phong highlight (0 = matte).
+    pub specular: f32,
+    /// Diffuse wrap past the terminator (dusty surfaces).
+    pub wrap: f32,
+    /// Lit from within: the color does not depend on the light.
+    pub emissive: bool,
 }
 
 /// Region of a point, in priority order: fissure, rim ash, then height bands.

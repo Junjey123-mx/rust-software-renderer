@@ -10,7 +10,7 @@ pub mod terrain;
 
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample, ViewPreset, direction_from_angles};
-use crate::shading::lighting::{bump_normal, lambert, wrap_lambert};
+use crate::shading::lighting::{blinn_phong, bump_normal, lambert, wrap_lambert};
 use crate::shading::math::{hex, mix3};
 use crate::shading::sphere::hash_direction;
 use raylib::math::Vector3;
@@ -46,6 +46,9 @@ params! {
         bump: 1.0, 0.0, 1.0, "switch: bump-mapped relief (0 or 1)";
         bump_strength: 0.8, 0.0, 4.0, "how strongly the height gradient tilts the normal";
         bump_epsilon: 0.004, 0.0005, 0.05, "finite-difference step of the gradient, radians";
+        specular: 1.0, 0.0, 1.0, "switch: glassy highlights on the obsidian plains (0 or 1)";
+        specular_strength: 1.4, 0.0, 3.0, "brightness of the obsidian highlights";
+        shininess: 24.0, 2.0, 256.0, "Blinn-Phong exponent: higher = tighter highlight";
     }
 }
 
@@ -114,6 +117,37 @@ impl Frame {
         )
     }
 
+    /// Light reflected by a terrain material: ambient plus diffuse (wrapped
+    /// for ash), a warm Blinn-Phong highlight on obsidian, both attenuated
+    /// by the cloud `shadow`. Emissive fissures only keep the ambient term,
+    /// so they do not depend on the light; their glow is added separately.
+    pub fn reflect_light(
+        &self,
+        material: TerrainMaterial,
+        albedo: Vector3,
+        lit_normal: Vector3,
+        l: Vector3,
+        v: Vector3,
+        shadow: f32,
+    ) -> Vector3 {
+        let p = &self.params;
+        let response = material.response();
+        if response.emissive {
+            return albedo * 0.06;
+        }
+        let diffuse = if response.wrap > 0.0 {
+            wrap_lambert(lit_normal, l, response.wrap)
+        } else {
+            lambert(lit_normal, l)
+        };
+        let mut color = albedo * (0.06 + diffuse * shadow);
+        if p.specular >= 0.5 && response.specular > 0.0 {
+            let highlight = blinn_phong(lit_normal, l, v, p.shininess);
+            color += hex(0xFFF2C4) * (p.specular_strength * response.specular * highlight * shadow);
+        }
+        color
+    }
+
     /// Lit ground color without clouds.
     pub fn surface_color(&self, n: Vector3) -> Vector3 {
         let l = self.uniforms.light_direction;
@@ -133,7 +167,8 @@ impl Frame {
             _ => {}
         }
         let albedo = terrain::albedo(ground.material, n, self);
-        let mut color = albedo * (0.06 + lambert(lit_normal, l) * shadow);
+        let v = self.uniforms.eye_direction;
+        let mut color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
         if ground.material == TerrainMaterial::Crack {
             color += hex(0xFF7A00) * 0.15;
         }
