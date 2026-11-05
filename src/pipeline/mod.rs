@@ -11,6 +11,7 @@ pub mod primitive;
 pub mod rasterizer;
 pub mod render;
 pub mod screen_mapping;
+pub mod shaded;
 pub mod surface;
 pub mod uniforms;
 pub mod vertex_shader;
@@ -28,6 +29,7 @@ pub use screen_mapping::{
     MappingError, ModelBounds, OrbitView, ScreenFit, ViewPlane, Viewport, fit_to_viewport,
     model_bounds, project_orbit,
 };
+pub use shaded::{ShadedOptions, ShadedStats, render_shaded};
 pub use surface::{NormalSource, ShaderUniforms, SurfaceSample, direction_from_angles};
 pub use uniforms::Uniforms;
 pub use vertex_shader::vertex_shader;
