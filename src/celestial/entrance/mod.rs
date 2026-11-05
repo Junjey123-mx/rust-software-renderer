@@ -4,12 +4,13 @@
 //! `terrain`): obsidian plains, basalt, crimson highlands, slate mesas, ash
 //! rims and glowing fissures. Its only symbol is the spade.
 
+pub mod clouds;
 pub mod events;
 pub mod terrain;
 
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample, ViewPreset, direction_from_angles};
-use crate::shading::lighting::lambert;
+use crate::shading::lighting::{lambert, wrap_lambert};
 use crate::shading::math::{hex, mix3};
 use crate::shading::sphere::hash_direction;
 use raylib::math::Vector3;
@@ -32,6 +33,13 @@ params! {
         spade_period: 16.0, 2.0, 60.0, "seconds per spade mesa life cycle";
         spade_size: 0.42, 0.1, 0.8, "size of the spade mesa in its tangent plane";
         spade_height: 0.6, 0.0, 1.0, "height of the spade mesa at its apogee";
+        clouds: 1.0, 0.0, 1.0, "switch: procedural cloud layer (0 or 1)";
+        cloud_coverage: 0.45, 0.0, 1.0, "fraction of the sky covered by clouds";
+        cloud_scale: 2.4, 0.5, 8.0, "frequency of the cloud masses";
+        cloud_speed: 0.07, 0.0, 1.0, "rotation of the cloud layer, radians per second";
+        cloud_evolution: 0.05, 0.0, 0.5, "slow change of the cloud shapes per second";
+        cloud_softness: 0.12, 0.01, 0.4, "softness of the cloud edges";
+        cloud_opacity: 0.85, 0.0, 1.0, "opacity of the densest clouds";
     }
 }
 
@@ -47,6 +55,7 @@ pub struct Frame {
     pub basin_center: Vector3,
     /// Craters and spade mesas of this frame (boxed: built once per frame).
     pub events: Box<[events::ActiveEvent; events::CRATER_SLOTS + events::SPADE_SLOTS]>,
+    pub clouds: clouds::CloudLayer,
 }
 
 pub fn prepare(params: &EntranceParams, uniforms: &ShaderUniforms, debug: DebugView) -> Frame {
@@ -61,12 +70,30 @@ pub fn prepare(params: &EntranceParams, uniforms: &ShaderUniforms, debug: DebugV
         focus,
         basin_center: hash_direction(seed, 0, 0, focus, 25.0_f32.to_radians()),
         events: Box::new(events::active_events(params, seed, focus, uniforms.time)),
+        clouds: clouds::CloudLayer::new(params, seed, uniforms.time),
     }
 }
 
 impl Frame {
     pub fn shade(&self, s: &SurfaceSample) -> Vector3 {
         let n = s.normal;
+        match self.debug {
+            DebugView::Clouds => return Vector3::one() * self.clouds.mask(n),
+            DebugView::None => {}
+            // Ground debug views are shown without clouds.
+            _ => return self.surface_color(n),
+        }
+        let surface = self.surface_color(n);
+        // Clouds over the ground, with their own soft lighting and the
+        // geometric normal (they float above the relief).
+        let l = self.uniforms.light_direction;
+        let cloud =
+            mix3(hex(0x6E6468), hex(0xD6D0C4), 0.35) * (0.08 + 0.92 * wrap_lambert(n, l, 0.3));
+        mix3(surface, cloud, self.clouds.alpha(n))
+    }
+
+    /// Lit ground color without clouds.
+    pub fn surface_color(&self, n: Vector3) -> Vector3 {
         let ground = terrain::ground(n, self);
         match self.debug {
             DebugView::Height => {
