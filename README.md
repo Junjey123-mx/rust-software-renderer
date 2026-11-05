@@ -1,9 +1,10 @@
-# Rust Software Renderer — Laboratorios 4 y 5
+# Rust Software Renderer — Laboratorios 4, 5 y 6
 
 Proyecto del curso **Gráficas por Computadora** — **Universidad del Valle de Guatemala (UVG)**, segundo ciclo 2026
 
-Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado) y, como mejora opcional, una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado.
+Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado), una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado y, sobre todo ello, el **Laboratorio 6: planetas y estrellas con shaders**: tres cuerpos celestes con fragment shaders procedurales sobre la misma esfera.
 
+- [Laboratorio 6 — Planetas y estrellas con shaders](#laboratorio-6--planetas-y-estrellas-con-shaders)
 - [Vista interactiva (opcional)](#vista-interactiva-de-la-nave-mejora-opcional)
 - [Demostración en video: tres modos](#demostración-interactiva--tres-modos-de-rasterización)
 - [Laboratorio 5 — Filling triangles](#laboratorio-5--filling-triangles)
@@ -11,6 +12,175 @@ Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de mode
 - [Arquitectura](#arquitectura-implementada)
 - [Cómo ejecutar y verificar](#cómo-ejecutar-el-proyecto)
 - [Autor](#autor)
+
+---
+
+## Laboratorio 6 — Planetas y estrellas con shaders
+
+Tres cuerpos celestes sobre **la misma esfera del docente** (`assets/models/sphere.obj`, copiada byte a byte: 98 vértices únicos y 192 triángulos). Toda la apariencia sale de **fragment shaders procedurales en CPU**. No hay texturas, imágenes, materiales externos ni modelos nuevos; los vértices nunca se mueven. Cada cuerpo tiene un símbolo exclusivo de la dirección artística Red-Black: la **corona** de la estrella, la **pica ♠** del planeta rocoso y el **rombo ♦** del gigante gaseoso. La guía técnica completa, con fórmulas, todos los parámetros, pruebas y rendimiento, está en [docs/laboratorio6.md](docs/laboratorio6.md).
+
+| The King's Crown (estrella) | Crimson Entrance (rocoso) | House of Cards (gaseoso) |
+|---|---|---|
+| ![The King's Crown](docs/videos/lab6/01-kings-crown-material.gif) | ![Crimson Entrance](docs/videos/lab6/02-crimson-entrance-events.gif) | ![House of Cards](docs/videos/lab6/03-house-of-cards-vortex.gif) |
+
+### Cómo ejecutar
+
+Compila siempre en `--release`: los shaders se evalúan por fragmento en CPU.
+
+```bash
+cargo run --release -- --scene crown                  # The King's Crown
+cargo run --release -- --scene entrance               # Crimson Entrance
+cargo run --release -- --scene house                  # House of Cards
+cargo run --release -- --scene entrance --mode wireframe     # la esfera compartida (192 triángulos)
+cargo run --release -- --scene entrance --mode barycentric   # mismo shader con el relleno baricéntrico
+cargo run --release -- --scene house --time 9.9 --screenshot vortice.png
+cargo run --release -- --scene entrance --set cloud_coverage=0.7 --set bump_strength=2
+cargo run --release -- --scene entrance --debug-view clouds  # none height materials clouds shadows normals night parallax
+cargo run --release -- --scene crown --record 4 --fps 30 | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - corona.mp4
+cargo run --release -- --benchmark-shaders            # sin ventana → docs/results/lab6/shader_benchmark.csv
+```
+
+Las escenas celestes usan `scanline` por defecto; `--mode` lo cambia y las teclas `1/2/3` también. Otras opciones:
+
+| Opción | Efecto |
+|---|---|
+| `--time <s>` | Instante simulado inicial |
+| `--freeze-time` | Detiene el tiempo |
+| `--light-azimuth <grados>` | Azimut de la luz (por defecto −75) |
+| `--light-elevation <grados>` | Elevación de la luz (por defecto 20) |
+| `--view oblique\|top\|front\|side` | Preset de cámara |
+| `--threads <n>` | Hilos del shader (por defecto, todos) |
+| `--record <s> [--fps n] [--timeline material\|orbit\|light\|showcase]` | Fotogramas rgb24 por stdout, sin ventana |
+
+`--obj` no se acepta con una escena celeste, porque la esfera es fija por regla.
+
+| Tecla | Acción |
+|---|---|
+| `←` `→` `↑` `↓` | Orbitar e inclinar la cámara |
+| `Q` / `E` | Zoom |
+| `R` / `T` / `F` / `S` | Reiniciar, superior, frontal, lateral |
+| `1` / `2` / `3` | Wireframe, baricéntrico, scanline |
+| `TAB` | Siguiente cuerpo (se conservan cámara, tiempo y luz) |
+| `SPACE` | Pausar el tiempo |
+| `J` / `L`, `I` / `K` | Azimut y elevación de la luz |
+| `N` | Siguiente vista de depuración |
+| `[` / `]` | Parámetro principal: `corona_pulse_amount`, `cloud_coverage` o `vortex_strength` |
+| `C` / `H` / `B` / `P` | Nubes, sombras de nubes, bump y parallax (Crimson Entrance) |
+| `ESC` | Salir |
+
+### The King's Crown — estrella de plasma regio
+
+![The King's Crown](docs/screenshots/lab6/01-kings-crown.png)
+
+Estrella regia de plasma vivo con una diadema dorada y una corona que respira. Es emisiva: no depende de la luz externa.
+
+**Patrones y cómo se combinan:**
+- **Temperatura.** Una fBm sobre un dominio deformado (*domain warp*) que gira y avanza con el tiempo, más venas doradas (cruces por cero de otra fBm) y granulación fina. Pasa por una rampa vino → carmesí → naranja → oro → marfil.
+- **Manchas.** Tres manchas con umbra y penumbra que derivan y respiran con fases distintas.
+- **Corona.** Una corona de Fresnel en el limbo cuyo ancho pulsa.
+- **Diadema.** Cinco puntas triangulares sobre el casquete norte.
+- **Eclipse.** Uno cada 24 s, que oscurece el núcleo mientras la corona sigue ardiendo.
+
+| Parámetro | Por defecto | Rango | Cambio visual |
+|---|---:|---|---|
+| `plasma_scale` | 1.6 | 0.5 – 8 | Tamaño de las corrientes de plasma |
+| `warp_strength` | 0.8 | 0 – 3 | Cuánto se retuercen las corrientes |
+| `flow_speed` | 0.18 | 0 – 2 | Velocidad de advección del plasma |
+| `spot_breath_period` | 9 | 1 – 60 | Segundos por respiración de una mancha |
+| `corona_pulse_period` | 4 | 0.5 – 30 | Segundos por pulso de la corona |
+| `corona_pulse_amount` | 0.35 | 0 – 1 | Amplitud del pulso del limbo |
+| `crown_points` | 5 | 3 – 9 | Puntas de la diadema |
+| `eclipse_period` | 24 | 4 – 120 | Segundos entre eclipses |
+
+### Crimson Entrance — planeta volcánico de cráteres y picas
+
+![Crimson Entrance](docs/screenshots/lab6/02-crimson-entrance.png)
+
+Planeta volcánico que se abre en cráteres y levanta mesetas en forma de pica ♠ desde su corteza.
+
+**Patrones y cómo se combinan:**
+- **Campo de altura.** Uno solo: una cuenca monumental, colinas de fBm y relieve fino.
+- **Regiones.** El mismo campo se clasifica en seis: llanuras de obsidiana, basalto, tierras carmesí, mesetas de pizarra, bordes de ceniza y fisuras incandescentes.
+- **Eventos sobre la altura.** Tres cráteres que se agrietan, se hunden, brillan con magma y se erosionan; y dos mesetas ♠ cuyo campo de distancia levanta la corteza. Al terminar cada ciclo reaparecen en otro lugar.
+- **Nubes de ceniza.** Una capa independiente cuyas sombras siguen a la luz.
+- **Iluminación.** El bump inclina la normal, el parallax desplaza las consultas según la vista, la obsidiana es vítrea y la roca mate, y las fisuras se encienden de noche.
+
+| Parámetro | Por defecto | Rango | Cambio visual |
+|---|---:|---|---|
+| `crater_period` | 12 | 2 – 60 | Segundos por ciclo de cráter |
+| `spade_height` | 0.6 | 0 – 1 | Altura de la meseta ♠ en su apogeo |
+| `cloud_coverage` | 0.45 | 0 – 1 | Fracción del cielo cubierta por nubes |
+| `cloud_altitude` | 0.07 | 0 – 0.3 | Desplazamiento de las sombras respecto a las nubes |
+| `bump_strength` | 0.8 | 0 – 4 | Intensidad del relieve iluminado |
+| `shininess` | 24 | 2 – 256 | Concentración del brillo de la obsidiana |
+| `night_glow` | 1 | 0 – 3 | Brillo nocturno de fisuras y magma |
+| `parallax_scale` | 0.06 | 0 – 0.25 | Profundidad aparente del relieve |
+
+### House of Cards — gigante gaseoso de tormentas en rombo
+
+![House of Cards](docs/screenshots/lab6/03-house-of-cards.png)
+
+Gigante gaseoso violeta donde la circulación atmosférica se organiza en rombos ♦ que nacen, culminan y se disuelven.
+
+**Patrones y cómo se combinan:**
+- **Bandas.** Seis bandas de latitud onduladas por fBm, con transiciones líquidas en una rampa violeta, magenta y perla, más un tinte vino y filamentos.
+- **Vientos diferenciales.** Una rotación de la dirección de muestreo que depende de la latitud, así que las bandas vecinas se deslizan.
+- **Vórtice ♦.** El dominio se advecta a lo largo de los contornos de la norma L1 (un rombo) en el plano tangente del centro de la tormenta. Las bandas vecinas se enrollan en espirales romboidales con un núcleo luminoso, y en cada ciclo la tormenta migra.
+- **Halo.** Un halo atmosférico de Fresnel en el limbo.
+
+| Parámetro | Por defecto | Rango | Cambio visual |
+|---|---:|---|---|
+| `band_count` | 6 | 3 – 14 | Número de bandas |
+| `band_warp` | 0.25 | 0 – 1.5 | Ondulación de los bordes de banda |
+| `differential_wind` | 0.06 | 0 – 1.5 | Deslizamiento entre latitudes |
+| `vortex_strength` | 6 | 0 – 8 | Cuánto se enrollan las bandas en el rombo |
+| `vortex_radius` | 0.45 | 0.1 – 0.5 | Tamaño de la tormenta ♦ |
+| `vortex_period` | 18 | 4 – 90 | Segundos entre migraciones |
+| `rim_strength` | 0.6 | 0 – 2 | Halo violeta y magenta del limbo |
+
+La esfera compartida en wireframe es la misma para los tres cuerpos:
+
+![Esfera compartida](docs/screenshots/lab6/04-shared-sphere-wireframe.png)
+
+### Efectos solicitados
+
+| Efecto | Nombre | Cuerpo | Archivo y función | Evidencia | Explicación | Parámetro → efecto visual |
+|---|---|---|---|---|---|---|
+| E01 | Material animado | The King's Crown | `src/celestial/crown.rs::Frame::temperature`, `Frame::spots`, `Frame::corona`, `eclipse_strength` | [video](docs/videos/lab6/01-kings-crown-material.mp4) · [GIF](docs/videos/lab6/01-kings-crown-material.gif) | Con cámara, luz y malla fijas, las corrientes cambian de forma, las manchas respiran, la corona pulsa y llega el eclipse; no es una rotación de la esfera | `corona_pulse_period`: segundos por pulso del limbo |
+| E02 | Día y noche | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::night_factor`, `Frame::emission` | [video](docs/videos/lab6/07-entrance-day-night-light.mp4) · [GIF](docs/videos/lab6/07-entrance-day-night-light.gif) | Las fisuras y el magma son un término emisivo que sube de 0.12 a `night_glow` solo en el lado nocturno; con el tiempo congelado, solo gira la luz | `night_glow`: brillo nocturno de la red de fisuras |
+| E03 | Respuestas a la luz | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::reflect_light`, `terrain.rs::TerrainMaterial::response` | [video](docs/videos/lab6/08-entrance-lighting-responses.mp4) · [regiones](docs/screenshots/lab6/08-entrance-materials.png) | La obsidiana tiene brillo Blinn-Phong que depende de la vista, la roca es mate, la ceniza tiene *wrap* y las fisuras son emisivas, todo según la clase de altura | `shininess`: tamaño del brillo vítreo |
+| E04 | Nubes procedurales | Crimson Entrance | `src/celestial/entrance/clouds.rs::CloudLayer::mask` | [video](docs/videos/lab6/09-entrance-clouds-drift.mp4) · [coberturas](docs/screenshots/lab6/06-entrance-cloud-coverage.png) | Máscara de fBm sobre un dominio que gira y evoluciona, sobre la misma esfera, con un terreno inmóvil | `cloud_coverage`: fracción cubierta |
+| E05 | Vórtice localizado | House of Cards | `src/celestial/house.rs::Storm::warp`, `contour_param`, `contour_point` | [video](docs/videos/lab6/03-house-of-cards-vortex.mp4) · [apagado y encendido](docs/screenshots/lab6/09-house-vortex-off-on.png) | Las bandas se enrollan a lo largo de los contornos ♦ de la norma L1; fuera del rombo la imagen es idéntica | `vortex_strength`: circulación del núcleo |
+| E06 | Bump mapping | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::shading_normal`, `src/shading/lighting.rs::bump_normal` | [video](docs/videos/lab6/05-entrance-bump-light.mp4) · [apagado y encendido](docs/screenshots/lab6/05-entrance-bump-off-on.png) | El gradiente del campo de altura (diferencias centrales en el marco tangente) inclina la normal de iluminación; no se mueve ningún vértice | `bump_strength`: relieve más marcado |
+| E07 | Parallax | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::parallax_direction`, `src/shading/lighting.rs::parallax_shift` | [video](docs/videos/lab6/06-entrance-parallax-orbit.mp4) · [GIF](docs/videos/lab6/06-entrance-parallax-orbit.gif) | Búsqueda escalonada con bisección sobre la altura macro a lo largo de la vista. Con el tiempo congelado y la cámara orbitando, la pica y los bordes se desplazan (el video va sin nubes y con `parallax_scale` = 0.12 de demostración) | `parallax_scale`: profundidad aparente |
+| E08 | Sombras de nubes | Crimson Entrance | `src/celestial/entrance/clouds.rs::CloudLayer::shadow`, `src/shading/lighting.rs::shell_exit` | [video](docs/videos/lab6/04-entrance-cloud-shadows-light.mp4) · [máscaras](docs/screenshots/lab6/07-entrance-cloud-shadow-masks.png) | La sombra es la máscara de nubes muestreada donde el rayo hacia la luz sale de la capa; no tiene desplazamiento en el punto subsolar y se estira hacia el terminador | `cloud_altitude`: separación entre sombra y nube |
+
+Los ocho efectos están implementados, probados y con evidencia. Los videos de bump, parallax y respuestas a la luz se grabaron con `--set clouds=0`, para aislar cada efecto. Más montajes: [cráteres y picas en el tiempo](docs/videos/lab6/02-crimson-entrance-events.mp4) y [nubes sobre el terreno inmóvil](docs/videos/lab6/09-entrance-clouds-drift.gif). Los videos se regeneran con [`docs/videos/lab6/encode.sh`](docs/videos/lab6/encode.sh) `all`.
+
+### Puntos reclamados
+
+| Criterio | Puntos | Evidencia principal |
+|---|---:|---|
+| B01 Estrella procedural propia | 10 | Captura y video de The King's Crown |
+| B02 Planeta rocoso con regiones diferenciadas | 10 | Captura de Crimson Entrance y montaje de regiones |
+| B03 Gigante gaseoso con bandas | 10 | Captura y video de House of Cards |
+| B04 Diseño visual | 20 | Tres paletas Red-Black, tres técnicas distintas y símbolos exclusivos |
+| B05 Entrega | 10 | Este README, la guía técnica y los comandos |
+| E01–E08 Efectos adicionales | 90 | Tabla anterior |
+| **Total disponible** | **150** | Nota máxima registrable: 100 |
+
+### Limitaciones
+
+- La silueta es poligonal (malla de 98 vértices únicos): no se modifican vértices.
+- Cráteres, picas y cuencas son relieve **aparente** (bump, parallax y sombreado), no geometría.
+- El parallax es una aproximación escalonada que se atenúa cerca del limbo.
+- El anillo de cartas ♦, el halo exterior y la cámara perspectiva quedan para el proyecto final.
+- Crimson Entrance es el shader más costoso: 1.4 s por cuadro con 1 hilo y 0.27 s con 20, unos 4 cuadros por segundo en la ventana ([benchmark](docs/results/lab6/shader_benchmark.csv)).
+
+### Video y pruebas
+
+- **Videos:** H.264 con `h264_nvenc`, el primer codificador que pasó la prueba funcional en esta máquina (`libx264` no está instalado). Los MP4 van a 30 fps; los GIF se generan desde el mismo intermedio FFV1 sin pérdida, a 8 fps.
+- **Pruebas:** `cargo test` ejecuta **360 pruebas**: las 207 de los laboratorios 4 y 5 y de la vista interactiva, más 153 del Laboratorio 6, entre ellas el oráculo de 21 *hashes* que congela la nave y sus tres modos.
 
 ---
 
@@ -267,9 +437,14 @@ Pantalla (textura Raylib)
 ```text
 rust-software-renderer/
 ├── assets/models/Laboratorio3.obj          nave triangulada del Lab 3
+├── assets/models/sphere.obj                esfera del docente, compartida por los tres cuerpos del Lab 6
 ├── docs/
 │   ├── laboratorio4.md                     guía técnica Lab 4
 │   ├── laboratorio5.md                     guía técnica Lab 5
+│   ├── laboratorio6.md                     guía técnica Lab 6: shaders, fórmulas, parámetros, pruebas
+│   ├── screenshots/lab6/                   01..04 cuerpos y esfera; 05..09 montajes de efectos
+│   ├── videos/lab6/                        MP4 y GIF de los ocho efectos; encode.sh los regenera
+│   ├── results/lab6/                       shader_benchmark.csv
 │   ├── screenshots/lab4/                   final_render.png, 01-nave-wireframe.png
 │   ├── screenshots/lab5/                   01..03 escena sintética; 04..06 nave oblicua interactiva
 │   ├── interactive-views.md                cámara orbital, Z-buffer y sombreado (opcional)
@@ -278,7 +453,7 @@ rust-software-renderer/
 │   └── profiles/                           lab5-stack-sampler.sh, muestras y resúmenes
 ├── src/
 │   ├── main.rs                             punto de entrada → app::run()
-│   ├── app.rs                              ventana, teclado, CLI (--obj, --screenshot, --mode, --scene, --interactive, --view, --benchmark-triangles, --profile, --help)
+│   ├── app.rs                              ventana, teclado, CLI (--obj, --screenshot, --mode, --scene, --interactive, --view, --benchmark-triangles, --profile, --help) y despacho del Lab 6
 │   ├── config.rs                           resolución, FPS, ruta del modelo, plano de vista, margen
 │   ├── lib.rs
 │   ├── geometry/                           Mesh, Vertex, demo.rs (escena de triángulos)
@@ -291,16 +466,23 @@ rust-software-renderer/
 │   │   ├── primitive.rs                    etapa 2
 │   │   ├── rasterizer.rs                   etapa 3: rasterize (wireframe) y rasterize_with_mode
 │   │   ├── fragment_shader.rs              etapa 4
-│   │   └── render.rs                       render (Lab 4), render_with_mode (Lab 5), render_interactive
+│   │   ├── render.rs                       render (Lab 4), render_with_mode (Lab 5), render_interactive
+│   │   ├── surface.rs                      Lab 6: SurfaceSample, ShaderUniforms, NormalSource
+│   │   └── shaded.rs                       Lab 6: render_shaded (culling, interpolación, shader en hilos, Z-buffer)
 │   ├── rasterization/
 │   │   ├── line.rs, triangle.rs            Lab 4: Bresenham y contorno de tres líneas
 │   │   ├── mode.rs                         TriangleMode
-│   │   ├── coverage.rs                     función de arista, orientación, regla top-left, rangos de centros
+│   │   ├── coverage.rs                     función de arista, orientación, regla top-left, rangos de centros, interpolation_weights (Lab 6)
 │   │   ├── barycentric.rs                  relleno baricéntrico
 │   │   └── scanline.rs                     relleno por scanline
 │   ├── rendering/                          Fragment, Framebuffer (CPU, con Z-buffer opcional), Presenter (textura Raylib)
-│   └── benchmark/                          carga de trabajo, cronómetro, medianas, CSV, modo de perfilado
-└── tests/                                  33 archivos de pruebas de integración + fixture
+│   ├── benchmark/                          carga de trabajo, cronómetro, medianas, CSV, perfilado; shaders.rs (Lab 6)
+│   ├── shading/                            Lab 6: math, noise, cycle, sdf (♠ ♦), sphere, lighting
+│   └── celestial/                          Lab 6: cuerpos, parámetros, escena, CLI, visor, líneas de tiempo, grabación
+│       ├── crown.rs                        The King's Crown
+│       ├── entrance/                       Crimson Entrance: terrain, events, clouds
+│       └── house.rs                        House of Cards
+└── tests/                                  53 archivos de pruebas de integración + fixture
 ```
 
 Raylib se usa únicamente para la ventana, los tipos `Vector2`/`Vector3`/`Matrix` y para presentar la textura final. Toda la rasterización es código propio.
@@ -321,6 +503,10 @@ cargo run --release -- --scene ship --interactive --mode scanline   # vista inte
 cargo run --release -- --view top --mode barycentric --screenshot top.png
 cargo run --release -- --benchmark-triangles                  # benchmark sin ventana → docs/results/lab5/*.csv
 docs/profiles/lab5-stack-sampler.sh scanline 1000 /tmp/perfil # perfilado por muestreo de pilas
+cargo run --release -- --scene crown                          # Lab 6: The King's Crown
+cargo run --release -- --scene entrance                       # Lab 6: Crimson Entrance
+cargo run --release -- --scene house                          # Lab 6: House of Cards
+cargo run --release -- --benchmark-shaders                    # Lab 6: benchmark de shaders → docs/results/lab6
 ```
 
 Una ruta inexistente, un OBJ inválido o un argumento desconocido terminan con mensaje de error y código de salida 1.
@@ -328,14 +514,14 @@ Una ruta inexistente, un OBJ inválido o un argumento desconocido terminan con m
 ### Pruebas y validación
 
 ```bash
-cargo test                                   # 207 pruebas (156 de los laboratorios + 51 de la vista interactiva)
+cargo test                                   # 360 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 153 del Lab 6)
 cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings
 cargo build --release
 ```
 
-Las pruebas cubren: configuración, malla e índices, parser OBJ, integración con la nave real, framebuffer, líneas, triángulos, shader de vértices, ensamblaje, mapeo a pantalla, pipeline, contratos del Lab 4, política de cobertura, baricéntrico, scanline, paridad T01–T09, estrés determinista, despacho de modos, escena, benchmark, perfilado, contratos finales del Lab 5 y, para la vista opcional, cámara orbital, proyección, controles, profundidad, Z-buffer, sombreado, presets y regresión.
+Las pruebas cubren: configuración, malla e índices, parser OBJ, integración con la nave real, framebuffer, líneas, triángulos, shader de vértices, ensamblaje, mapeo a pantalla, pipeline, contratos del Lab 4, política de cobertura, baricéntrico, scanline, paridad T01–T09, estrés determinista, despacho de modos, escena, benchmark, perfilado, contratos finales del Lab 5 y, para la vista opcional, cámara orbital, proyección, controles, profundidad, Z-buffer, sombreado, presets y regresión. El Laboratorio 6 añade el oráculo de la nave (21 *hashes*), la esfera del docente, la interpolación, la etapa sombreada, el ruido y las SDF, la iluminación, cada cuerpo y cada efecto, la CLI, las líneas de tiempo, el benchmark de shaders, los contratos finales y la coherencia de esta documentación.
 
 ## Restricciones respetadas
 
@@ -343,6 +529,7 @@ Las pruebas cubren: configuración, malla e índices, parser OBJ, integración c
 - **No** se agregó perspectiva 3D ni texturas. El Z-buffer y el sombreado plano existen solo en la vista interactiva opcional; `cargo run`, `--scene triangles`, el benchmark y el perfil del Lab 5 no los usan.
 - **No** se agregaron crates adicionales: solo `raylib` y la biblioteca estándar.
 - El Laboratorio 4 permanece intacto: `cargo run` sin argumentos sigue mostrando la nave en wireframe y sus 91 pruebas originales siguen pasando.
+- Laboratorio 6: los tres cuerpos usan la misma `sphere.obj` del docente sin modificar. No se cargan imágenes, texturas ni materiales y no se agregaron modelos ni *crates*. Ninguna prueba existente se modificó, y la nave, sus tres modos, la cámara y el Z-buffer conservan su salida bit a bit (oráculo dorado).
 
 ## Autor
 
