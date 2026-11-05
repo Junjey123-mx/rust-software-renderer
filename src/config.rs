@@ -3,6 +3,11 @@
 use crate::pipeline::ViewPlane;
 use std::path::PathBuf;
 
+/// The instructor's sphere (`sphere.obj`, unmodified), shared by the three
+/// laboratory six celestial bodies. Only the fragment shaders differ.
+pub const SPHERE_MODEL_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/models/sphere.obj");
+
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub width: u32,
