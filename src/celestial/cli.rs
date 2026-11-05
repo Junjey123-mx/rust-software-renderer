@@ -3,6 +3,7 @@
 
 use crate::app::{CliArgs, Scene};
 use crate::celestial::DebugView;
+use crate::celestial::timeline::Timeline;
 
 /// Options that only apply to `--scene crown|entrance|house`.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -20,6 +21,12 @@ pub struct CelestialArgs {
     pub debug_view: Option<DebugView>,
     /// `--threads <n>`, at least 1 (default: all cores).
     pub threads: Option<usize>,
+    /// `--record <s>`: headless recording of `s` seconds to stdout.
+    pub record: Option<f32>,
+    /// `--fps <n>` of the recording, in `[1, 120]` (default 30).
+    pub fps: Option<u32>,
+    /// `--timeline <t>` of the recording (default material).
+    pub timeline: Option<Timeline>,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -103,6 +110,26 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
                 }
                 out.threads = Some(n);
             }
+            "--record" => {
+                let s = number(value(&mut it, "--record")?, "--record")?;
+                if s <= 0.0 {
+                    return Err(format!("--record needs a positive duration (got {s})"));
+                }
+                out.record = Some(s);
+            }
+            "--fps" => {
+                let text = value(&mut it, "--fps")?;
+                let n: u32 = text
+                    .parse()
+                    .map_err(|_| format!("--fps: '{text}' is not a whole number"))?;
+                if !(1..=120).contains(&n) {
+                    return Err(format!("--fps must be in [1, 120] (got {n})"));
+                }
+                out.fps = Some(n);
+            }
+            "--timeline" => {
+                out.timeline = Some(value(&mut it, "--timeline")?.parse()?);
+            }
             other => {
                 if other == "--mode" {
                     out.mode_explicit = true;
@@ -119,9 +146,15 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     let celestial = matches!(cli.scene, Scene::Celestial(_));
     if !celestial && !lab6.is_empty() {
         return Err(
-            "--time, --freeze-time, --light-azimuth, --light-elevation, --set, --debug-view and --threads require --scene crown, entrance or house"
+            "--time, --freeze-time, --light-azimuth, --light-elevation, --set, --debug-view, --threads and --record require --scene crown, entrance or house"
                 .into(),
         );
+    }
+    if lab6.record.is_none() && (lab6.fps.is_some() || lab6.timeline.is_some()) {
+        return Err("--fps and --timeline require --record".into());
+    }
+    if lab6.record.is_some() && (cli.screenshot.is_some() || cli.interactive) {
+        return Err("--record cannot be combined with --screenshot or --interactive".into());
     }
     if celestial && cli.obj.is_some() {
         return Err("--obj cannot replace the course sphere shared by the celestial scenes".into());

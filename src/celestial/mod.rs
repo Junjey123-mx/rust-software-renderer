@@ -71,7 +71,9 @@ pub mod cli;
 pub mod crown;
 pub mod entrance;
 pub mod house;
+pub mod record;
 pub mod scene;
+pub mod timeline;
 pub mod viewer;
 
 pub use scene::CelestialScene;

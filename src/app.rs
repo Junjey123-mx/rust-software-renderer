@@ -69,6 +69,7 @@ Usage: rust-software-renderer [options]
   --scene crown|entrance|house   Lab 6 celestial bodies on the course sphere (default mode scanline)
   --time <s> --freeze-time --light-azimuth <deg> --light-elevation <deg>
   --set <param>=<value>   --debug-view <view>   --threads <n>
+  --record <s> [--fps n] [--timeline material|orbit|light|showcase]   raw rgb24 frames on stdout
 Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit
 Celestial keys: TAB body, SPACE pause, J/L I/K light, N debug view, [ ] main parameter, C/H/B/P toggle clouds, shadows, bump and parallax when the body provides them";
 
@@ -356,6 +357,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         return run_benchmark_cli(&dir);
     }
     if let Scene::Celestial(body) = args.scene {
+        if lab6.record.is_some() {
+            return crate::celestial::record::run(body, &args, &lab6);
+        }
         return crate::celestial::viewer::run(body, &args, &lab6);
     }
     let config = AppConfig::default();
