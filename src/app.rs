@@ -24,8 +24,9 @@ use std::path::PathBuf;
 ///   window to `file` and exit.
 /// * `--mode wireframe|barycentric|scanline`: triangle rasterization mode
 ///   (default: wireframe, the laboratory 4 behaviour).
-/// * `--scene ship|triangles`: the OBJ model (default) or the controlled
-///   triangle scene used to compare the modes.
+/// * `--scene ship|triangles|crown|entrance|house`: the OBJ model (default), the controlled
+///   triangle scene used to compare the modes, or a laboratory 6 celestial
+///   body (its own options are extracted first by `celestial::cli::extract`).
 /// * `--benchmark-triangles`: headless timing of both fill algorithms; no
 ///   window is created.
 /// * `--benchmark-output <dir>`: where `benchmark_raw.csv` and
@@ -65,13 +66,19 @@ Usage: rust-software-renderer [options]
   --benchmark-triangles [--benchmark-output <dir>]   headless timing, CSV output
   --benchmark-triangles --profile [--profile-mode m] [--profile-iterations N]
   --help                         this text
-Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit";
+  --scene crown|entrance|house   Lab 6 celestial bodies on the course sphere (default mode scanline)
+  --time <s> --freeze-time --light-azimuth <deg> --light-elevation <deg>
+  --set <param>=<value>   --debug-view <view>   --threads <n>
+Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit
+Celestial keys: TAB body, SPACE pause, J/L I/K light, N debug view, [ ] main parameter, C/H/B/P toggle clouds, shadows, bump and parallax when the body provides them";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Scene {
     #[default]
     Ship,
     Triangles,
+    /// Laboratory 6: a celestial body on the course sphere.
+    Celestial(crate::celestial::Body),
 }
 
 impl std::str::FromStr for Scene {
@@ -81,9 +88,11 @@ impl std::str::FromStr for Scene {
         match s {
             "ship" => Ok(Self::Ship),
             "triangles" => Ok(Self::Triangles),
-            other => Err(format!(
-                "unknown scene '{other}' (expected ship or triangles)"
-            )),
+            other => other.parse().map(Self::Celestial).map_err(|_| {
+                format!(
+                    "unknown scene '{other}' (expected ship, triangles, crown, entrance or house)"
+                )
+            }),
         }
     }
 }
@@ -200,7 +209,7 @@ pub fn apply_input(camera: &mut OrbitCamera, action: CameraAction, dt: f32) {
 
 /// Reads the keyboard state of this frame into camera actions and an
 /// optional mode change.
-fn poll_input(rl: &raylib::RaylibHandle) -> (Vec<CameraAction>, Option<TriangleMode>) {
+pub(crate) fn poll_input(rl: &raylib::RaylibHandle) -> (Vec<CameraAction>, Option<TriangleMode>) {
     let held = [
         (KeyboardKey::KEY_LEFT, CameraAction::OrbitLeft),
         (KeyboardKey::KEY_RIGHT, CameraAction::OrbitRight),
@@ -240,7 +249,7 @@ fn poll_input(rl: &raylib::RaylibHandle) -> (Vec<CameraAction>, Option<TriangleM
 /// Raylib writes screenshots as `<working dir>/<file name>`, ignoring any
 /// directory; move the file to the path the user actually asked for. Copy
 /// then remove, so a target on another filesystem works too.
-fn save_screenshot(
+pub(crate) fn save_screenshot(
     rl: &mut raylib::RaylibHandle,
     thread: &raylib::RaylibThread,
     file: &str,
@@ -326,11 +335,14 @@ fn run_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>>
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let args = parse_args(std::env::args().skip(1))?;
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    let (lab6, rest) = crate::celestial::cli::extract(raw)?;
+    let args = parse_args(rest)?;
     if args.help {
         println!("{USAGE}");
         return Ok(());
     }
+    crate::celestial::cli::validate(&args, &lab6)?;
     if args.profile && !args.benchmark {
         return Err("--profile requires --benchmark-triangles".into());
     }
@@ -342,6 +354,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .benchmark_output
             .unwrap_or_else(|| PathBuf::from("docs/results/lab5"));
         return run_benchmark_cli(&dir);
+    }
+    if let Scene::Celestial(body) = args.scene {
+        return crate::celestial::viewer::run(body, &args, &lab6);
     }
     let config = AppConfig::default();
     let mode = args.mode;
@@ -386,6 +401,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             // Already in pixels: no viewport fit, no double transform.
             (scene, Projection::Screen, SCENE_WIDTH, SCENE_HEIGHT)
         }
+        Scene::Celestial(_) => unreachable!("celestial scenes return early"),
     };
     let uniforms = Uniforms::default();
 
