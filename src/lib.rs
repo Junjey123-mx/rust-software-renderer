@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod benchmark;
+pub mod celestial;
 pub mod config;
 pub mod geometry;
 pub mod io;
