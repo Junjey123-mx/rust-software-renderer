@@ -158,3 +158,153 @@ fn palette_is_predominantly_violet() {
         b / count
     );
 }
+
+// ---- C15: migrating diamond vortex (E05) ----
+
+use rust_software_renderer::celestial::house::{contour_param, contour_point};
+use rust_software_renderer::shading::sphere::{angular_distance, from_local};
+
+/// Apogee of the principal storm (tau = 0.55 of an 18 s cycle).
+const APOGEE: f32 = 9.9;
+
+fn no_secondary() -> HouseParams {
+    HouseParams {
+        secondary_strength: 0.0,
+        ..HouseParams::default()
+    }
+}
+
+#[test]
+fn vortex_is_strictly_local() {
+    let on = frame_at(no_secondary(), APOGEE);
+    let off = frame_at(
+        HouseParams {
+            vortex: 0.0,
+            ..no_secondary()
+        },
+        APOGEE,
+    );
+    let storm = on.storms[0];
+    let (mut inside, mut changed) = (0, 0);
+    for n in directions(16_384) {
+        match storm.coords(n) {
+            None => assert_eq!(on.shade(&sample(n)), off.shade(&sample(n))),
+            Some((d, _)) if d <= 0.6 => {
+                inside += 1;
+                if (on.shade(&sample(n)) - off.shade(&sample(n))).length() > 0.02 {
+                    changed += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    assert!(inside > 50, "{inside}");
+    assert!(changed * 10 >= inside * 3, "{changed} of {inside}");
+}
+
+#[test]
+fn vortex_displaces_sampling_inside_only() {
+    let f = frame_at(no_secondary(), APOGEE);
+    let storm = f.storms[0];
+    let mut displaced = 0;
+    let mut inside = 0;
+    for n in directions(8192) {
+        let moved = angular_distance(n, f.vortex_warp(n));
+        match storm.coords(n) {
+            None => assert_eq!(f.vortex_warp(n), n),
+            Some((d, _)) if (0.05..0.6).contains(&d) => {
+                inside += 1;
+                if moved > 1.0_f32.to_radians() {
+                    displaced += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        inside > 0 && displaced * 10 >= inside * 9,
+        "{displaced} of {inside}"
+    );
+}
+
+#[test]
+fn diamond_contour_round_trips() {
+    let (a, b) = (0.45, 0.6);
+    for i in 0..1000 {
+        let angle = i as f32 * 0.0137 * std::f32::consts::TAU;
+        let r = 0.05 + 0.9 * ((i * 37) % 100) as f32 / 100.0;
+        let (u, v) = (r * a * angle.cos(), r * b * angle.sin());
+        let d = u.abs() / a + v.abs() / b;
+        let s = contour_param(u, v, a, b, d);
+        assert!((0.0..4.0).contains(&s), "{s}");
+        let (u2, v2) = contour_point(s, d, a, b);
+        assert!(
+            (u - u2).abs() < 1e-4 && (v - v2).abs() < 1e-4,
+            "({u}, {v}) -> ({u2}, {v2})"
+        );
+    }
+}
+
+#[test]
+fn vortex_migrates_between_cycles() {
+    let period = HouseParams::default().vortex_period;
+    let centers: Vec<Vector3> = (0..8)
+        .map(|k| frame_at(HouseParams::default(), APOGEE + k as f32 * period).storms[0].center)
+        .collect();
+    for pair in centers.windows(2) {
+        assert!(angular_distance(pair[0], pair[1]) > 0.05);
+    }
+    let f = frame_at(HouseParams::default(), APOGEE);
+    let g = frame_at(HouseParams::default(), APOGEE + period);
+    assert_ne!(f.storms[0].cycle, g.storms[0].cycle);
+}
+
+#[test]
+fn vortex_strength_is_zero_at_cycle_boundaries() {
+    let period = HouseParams::default().vortex_period;
+    for k in 1..4 {
+        for t in [k as f32 * period - 1e-3, k as f32 * period + 1e-3] {
+            let f = frame_at(HouseParams::default(), t);
+            assert!(f.storms[0].w.abs() < 1e-3, "t {t}: {}", f.storms[0].w);
+        }
+    }
+    let peak = frame_at(HouseParams::default(), APOGEE).storms[0].w;
+    assert!((peak - HouseParams::default().vortex_strength).abs() < 1e-3);
+}
+
+#[test]
+fn vortex_centers_respect_the_latitude_limit() {
+    for max in [10.0_f32, 30.0, 45.0] {
+        let params = HouseParams {
+            vortex_max_latitude: max,
+            ..HouseParams::default()
+        };
+        for i in 0..100 {
+            let f = frame_at(params, i as f32 * 4.1);
+            for storm in &f.storms {
+                let lat = storm.center.y.asin().to_degrees();
+                assert!(lat.abs() <= max + 1e-3, "{lat} > {max}");
+                assert!((storm.center.length() - 1.0).abs() < 1e-4);
+            }
+        }
+    }
+}
+
+#[test]
+fn vortex_switch_restores_plain_bands() {
+    let off = frame_at(
+        HouseParams {
+            vortex: 0.0,
+            ..HouseParams::default()
+        },
+        APOGEE,
+    );
+    for n in directions(4096) {
+        assert_eq!(off.vortex_warp(n), n);
+        assert_eq!(off.albedo(n), off.band_albedo(n));
+    }
+    // The storm interior is still visible as a plane region of the diamond.
+    let storm = frame_at(HouseParams::default(), APOGEE).storms[0];
+    let inner = from_local(storm.center, storm.east, storm.north, 0.1, 0.0);
+    assert!(storm.coords(inner).is_some());
+}
