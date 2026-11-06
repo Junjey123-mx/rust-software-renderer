@@ -61,6 +61,14 @@ Estrella emisiva: no depende de la luz externa.
 3. **Corona.** borde = 1 − n·V. Su ancho pulsa: w·(1 + amp·(2p − 1)), con p = 0.5 + 0.5·sen(2πt/periodo). Se suma oro y marfil en el limbo.
 4. **Diadema.** Banda en la latitud base más `crown_points` puntas triangulares hacia el polo norte. Usa una onda triangular de `puntas·lon/2π`, continua en ±π porque el número de puntas es entero.
 5. **Eclipse.** Ocupa el último `duration/period` de cada ciclo, con centro en t = periodo − duración/2 (22 s por defecto). Oscurece el núcleo por (1 − profundidad·e·(1 − borde)²) mientras la corona sigue encendida.
+6. **Bucles de plasma.** Tres ranuras con periodo `loop_period`·(1 + 0.37·i). En el plano tangente de un pie sembrado (cono de 60°), el bucle es la mitad superior de una elipse de semiejes a y b, girada y deformada por fBm, recorrida de un pie (s = 0) al otro (s = 1). La fase τ controla:
+   - concentración (0-0.12): brillo en el pie;
+   - nacimiento y expansión (0.12-0.55): el frente `head` avanza de 0 a 1;
+   - máximo (0.55-0.7): núcleo casi blanco;
+   - retorno (0.7-0.88): adelgaza y la cola `tail` drena hacia el segundo pie;
+   - estabilización (0.88-1): nada.
+
+   Todo vale 0 en los extremos del ciclo. Una vaina carmesí oscura separa el filamento del plasma y el halo calienta el plasma vecino. El eclipse también lo oscurece. No sale de la silueta: no hay geometría nueva.
 
 ## 5. Crimson Entrance (`src/celestial/entrance/`)
 
@@ -159,6 +167,11 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `eclipse_period` | 24 | 4 – 120 | Segundos entre eclipses |
 | `eclipse_duration` | 4 | 0 – 30 | Duración del eclipse |
 | `eclipse_depth` | 0.75 | 0 – 1 | Cuánto se oscurece el núcleo |
+| `loops` | 1 | 0 – 1 | Bucles de plasma que brotan y se reabsorben |
+| `loop_period` | 9 | 3 – 60 | Segundos por ciclo de un bucle |
+| `loop_size` | 0.6 | 0.15 – 0.9 | Semiamplitud del arco en su plano tangente |
+| `loop_width` | 0.05 | 0.01 – 0.12 | Grosor del filamento |
+| `loop_brightness` | 1.1 | 0 – 3 | Emisión de los bucles |
 
 ### Crimson Entrance
 

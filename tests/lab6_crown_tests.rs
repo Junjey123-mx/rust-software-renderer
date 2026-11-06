@@ -266,3 +266,107 @@ fn diadem_is_continuous_across_the_antimeridian() {
     let base = 50.0_f32.to_radians();
     assert!(f.diadem(Vector3::new(base.cos(), base.sin(), 0.0)) > 0.9);
 }
+
+// ---- Artistic complement: plasma loops that erupt and drain back ----
+
+use rust_software_renderer::celestial::crown::{LOOP_CONE_DEG, plasma_loop};
+use rust_software_renderer::shading::sphere::from_local;
+
+/// Strongest filament core of loop `slot` over directions near its arc.
+fn peak_core(f: &Frame, slot: usize) -> f32 {
+    let l = f.loops[slot];
+    let mut best = 0.0_f32;
+    for i in 0..=60 {
+        for j in -6..=6 {
+            let (x, y) = l.arc_point(i as f32 / 60.0);
+            let r = 1.0 + j as f32 * 0.02;
+            let n = from_local(l.center, l.east, l.north, x * r, y * r);
+            best = best.max(l.glow(n, f.uniforms.time, f.params.loop_width).core);
+        }
+    }
+    best
+}
+
+#[test]
+fn plasma_loops_are_born_flare_and_drain_back() {
+    let p = CrownParams::default();
+    let at = |tau: f32| frame(p, tau * p.loop_period);
+    // Slot 0 has phase 0, so tau = t / loop_period.
+    assert_eq!(
+        peak_core(&at(0.05), 0),
+        0.0,
+        "concentration: no filament yet"
+    );
+    assert!(
+        at(0.05).loops[0].foot > 0.2,
+        "the foot point gathers plasma first"
+    );
+    let birth = peak_core(&at(0.3), 0);
+    let maximum = peak_core(&at(0.62), 0);
+    let returning = peak_core(&at(0.8), 0);
+    assert!(maximum > 0.6, "maximum {maximum}");
+    assert!(birth > 0.0 && returning > 0.0);
+    assert!(
+        at(0.62).loops[0].heat > 0.9,
+        "near-white heat at the maximum"
+    );
+    assert_eq!(peak_core(&at(0.95), 0), 0.0, "stabilized: reabsorbed");
+}
+
+#[test]
+fn plasma_loops_vanish_at_cycle_boundaries_and_relocate() {
+    let p = CrownParams::default();
+    for slot in 0..3 {
+        for k in 1..4 {
+            let period = p.loop_period * (1.0 + 0.37 * slot as f32);
+            let boundary = k as f32 * period - 0.45 * slot as f32 * period;
+            if boundary <= 0.0 {
+                continue;
+            }
+            for t in [boundary - 1e-3, boundary + 1e-3] {
+                let l = plasma_loop(&p, 7, slot, t);
+                assert!(
+                    l.intensity < 1e-3 && l.foot < 1e-2 && l.heat < 1e-3,
+                    "slot {slot} t {t}"
+                );
+            }
+        }
+    }
+    let (a, b) = (
+        plasma_loop(&p, 7, 0, 4.0),
+        plasma_loop(&p, 7, 0, 4.0 + p.loop_period),
+    );
+    assert_ne!(a.cycle, b.cycle);
+    assert!(rust_software_renderer::shading::sphere::angular_distance(a.center, b.center) > 0.05);
+    let focus = direction_from_angles(-2.45, 0.55);
+    for i in 0..60 {
+        let l = plasma_loop(&p, 7, i % 3, i as f32 * 1.7);
+        let angle = rust_software_renderer::shading::sphere::angular_distance(l.center, focus);
+        assert!(angle <= LOOP_CONE_DEG.to_radians() + 1e-4);
+    }
+}
+
+#[test]
+fn loops_switch_restores_the_plain_star() {
+    let p = CrownParams::default();
+    let off = frame(CrownParams { loops: 0.0, ..p }, 5.6);
+    let dim = frame(
+        CrownParams {
+            loop_brightness: 0.0,
+            ..p
+        },
+        5.6,
+    );
+    for n in directions(4096) {
+        assert_eq!(off.loop_glow(n), Default::default());
+        let c = off.shade(&sample(n));
+        assert!(c.x.is_finite() && c.y.is_finite() && c.z.is_finite());
+    }
+    // With the loops on they add light somewhere on the visible disk.
+    let on = frame(p, 5.6);
+    let brighter = directions(4096)
+        .into_iter()
+        .filter(|&n| luminance(on.shade(&sample(n))) > luminance(dim.shade(&sample(n))) + 0.1)
+        .count();
+    assert!(brighter > 10, "{brighter}");
+}

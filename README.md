@@ -80,6 +80,7 @@ Estrella regia de plasma vivo con una diadema dorada y una corona que respira. E
 - **Corona.** Una corona de Fresnel en el limbo cuyo ancho pulsa.
 - **Diadema.** Cinco puntas triangulares sobre el casquete norte.
 - **Eclipse.** Uno cada 24 s, que oscurece el núcleo mientras la corona sigue ardiendo.
+- **Bucles de plasma.** Tres surcos luminosos con ciclos propios: el plasma se concentra en un pie, un filamento curvo crece hasta el otro pie, arde casi blanco y se drena de vuelta a la superficie. Son trayectorias sobre la esfera, dentro de su silueta, no geometría.
 
 | Parámetro | Por defecto | Rango | Cambio visual |
 |---|---:|---|---|
@@ -91,6 +92,8 @@ Estrella regia de plasma vivo con una diadema dorada y una corona que respira. E
 | `corona_pulse_amount` | 0.35 | 0 – 1 | Amplitud del pulso del limbo |
 | `crown_points` | 5 | 3 – 9 | Puntas de la diadema |
 | `eclipse_period` | 24 | 4 – 120 | Segundos entre eclipses |
+| `loop_period` | 9 | 3 – 60 | Segundos por ciclo de un bucle de plasma |
+| `loop_size` | 0.6 | 0.15 – 0.9 | Tamaño de los arcos de plasma |
 
 ### Crimson Entrance — planeta volcánico de cráteres y picas
 
