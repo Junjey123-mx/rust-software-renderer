@@ -143,6 +143,11 @@ Cada ciclo elige un centro nuevo con `hash_direction` dentro de un cono de 65° 
   - el punto se reconstruye sobre **el mismo contorno** y las bandas se muestrean en él;
   - fuera de d ≥ 1 es la identidad exacta.
 - **Ciclo del vórtice:** periodo de 18 s con calma, perturbación, formación, apogeo (τ ≈ 0.55, t = 9.9), disolución y estabilidad. W = 0 en los bordes del ciclo, y después el centro migra (latitud ≤ 45°). Una tormenta secundaria (periodo de 11 s, escala 0.5) sigue el mismo esquema.
+- **Relámpagos neón** (`strike`, `Frame::lightning`). Hay tres canales con ranuras de 0.11, 0.17 y 0.23 s. En cada ranura un *hash* decide si cae un rayo:
+  - canal 0: con probabilidad `lightning_rate`·(0.15 + 0.75·envolvente de la tormenta), solo con el vórtice activo; nace dentro del rombo y se anula antes de su borde;
+  - canales 1 y 2: con probabilidad `lightning_rate`·0.22, en un casquete del hemisferio visible.
+
+  El destello es exp(−5·fase), a veces con un segundo pulso. El rayo es un trazo dentado (ruido 1D de 4 octavas con los extremos anclados) con dos ramas a ±25-35°, en el plano tangente del punto de impacto. En la tormenta las coordenadas salen del dominio deformado por el vórtice. Lleva un núcleo pálido `#F8E8FF`, un halo `#C13CFF`/`#FF4FB8` y un resplandor tenue en las nubes, todo como emisión.
 
 ## 7. Parámetros
 
@@ -244,6 +249,9 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `vortex_aspect` | 1.35 | 0.6 – 2 | Diagonal norte-sur sobre la este-oeste |
 | `secondary_strength` | 0.6 | 0 – 2 | Circulación de la tormenta secundaria |
 | `vortex_max_latitude` | 45 | 0 – 60 | Latitud máxima de los centros (grados) |
+| `lightning` | 1 | 0 – 1 | Relámpagos neón en las tormentas |
+| `lightning_rate` | 1 | 0 – 3 | Frecuencia de los relámpagos |
+| `lightning_intensity` | 1.4 | 0 – 3 | Brillo de los relámpagos |
 
 ## 8. Pruebas por criterio
 

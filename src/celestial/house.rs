@@ -5,7 +5,9 @@
 //! with a seam), mapped through violet, magenta and pearl ramps with an
 //! atmospheric rim. A migrating storm advects the band sampling domain along
 //! the contours of an L1 diamond metric in its tangent plane, so the bands
-//! wind into rhombic spirals. Its only symbol is the diamond.
+//! wind into rhombic spirals. Brief neon lightning crackles inside the
+//! storm diamond and now and then between the bands. Its only symbol is the
+//! diamond.
 
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample};
@@ -13,8 +15,10 @@ use crate::pipeline::{ViewPreset, direction_from_angles};
 use crate::shading::cycle::{cycle, envelope};
 use crate::shading::lighting::{fresnel, wrap_lambert};
 use crate::shading::math::{hex, mix3, ramp, saturate, smoothstep};
-use crate::shading::noise::fbm;
-use crate::shading::sphere::{east_north, from_local, hash_direction, local_plane, rotate_y};
+use crate::shading::noise::{fbm, hash3};
+use crate::shading::sphere::{
+    angular_distance, east_north, from_local, hash_direction, local_plane, rotate_y,
+};
 use raylib::math::Vector3;
 use std::f32::consts::PI;
 
@@ -35,6 +39,9 @@ params! {
         vortex_aspect: 1.35, 0.6, 2.0, "north-south over east-west diagonal of the diamond";
         secondary_strength: 0.6, 0.0, 2.0, "circulation of the smaller secondary storm";
         vortex_max_latitude: 45.0, 0.0, 60.0, "storm centers stay within this latitude, degrees";
+        lightning: 1.0, 0.0, 1.0, "switch: neon lightning in the storms (0 or 1)";
+        lightning_rate: 1.0, 0.0, 3.0, "how often lightning strikes";
+        lightning_intensity: 1.4, 0.0, 3.0, "brightness of the lightning";
     }
 }
 
@@ -57,6 +64,116 @@ pub struct Frame {
     seed: u32,
     /// Principal and secondary storms of this frame.
     pub storms: [Storm; 2],
+    /// Lightning channels of this instant (boxed: built once per frame).
+    pub strikes: Box<[Strike; LIGHTNING_CHANNELS]>,
+}
+
+/// Lightning channels: 0 follows the main storm diamond, 1 and 2 strike
+/// between the bands.
+pub const LIGHTNING_CHANNELS: usize = 3;
+/// Length of one possible strike per channel, seconds.
+pub const STRIKE_SLOTS: [f32; LIGHTNING_CHANNELS] = [0.11, 0.17, 0.23];
+
+/// One lightning channel at the current instant.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Strike {
+    pub center: Vector3,
+    /// Angular radius of the discharge region.
+    pub radius: f32,
+    /// Brightness of this instant: a fast-decaying flash, 0 when idle.
+    pub flash: f32,
+    /// Mix between electric violet (0) and neon pink (1).
+    pub hue: f32,
+    /// Direction of the main bolt in the tangent plane of `center`.
+    pub angle: f32,
+    pub east: Vector3,
+    pub north: Vector3,
+    /// Bound to the main storm: confined to its diamond.
+    pub storm_bound: bool,
+    seed: u32,
+}
+
+/// Uniform value in `[0, 1)` from integer coordinates.
+fn unit_hash(a: i32, b: i32, c: i32, seed: u32) -> f32 {
+    hash3(a, b, c, seed) as f32 / (u32::MAX as f32 + 1.0)
+}
+
+/// State of lightning channel `c` at time `t`. Time is cut into short slots;
+/// a hash decides whether a slot strikes (more often while the main storm
+/// is strong) and where. The flash decays within its slot, sometimes with a
+/// second pulse, so discharges are brief and intermittent.
+pub fn strike(p: &HouseParams, storm: &Storm, c: usize, t: f32) -> Strike {
+    let seed = (p.seed as u32) ^ 0xa5a5_1f3d;
+    let slot = (t / STRIKE_SLOTS[c]).floor();
+    let phase = t / STRIKE_SLOTS[c] - slot;
+    let (k, ch) = (slot as i64, c as i32);
+    let (lo, hi) = (k as i32, (k >> 32) as i32);
+    let h = |salt: i32| unit_hash(ch * 8 + salt, lo, hi, seed);
+    let storm_bound = c == 0;
+    let chance = if p.lightning < 0.5 {
+        0.0
+    } else if storm_bound {
+        if storm.w > 0.0 {
+            p.lightning_rate * (0.15 + 0.75 * storm.envelope)
+        } else {
+            0.0
+        }
+    } else {
+        p.lightning_rate * 0.22
+    };
+    let active = h(0) < chance;
+    let double = if h(1) < 0.4 {
+        0.6 * (-30.0 * (phase - 0.45).abs()).exp()
+    } else {
+        0.0
+    };
+    let flash = if active {
+        ((-5.0 * phase).exp() * (0.7 + 0.3 * h(2)) + double).min(1.0)
+    } else {
+        0.0
+    };
+    let (center, radius) = if storm_bound {
+        let (u, v) = ((h(3) - 0.5) * 0.9 * storm.a, (h(4) - 0.5) * 0.9 * storm.b);
+        (
+            from_local(storm.center, storm.east, storm.north, u, v),
+            0.9 * storm.a.max(storm.b),
+        )
+    } else {
+        let (az, el) = ViewPreset::Oblique.angles();
+        let focus = direction_from_angles(az, el);
+        (
+            hash_direction(seed, 50 + c as u32, k, focus, 60.0_f32.to_radians()),
+            0.22 + 0.1 * h(5),
+        )
+    };
+    let (east, north) = east_north(center);
+    Strike {
+        center,
+        radius,
+        flash,
+        hue: h(6),
+        angle: PI * h(7),
+        east,
+        north,
+        storm_bound,
+        seed: hash3(ch, lo, hi, seed ^ 0x2545_f491),
+    }
+}
+
+/// Jagged 1D offset of a bolt: four octaves of gradient noise along `x`.
+fn jag(x: f32, seed: u32) -> f32 {
+    fbm(Vector3::new(x, 0.31, 0.77), 4, seed)
+}
+
+/// Distance from plane point `(x, y)` to a jagged stroke that starts at the
+/// origin and runs `length` along the positive x axis, with both ends
+/// anchored. `None` beyond the ends.
+fn bolt_distance(x: f32, y: f32, length: f32, amplitude: f32, seed: u32) -> Option<f32> {
+    if !(0.0..=length).contains(&x) {
+        return None;
+    }
+    let anchor = (PI * x / length).sin();
+    Some((y - amplitude * anchor * jag(7.0 * x / length, seed)).abs())
 }
 
 /// A diamond storm in its current cycle.
@@ -195,23 +312,26 @@ fn storm(
 pub fn prepare(params: &HouseParams, uniforms: &ShaderUniforms, debug: DebugView) -> Frame {
     let seed = params.seed as u32;
     let t = uniforms.time;
+    let storms = [
+        storm(
+            params,
+            0,
+            t,
+            params.vortex_period,
+            0.0,
+            1.0,
+            params.vortex_strength,
+        ),
+        storm(params, 1, t, 11.0, 0.37, 0.5, params.secondary_strength),
+    ];
+    let strikes = Box::new(std::array::from_fn(|c| strike(params, &storms[0], c, t)));
     Frame {
         params: *params,
         uniforms: *uniforms,
         debug,
         seed,
-        storms: [
-            storm(
-                params,
-                0,
-                t,
-                params.vortex_period,
-                0.0,
-                1.0,
-                params.vortex_strength,
-            ),
-            storm(params, 1, t, 11.0, 0.37, 0.5, params.secondary_strength),
-        ],
+        storms,
+        strikes,
     }
 }
 
@@ -278,6 +398,65 @@ impl Frame {
         mix3(hex(0xFF4FB8), hex(0xF4C6DA), 1.0 - d) * glow
     }
 
+    /// Neon lightning emitted at unit direction `n`: a jagged main bolt
+    /// with two forks per active strike, a pale core inside a violet or
+    /// pink halo, and a faint glow of the clouds it lights up. Storm bolts
+    /// are drawn in the domain the vortex deforms, so they curl with it.
+    pub fn lightning(&self, n: Vector3) -> Vector3 {
+        let mut total = Vector3::zero();
+        for st in self.strikes.iter() {
+            if st.flash <= 0.0 || n.dot(st.center) < (1.3 * st.radius).min(1.5).cos() {
+                continue;
+            }
+            let (reach, sample) = if st.storm_bound {
+                // Confined to the storm diamond, fading before its edge.
+                match self.storms[0].coords(n) {
+                    Some((d, _)) => (1.0 - smoothstep(0.7, 1.0, d), self.vortex_warp(n)),
+                    None => continue,
+                }
+            } else {
+                let dist = angular_distance(n, st.center);
+                (1.0 - smoothstep(0.7 * st.radius, 1.2 * st.radius, dist), n)
+            };
+            let Some((u, v)) = local_plane(sample, st.center, st.east, st.north) else {
+                continue;
+            };
+            if reach <= 0.0 {
+                continue;
+            }
+            let half = 0.9 * st.radius.tan();
+            let (sa, ca) = st.angle.sin_cos();
+            let (x, y) = (u * ca + v * sa + half, -u * sa + v * ca);
+            let amplitude = 0.16 * half;
+            let width = 0.012;
+            // Main bolt across the region, then two forks leaving it.
+            let mut best = bolt_distance(x, y, 2.0 * half, amplitude, st.seed)
+                .map(|d| d / width)
+                .unwrap_or(f32::INFINITY);
+            for (i, turn) in [(0_u32, 0.45_f32), (1, -0.6)] {
+                let start = 2.0 * half * (0.3 + 0.35 * i as f32);
+                let anchor = (PI * start / (2.0 * half)).sin();
+                let y0 = amplitude * anchor * jag(7.0 * start / (2.0 * half), st.seed);
+                let (bs, bc) = turn.sin_cos();
+                let (dx, dy) = (x - start, y - y0);
+                let (bx, by) = (dx * bc + dy * bs, -dx * bs + dy * bc);
+                let length = 0.8 * half;
+                if let Some(d) = bolt_distance(bx, by, length, 0.5 * amplitude, st.seed ^ (i + 1)) {
+                    best = best.min(d / (0.7 * width * (1.0 - 0.6 * bx / length)));
+                }
+            }
+            let core = (-best * best).exp();
+            let glow = (-(best / 4.0).powi(2)).exp();
+            let tint = mix3(hex(0xC13CFF), hex(0xFF4FB8), st.hue);
+            let clouds = (-(angular_distance(n, st.center) / st.radius).powi(2)).exp();
+            total += (tint * (0.9 * glow)
+                + mix3(hex(0xFF4FB8), hex(0xF8E8FF), core) * (1.4 * core)
+                + hex(0xC13CFF) * (0.2 * clouds))
+                * (st.flash * reach);
+        }
+        total * self.params.lightning_intensity
+    }
+
     pub fn shade(&self, s: &SurfaceSample) -> Vector3 {
         let n = s.normal;
         match self.debug {
@@ -296,6 +475,6 @@ impl Frame {
         let lit = (self.albedo(n) + self.core_glow(n))
             * (0.18 + 0.82 * wrap_lambert(n, u.light_direction, p.wrap));
         let rim = fresnel(n, u.eye_direction, 3.0);
-        lit + mix3(hex(0xC13CFF), hex(0xF0408A), rim) * (p.rim_strength * rim)
+        lit + mix3(hex(0xC13CFF), hex(0xF0408A), rim) * (p.rim_strength * rim) + self.lightning(n)
     }
 }

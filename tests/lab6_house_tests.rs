@@ -308,3 +308,106 @@ fn vortex_switch_restores_plain_bands() {
     let inner = from_local(storm.center, storm.east, storm.north, 0.1, 0.0);
     assert!(storm.coords(inner).is_some());
 }
+
+// ---- Artistic complement: neon lightning in the storms ----
+
+use rust_software_renderer::celestial::house::{STRIKE_SLOTS, strike};
+
+#[test]
+fn lightning_is_off_when_disabled() {
+    let off = HouseParams {
+        lightning: 0.0,
+        ..HouseParams::default()
+    };
+    for i in 0..40 {
+        let f = frame_at(off, 8.0 + i as f32 * 0.07);
+        assert!(f.strikes.iter().all(|s| s.flash == 0.0));
+        for n in directions(256) {
+            assert_eq!(f.lightning(n), Vector3::zero());
+        }
+    }
+}
+
+#[test]
+fn lightning_flashes_are_brief_and_intermittent() {
+    let p = HouseParams::default();
+    let storm = frame_at(p, 0.0).storms[0];
+    for (c, &slot) in STRIKE_SLOTS.iter().enumerate().skip(1) {
+        let slots = 400;
+        let active = (0..slots)
+            .filter(|&k| strike(&p, &storm, c, (k as f32 + 0.02) * slot).flash > 0.0)
+            .count();
+        assert!(
+            (10..=200).contains(&active),
+            "channel {c}: {active} of {slots}"
+        );
+        // Within a striking slot the flash fades quickly.
+        let k = (0..slots)
+            .find(|&k| strike(&p, &storm, c, (k as f32 + 0.02) * slot).flash > 0.0)
+            .unwrap() as f32;
+        let early = strike(&p, &storm, c, (k + 0.02) * slot).flash;
+        let late = strike(&p, &storm, c, (k + 0.95) * slot).flash;
+        assert!(late < 0.35 * early, "{early} -> {late}");
+    }
+}
+
+#[test]
+fn storm_lightning_stays_inside_the_diamond_and_follows_its_life() {
+    let p = HouseParams::default();
+    let mut apogee_strikes = 0;
+    for i in 0..200 {
+        // Around the apogee (tau 0.45-0.65 of the 18 s cycle).
+        let f = frame_at(p, 8.1 + i as f32 * 0.018);
+        let st = f.strikes[0];
+        if st.flash > 0.0 {
+            apogee_strikes += 1;
+            assert!(
+                f.storms[0].coords(st.center).is_some(),
+                "bolt seeded in the diamond"
+            );
+        }
+        for n in directions(512) {
+            if f.storms[0].coords(n).is_none()
+                && f.strikes[1].flash == 0.0
+                && f.strikes[2].flash == 0.0
+            {
+                assert_eq!(
+                    f.lightning(n),
+                    Vector3::zero(),
+                    "storm bolts never leave the diamond"
+                );
+            }
+        }
+    }
+    assert!(apogee_strikes > 20, "{apogee_strikes}");
+    // During the calm phase the storm channel never strikes.
+    for i in 0..100 {
+        let f = frame_at(p, 0.05 + i as f32 * 0.017);
+        assert_eq!(f.strikes[0].flash, 0.0);
+    }
+}
+
+#[test]
+fn lightning_is_neon_violet_and_pink_without_saturating() {
+    let p = HouseParams::default();
+    let eye = direction_from_angles(-2.45, 0.55);
+    let visible: Vec<Vector3> = directions(8192)
+        .into_iter()
+        .filter(|n| n.dot(eye) > 0.0)
+        .collect();
+    let mut bolts = 0;
+    for i in 0..60 {
+        let f = frame_at(p, 9.0 + i as f32 * 0.033);
+        let lit: Vec<Vector3> = visible.iter().map(|&n| f.lightning(n)).collect();
+        let strong = lit.iter().filter(|c| c.length() > 0.3).count();
+        assert!(
+            strong * 8 < visible.len(),
+            "lightning covers too much of the disk ({strong})"
+        );
+        for c in lit.iter().filter(|c| c.length() > 0.3) {
+            bolts += 1;
+            assert!(c.z > c.y && c.x > c.y, "neon violet or pink: {c:?}");
+        }
+    }
+    assert!(bolts > 0);
+}

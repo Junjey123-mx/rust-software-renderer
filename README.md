@@ -132,6 +132,7 @@ Gigante gaseoso violeta donde la circulación atmosférica se organiza en rombos
 - **Vientos diferenciales.** Una rotación de la dirección de muestreo que depende de la latitud, así que las bandas vecinas se deslizan.
 - **Vórtice ♦.** El dominio se advecta a lo largo de los contornos de la norma L1 (un rombo) en el plano tangente del centro de la tormenta. Las bandas vecinas se enrollan en espirales romboidales con un núcleo luminoso, y en cada ciclo la tormenta migra.
 - **Halo.** Un halo atmosférico de Fresnel en el limbo.
+- **Relámpagos neón.** Rayos dentados con dos ramas, de núcleo pálido y halo violeta o rosa neón, que destellan y se apagan en fracciones de segundo. Uno de los canales cae solo dentro del rombo de la tormenta, más a menudo cerca de su apogeo, y se enrosca con el remolino; los otros saltan de vez en cuando entre las bandas. Se suman como emisión, sin tocar las bandas ni el rombo.
 
 | Parámetro | Por defecto | Rango | Cambio visual |
 |---|---:|---|---|
@@ -142,6 +143,8 @@ Gigante gaseoso violeta donde la circulación atmosférica se organiza en rombos
 | `vortex_radius` | 0.45 | 0.1 – 0.5 | Tamaño de la tormenta ♦ |
 | `vortex_period` | 18 | 4 – 90 | Segundos entre migraciones |
 | `rim_strength` | 0.6 | 0 – 2 | Halo violeta y magenta del limbo |
+| `lightning_rate` | 1 | 0 – 3 | Frecuencia de los relámpagos |
+| `lightning_intensity` | 1.4 | 0 – 3 | Brillo de los relámpagos |
 
 La esfera compartida en wireframe es la misma para los tres cuerpos:
 
