@@ -32,6 +32,7 @@ params! {
         event_period: 21.0, 6.0, 90.0, "seconds per spade crater cycle (slots a third apart)";
         event_size: 0.5, 0.15, 0.9, "tangent-plane size of the large spade crater";
         event_depth: 0.55, 0.0, 1.0, "depth of the large spade crater at full sink";
+        event_margin: 0.12, 0.0, 0.5, "extra angular gap between spade craters, radians";
         lava_glow: 1.0, 0.0, 3.0, "emission of the molten spade floor";
         char_strength: 0.85, 0.0, 1.0, "how dark the carbonized rock of a spade crater gets";
         clouds: 1.0, 0.0, 1.0, "switch: procedural cloud layer (0 or 1)";

@@ -349,3 +349,83 @@ fn molten_spade_reads_hyperintense_red_by_day_and_night() {
         assert!(c.x >= 0.95 && c.x > 1.6 * c.y && c.x > 3.0 * c.z, "{c:?}");
     }
 }
+
+// ---- Spatial and temporal distribution ----
+
+use rust_software_renderer::celestial::entrance::events::{
+    FRONT_CONE_DEG, HISTORY, ORIGIN, clearance, place_events,
+};
+
+#[test]
+fn open_spade_craters_never_overlap() {
+    let margin = p().event_margin;
+    for i in 0..2400 {
+        let f = frame_at(p(), i as f32 * 0.25);
+        let alive: Vec<&SpadeCrater> = f.events.iter().filter(|e| e.alive()).collect();
+        for (a, ea) in alive.iter().enumerate() {
+            for eb in &alive[a + 1..] {
+                let gap = angular_distance(ea.center, eb.center);
+                let needed = ea.reach_cos.acos() + eb.reach_cos.acos() + margin;
+                assert!(
+                    gap >= needed - 1e-4,
+                    "t {}: {gap} < {needed}",
+                    i as f32 * 0.25
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn new_craters_keep_clear_of_recently_closed_zones() {
+    let f = frame_at(p(), 0.0);
+    let placed = place_events(&p(), f.seed, f.focus, 400);
+    assert_eq!(placed[0].index, ORIGIN);
+    for i in 1..placed.len() {
+        let recent = &placed[i.saturating_sub(HISTORY)..i];
+        let gap = clearance(placed[i].center, placed[i].reach, recent, p().event_margin);
+        assert!(gap >= 0.0, "event {}: clearance {gap}", placed[i].index);
+    }
+}
+
+#[test]
+fn placement_depends_only_on_the_event_index() {
+    let f = frame_at(p(), 0.0);
+    let short = place_events(&p(), f.seed, f.focus, 40);
+    let long = place_events(&p(), f.seed, f.focus, 90);
+    assert_eq!(short[..], long[..short.len()]);
+    // The frame uses exactly these centers.
+    let third = p().event_period / 3.0;
+    for m in 0..40_i64 {
+        let frame = frame_at(p(), m as f32 * third + 0.5);
+        let e = frame.events[m.rem_euclid(3) as usize];
+        assert_eq!(e.index, m);
+        assert_eq!(e.center, long[(m - ORIGIN) as usize].center);
+    }
+}
+
+#[test]
+fn craters_spread_over_the_planet_and_open_in_view() {
+    let f = frame_at(p(), 0.0);
+    let placed = place_events(&p(), f.seed, f.focus, 200);
+    let front = (FRONT_CONE_DEG.to_radians() + 1e-3).cos();
+    let even: Vec<_> = placed.iter().filter(|e| e.index % 2 == 0).collect();
+    let in_view = even
+        .iter()
+        .filter(|e| e.center.dot(f.focus) >= front)
+        .count();
+    assert!(
+        in_view * 10 >= even.len() * 8,
+        "{in_view} of {}",
+        even.len()
+    );
+    let far_side = placed
+        .iter()
+        .filter(|e| e.center.dot(f.focus) < 0.0)
+        .count();
+    assert!(far_side * 6 >= placed.len(), "{far_side} on the far side");
+    // The opening scene shows the large crater forming in view.
+    let first = f.events[0];
+    assert_eq!(first.index, 0);
+    assert!(first.center.dot(f.focus) >= front);
+}
