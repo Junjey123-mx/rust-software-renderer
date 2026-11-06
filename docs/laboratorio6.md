@@ -106,6 +106,14 @@ Estrella emisiva: no depende de la luz externa.
 - apogeo (t = 8 para la pica 0);
 - erosión por ruido.
 
+**Pica grabada a fuego** (`spade_brand`). Con la distancia firmada s de la pica y la fase τ:
+- el contorno se graba primero: exp(−(s/0.025)²), entre τ 0.06 y 0.2;
+- el interior (s < 0) se enciende entre τ 0.16 y 0.36, modulado por vetas de fBm que fluyen con τ;
+- en el apogeo (τ 0.35-0.75) aparece un núcleo casi blanco;
+- entre τ 0.6 y 0.88 se enfría por parches de ruido.
+
+Una franja exterior 0 < s < 0.22 se carboniza. Todo vale 0 en los extremos del ciclo. La emisión es independiente de la luz (`brand_emission`: carmesí → rojo `#FF2A1A`, vetas `#FF7A00`, núcleo `#FFE0D0`). Dentro de la marca sustituye a la roca iluminada y el 60 % atraviesa las nubes.
+
 Cada ciclo elige un centro nuevo con `hash_direction` dentro de un cono de 65° (cráteres) o 60° (picas). Como las envolventes valen 0 en los bordes del ciclo, no hay saltos. La pica solo modifica la **altura** (meseta del SDF con fracturas en |sdf| pequeño); nunca es una calcomanía.
 
 ### 5.3 Nubes y sombras (`clouds.rs`)
@@ -192,6 +200,8 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `spade_period` | 16 | 2 – 60 | Segundos por ciclo de pica |
 | `spade_size` | 0.42 | 0.1 – 0.8 | Tamaño de la meseta ♠ |
 | `spade_height` | 0.6 | 0 – 1 | Altura de la meseta en su apogeo |
+| `brand_glow` | 1 | 0 – 3 | Emisión de la pica incandescente |
+| `char_strength` | 0.85 | 0 – 1 | Oscuridad de la roca carbonizada alrededor de la pica |
 | `clouds` | 1 | 0 – 1 | Capa de nubes (tecla `C`) |
 | `cloud_coverage` | 0.45 | 0 – 1 | Fracción del cielo cubierta (tecla `[` / `]`) |
 | `cloud_scale` | 2.4 | 0.5 – 8 | Tamaño de las masas de nubes |

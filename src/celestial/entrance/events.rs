@@ -54,6 +54,12 @@ pub struct Relief {
     pub fracture: f32,
     /// Molten crater floor glow.
     pub magma: f32,
+    /// Burning interior of a spade brand, including its glowing outline.
+    pub brand: f32,
+    /// White-hot heat deep inside the brand at its apogee.
+    pub brand_core: f32,
+    /// Carbonized rock around the brand.
+    pub char: f32,
 }
 
 /// The three crater slots (offset by a third of the period) and the two
@@ -126,6 +132,7 @@ pub fn crater_relief(n: Vector3, e: &ActiveEvent) -> Relief {
         rim: rim_profile(d) * e.strength,
         fracture: ring,
         magma: glow * (1.0 - smoothstep(0.35, 0.7, d)),
+        ..Relief::default()
     }
 }
 
@@ -149,12 +156,50 @@ pub fn spade_relief(n: Vector3, e: &ActiveEvent, seed: u32) -> Relief {
     // Energy signal before emergence, then activity while the mesa stands.
     let energy = smoothstep(0.0, 0.05, e.tau) * (1.0 - smoothstep(0.08, 0.12, e.tau));
     let activity = energy.max(e.strength);
+    let (brand, brand_core, char) = spade_brand(n, s, e.tau, seed);
     Relief {
         height: e.amount * mesa,
         rim: 0.0,
         fracture: (-(s / 0.02).powi(2)).exp() * activity,
         magma: 0.0,
+        brand,
+        brand_core,
+        char,
     }
+}
+
+/// The spade burned into the crust, from its signed distance `s` (negative
+/// inside) and the phase `tau` of its cycle: subterranean heating (the
+/// existing fracture signal), the outline engraved first (0.06-0.2), the
+/// whole interior igniting (0.16-0.36), a white-hot core at the apogee,
+/// cooling in patches (0.6-0.88) and disappearance. A charred band of rock
+/// surrounds the symbol while it burns. All terms are 0 at both cycle ends.
+/// Returns `(brand, brand_core, char)`, each in `[0, 1]`.
+pub fn spade_brand(n: Vector3, s: f32, tau: f32, seed: u32) -> (f32, f32, f32) {
+    let engrave = smoothstep(0.06, 0.2, tau) * (1.0 - smoothstep(0.82, 0.96, tau));
+    if engrave <= 0.0 {
+        return (0.0, 0.0, 0.0);
+    }
+    let ignite = smoothstep(0.16, 0.36, tau) * (1.0 - smoothstep(0.62, 0.88, tau));
+    let scorch = smoothstep(0.1, 0.3, tau) * (1.0 - smoothstep(0.85, 1.0, tau));
+    let cooling = smoothstep(0.6, 0.88, tau);
+    let inside = 1.0 - smoothstep(-0.02, 0.015, s);
+    // Molten veins move while the brand burns; cooling leaves rock patches.
+    let flow = Vector3::new(4.0 * tau, 0.0, 2.0 * tau);
+    let vein = 0.5 + 0.5 * fbm(n * 22.0 + flow, 3, seed.wrapping_add(17));
+    let patches = 0.5 + 0.5 * fbm(n * 12.0, 2, seed.wrapping_add(19));
+    let keep = smoothstep(cooling - 0.12, cooling + 0.12, patches);
+    let fill = inside * ignite * keep * (0.55 + 0.45 * vein);
+    let outline = (-(s / 0.025).powi(2)).exp() * engrave;
+    let brand = fill.max(0.8 * outline).min(1.0);
+    let apogee = smoothstep(0.35, 0.5, tau) * (1.0 - smoothstep(0.6, 0.75, tau));
+    // Hot veins everywhere inside, white-hot near the center at the apogee.
+    let brand_core = fill * (0.35 * vein * vein).max(smoothstep(0.0, -0.16, s) * apogee);
+    let char = smoothstep(-0.01, 0.02, s)
+        * (1.0 - smoothstep(0.05, 0.22, s))
+        * scorch
+        * (0.7 + 0.3 * vein);
+    (brand, brand_core, char)
 }
 
 /// Sum of all event reliefs at a direction (heights add, masks take the max).
@@ -169,6 +214,9 @@ pub fn event_relief(n: Vector3, events: &[ActiveEvent], seed: u32) -> Relief {
         total.rim = total.rim.max(r.rim);
         total.fracture = total.fracture.max(r.fracture);
         total.magma = total.magma.max(r.magma);
+        total.brand = total.brand.max(r.brand);
+        total.brand_core = total.brand_core.max(r.brand_core);
+        total.char = total.char.max(r.char);
     }
     total
 }

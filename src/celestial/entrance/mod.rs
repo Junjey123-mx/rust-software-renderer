@@ -33,6 +33,8 @@ params! {
         spade_period: 16.0, 2.0, 60.0, "seconds per spade mesa life cycle";
         spade_size: 0.42, 0.1, 0.8, "size of the spade mesa in its tangent plane";
         spade_height: 0.6, 0.0, 1.0, "height of the spade mesa at its apogee";
+        brand_glow: 1.0, 0.0, 3.0, "emission of the spade burned into the crust";
+        char_strength: 0.85, 0.0, 1.0, "how dark the carbonized rock around the spade gets";
         clouds: 1.0, 0.0, 1.0, "switch: procedural cloud layer (0 or 1)";
         cloud_coverage: 0.45, 0.0, 1.0, "fraction of the sky covered by clouds";
         cloud_scale: 2.4, 0.5, 8.0, "frequency of the cloud masses";
@@ -60,6 +62,8 @@ params! {
 
 /// Emission of fissures and magma on the day side.
 pub const DAY_GLOW: f32 = 0.12;
+/// Fraction of the brand light that still shows through a dense cloud.
+pub const BRAND_THROUGH_CLOUDS: f32 = 0.6;
 
 /// Per-frame state of the rocky planet shader.
 #[derive(Debug, Clone)]
@@ -101,13 +105,24 @@ impl Frame {
             // Ground debug views are shown without clouds.
             _ => return self.surface_color(n),
         }
-        let surface = self.surface_color(n);
+        let (surface, brand) = self.surface_parts(n);
         // Clouds over the ground, with their own soft lighting and the
-        // geometric normal (they float above the relief).
+        // geometric normal (they float above the relief). A burning brand
+        // still glows red through them.
         let l = self.uniforms.light_direction;
         let cloud =
             mix3(hex(0x6E6468), hex(0xD6D0C4), 0.35) * (0.08 + 0.92 * wrap_lambert(n, l, 0.3));
-        mix3(surface, cloud, self.clouds.alpha(n))
+        let alpha = self.clouds.alpha(n);
+        mix3(surface, cloud, alpha) + brand * (BRAND_THROUGH_CLOUDS * alpha)
+    }
+
+    /// Light of a spade burned into the crust: a hyperintense crimson to red
+    /// interior, orange veins and a white-hot core at the apogee. It is
+    /// self-lit, so it reads the same by day and by night.
+    pub fn brand_emission(&self, brand: f32, core: f32) -> Vector3 {
+        let red = mix3(hex(0xD21F2B), hex(0xFF2A1A), brand) * (1.5 * brand);
+        (red + hex(0xFF7A00) * (0.7 * core) + hex(0xFFE0D0) * (0.6 * core * core))
+            * self.params.brand_glow
     }
 
     /// Lookup direction of the ground seen along the view: the geometric
@@ -197,33 +212,53 @@ impl Frame {
 
     /// Lit ground color without clouds.
     pub fn surface_color(&self, n: Vector3) -> Vector3 {
+        self.surface_parts(n).0
+    }
+
+    /// Lit ground color without clouds, and the brand emission it contains.
+    fn surface_parts(&self, n: Vector3) -> (Vector3, Vector3) {
         let l = self.uniforms.light_direction;
         // Cloud shadows attenuate direct light only; emission is untouched.
         let shadow = self.clouds.shadow(n, l);
+        let gray = |v: f32| (Vector3::one() * v, Vector3::zero());
         match self.debug {
-            DebugView::Shadows => return Vector3::one() * (1.0 - shadow),
-            DebugView::Night => return Vector3::one() * self.night_factor(n, l),
+            DebugView::Shadows => return gray(1.0 - shadow),
+            DebugView::Night => return gray(self.night_factor(n, l)),
             _ => {}
         }
         // Every ground lookup uses the parallax-shifted direction; night,
         // clouds and shadows keep the geometric one.
         let np = self.parallax_direction(n);
         if self.debug == DebugView::Parallax {
-            return Vector3::one() * (angular_distance(n, np) * 40.0).min(1.0);
+            return gray((angular_distance(n, np) * 40.0).min(1.0));
         }
         let ground = terrain::ground(np, self);
         let lit_normal = self.shading_normal(np);
         match self.debug {
-            DebugView::Normals => return lit_normal * 0.5 + Vector3::new(0.5, 0.5, 0.5),
-            DebugView::Height => {
-                return Vector3::one() * (0.5 + 0.5 * ground.height).clamp(0.0, 1.0);
+            DebugView::Normals => {
+                return (
+                    lit_normal * 0.5 + Vector3::new(0.5, 0.5, 0.5),
+                    Vector3::zero(),
+                );
             }
-            DebugView::Materials => return ground.material.debug_color(),
+            DebugView::Height => return gray((0.5 + 0.5 * ground.height).clamp(0.0, 1.0)),
+            DebugView::Materials => return (ground.material.debug_color(), Vector3::zero()),
             _ => {}
         }
-        let albedo = terrain::albedo(ground.material, np, self);
+        // Carbonized rock around a burning spade.
+        let albedo = mix3(
+            terrain::albedo(ground.material, np, self),
+            hex(0x151515) * 0.5,
+            ground.char * self.params.char_strength,
+        );
         let v = self.uniforms.eye_direction;
         let color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
-        color + self.emission(ground.crack, ground.magma, n, l)
+        let brand = self.brand_emission(ground.brand, ground.brand_core);
+        // Inside the brand the molten crust replaces the lit rock.
+        let char = ground.char * self.params.char_strength;
+        let lit = color * ((1.0 - 0.6 * ground.brand) * (1.0 - 0.7 * char))
+            + self.emission(ground.crack, ground.magma, n, l)
+            + brand;
+        (lit, brand)
     }
 }

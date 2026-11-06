@@ -191,6 +191,12 @@ pub struct Ground {
     pub crack: f32,
     /// Molten crater floor glow in `[0, 1]`.
     pub magma: f32,
+    /// Burning interior of a spade brand in `[0, 1]`.
+    pub brand: f32,
+    /// White-hot core of the brand in `[0, 1]`.
+    pub brand_core: f32,
+    /// Carbonized rock around a brand in `[0, 1]`.
+    pub char: f32,
     pub material: TerrainMaterial,
 }
 
@@ -207,6 +213,9 @@ pub fn ground(n: Vector3, f: &Frame) -> Ground {
         rim,
         crack,
         magma: relief.magma,
+        brand: relief.brand,
+        brand_core: relief.brand_core,
+        char: relief.char,
         material: classify(h, rim, crack.max(relief.magma)),
     }
 }

@@ -105,6 +105,7 @@ Planeta volcánico que se abre en cráteres y levanta mesetas en forma de pica �
 - **Campo de altura.** Uno solo: una cuenca monumental, colinas de fBm y relieve fino.
 - **Regiones.** El mismo campo se clasifica en seis: llanuras de obsidiana, basalto, tierras carmesí, mesetas de pizarra, bordes de ceniza y fisuras incandescentes.
 - **Eventos sobre la altura.** Tres cráteres que se agrietan, se hunden, brillan con magma y se erosionan; y dos mesetas ♠ cuyo campo de distancia levanta la corteza. Al terminar cada ciclo reaparecen en otro lugar.
+- **Pica grabada a fuego.** Mientras la meseta ♠ existe, el símbolo se marca primero con un contorno de lava, después su interior entero arde en rojo hiperintenso con vetas naranjas y un núcleo casi blanco en el apogeo, rodeado de roca carbonizada. Al enfriarse se rompe en parches y desaparece antes de migrar. Brilla de día y de noche y se transparenta a través de las nubes.
 - **Nubes de ceniza.** Una capa independiente cuyas sombras siguen a la luz.
 - **Iluminación.** El bump inclina la normal, el parallax desplaza las consultas según la vista, la obsidiana es vítrea y la roca mate, y las fisuras se encienden de noche.
 
@@ -112,6 +113,7 @@ Planeta volcánico que se abre en cráteres y levanta mesetas en forma de pica �
 |---|---:|---|---|
 | `crater_period` | 12 | 2 – 60 | Segundos por ciclo de cráter |
 | `spade_height` | 0.6 | 0 – 1 | Altura de la meseta ♠ en su apogeo |
+| `brand_glow` | 1 | 0 – 3 | Intensidad de la pica incandescente |
 | `cloud_coverage` | 0.45 | 0 – 1 | Fracción del cielo cubierta por nubes |
 | `cloud_altitude` | 0.07 | 0 – 0.3 | Desplazamiento de las sombras respecto a las nubes |
 | `bump_strength` | 0.8 | 0 – 4 | Intensidad del relieve iluminado |

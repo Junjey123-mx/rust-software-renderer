@@ -139,3 +139,102 @@ fn events_switch_disables_all_events() {
         .count();
     assert!(changed > 20, "events change the relief ({changed})");
 }
+
+// ---- Artistic complement: the spade burned into the crust ----
+
+use rust_software_renderer::celestial::entrance::events::spade_brand;
+use rust_software_renderer::pipeline::SurfaceSample;
+use rust_software_renderer::shading::sdf::spade;
+
+/// Directions of spade 0 at plane points given in spade units.
+fn spade_point(f: &Frame, x: f32, y: f32) -> Vector3 {
+    let e = f.events[CRATER_SLOTS];
+    from_local(e.center, e.east, e.north, x * e.radius, y * e.radius)
+}
+
+#[test]
+fn branded_spade_fills_its_interior_at_apogee() {
+    let f = frame_at(p(), 8.0);
+    let e = f.events[CRATER_SLOTS];
+    let (mut inside, mut lit) = (0, 0);
+    for i in 0..40 {
+        for j in 0..40 {
+            let (x, y) = (-0.7 + i as f32 * 0.035, -0.7 + j as f32 * 0.035);
+            let s = spade((x, y));
+            let relief = spade_relief(spade_point(&f, x, y), &e, f.seed);
+            if s < -0.06 {
+                inside += 1;
+                if relief.brand > 0.5 {
+                    lit += 1;
+                }
+            } else if s > 0.25 {
+                assert!(relief.brand < 1e-6, "outside the symbol at ({x}, {y})");
+            }
+        }
+    }
+    assert!(
+        inside > 100 && lit * 10 >= inside * 9,
+        "{lit} of {inside} interior points burn"
+    );
+    let center = spade_relief(spade_point(&f, 0.0, 0.1), &e, f.seed);
+    assert!(center.brand_core > 0.8, "white-hot core at the apogee");
+}
+
+#[test]
+fn charred_rim_surrounds_the_burning_spade() {
+    let f = frame_at(p(), 8.0);
+    let n = spade_point(&f, 0.0, 0.0);
+    for (s, expect_char) in [(-0.2, false), (0.08, true), (0.4, false)] {
+        let (_, _, char) = spade_brand(n, s, 0.5, f.seed);
+        assert_eq!(char > 0.3, expect_char, "s = {s}: char {char}");
+    }
+}
+
+#[test]
+fn spade_brand_burns_and_cools_cyclically() {
+    let n = Vector3::new(0.3, 0.4, 0.86).normalized();
+    let fill = |tau: f32| spade_brand(n, -0.2, tau, 11).0;
+    let outline = |tau: f32| spade_brand(n, 0.0, tau, 11).0;
+    assert_eq!(fill(0.0), 0.0);
+    assert_eq!(fill(0.04), 0.0, "subterranean heating only");
+    assert!(
+        outline(0.16) > 0.3 && fill(0.16) < 0.2,
+        "the outline is engraved first"
+    );
+    assert!(fill(0.5) > 0.5, "the interior burns at the apogee");
+    assert_eq!(fill(0.97), 0.0, "the symbol is gone before the next cycle");
+    for tau in [0.999, 1.0 - 1e-5] {
+        let (b, c, ch) = spade_brand(n, 0.05, tau, 11);
+        assert!(
+            b < 1e-3 && c < 1e-3 && ch < 1e-3,
+            "continuous at the cycle end"
+        );
+    }
+}
+
+#[test]
+fn branded_spade_reads_hyperintense_red_by_day_and_night() {
+    let f = frame_at(EntranceParams { clouds: 0.0, ..p() }, 5.3);
+    let red = f.brand_emission(1.0, 0.0);
+    assert!(red.x >= 1.4 && red.y < 0.3 && red.z < 0.3, "{red:?}");
+    // The brand is self-lit: shade a burning point under opposite lights.
+    let n = spade_point(&f, 0.0, 0.1);
+    let sample = SurfaceSample {
+        x: 0,
+        y: 0,
+        depth: 0.0,
+        object_position: n,
+        normal: n,
+        face_normal: n,
+    };
+    for light in [n, -n] {
+        let u = ShaderUniforms {
+            time: 5.3,
+            light_direction: light,
+            eye_direction: direction_from_angles(-2.45, 0.55),
+        };
+        let lit = prepare(&EntranceParams { clouds: 0.0, ..p() }, &u, DebugView::None);
+        let c = lit.shade(&sample);
+        assert!(c.x >= 0.95 && c.x > 1.6 * c.y && c.x > 3.0 * c.z, "{c:?}");
+    }
+}
