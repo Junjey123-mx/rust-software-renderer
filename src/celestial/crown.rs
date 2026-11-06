@@ -3,12 +3,12 @@
 //! Temperature field: a time-advected, domain-warped fBm of the unit
 //! direction, plus ridged golden veins and fine granulation, mapped through
 //! an ivory, gold, orange, crimson and wine ramp. Three drifting sunspots
-//! breathe, a limb corona pulses, a five-point golden diadem circles the
-//! northern cap and a periodic eclipse darkens the core. Plasma loops gather
-//! at a foot point, arc across the surface, flare and drain back into the
-//! plasma. Everything stays inside the silhouette of the sphere: the loops
-//! are luminous paths on the surface, not geometry. The star is emissive:
-//! it ignores the external light. Its only symbol is the crown.
+//! breathe, a limb corona pulses and a periodic eclipse darkens the core.
+//! Plasma loops gather at a foot point, arc across the surface, flare and
+//! drain back into the plasma. Everything stays inside the silhouette of the
+//! sphere: the loops are luminous paths on the surface, not geometry. The
+//! star is emissive: it ignores the external light. No figure is drawn on
+//! its surface; its royalty is the gold of the living plasma.
 
 use crate::celestial::DebugView;
 use crate::pipeline::ViewPreset;
@@ -40,10 +40,6 @@ params! {
         corona_width: 0.45, 0.02, 0.6, "width of the limb corona";
         corona_pulse_period: 4.0, 0.5, 30.0, "seconds per corona pulse";
         corona_pulse_amount: 0.35, 0.0, 1.0, "how much the corona width breathes";
-        crown_points: 5.0, 3.0, 9.0, "points of the golden diadem (rounded)";
-        crown_base_latitude: 50.0, 20.0, 75.0, "latitude of the diadem band, degrees";
-        crown_height: 0.35, 0.0, 0.8, "height of the diadem points, radians of latitude";
-        crown_strength: 0.8, 0.0, 1.0, "opacity of the diadem";
         eclipse_period: 24.0, 4.0, 120.0, "seconds between eclipses";
         eclipse_duration: 4.0, 0.0, 30.0, "seconds an eclipse lasts";
         eclipse_depth: 0.75, 0.0, 1.0, "how much the eclipse darkens the core";
@@ -230,12 +226,10 @@ pub struct Frame {
     /// Current sunspot centers (unit) and angular radii.
     pub spot_centers: [Vector3; 3],
     pub spot_radii: [f32; 3],
-    /// Corona and diadem pulse in `[0, 1]`.
+    /// Corona pulse in `[0, 1]`.
     pub pulse: f32,
     /// Eclipse strength in `[0, 1]`.
     pub eclipse: f32,
-    points: f32,
-    base_latitude: f32,
     /// Plasma loops of this frame (boxed: built once per frame).
     pub loops: Box<[PlasmaLoop; LOOP_SLOTS]>,
 }
@@ -265,8 +259,6 @@ pub fn prepare(params: &CrownParams, uniforms: &ShaderUniforms, debug: DebugView
         spot_radii,
         pulse: 0.5 + 0.5 * (TAU * t / params.corona_pulse_period).sin(),
         eclipse: eclipse_strength(params, t),
-        points: params.crown_points.round(),
-        base_latitude: params.crown_base_latitude.to_radians(),
         loops: Box::new(std::array::from_fn(|slot| {
             plasma_loop(params, seed, slot, t)
         })),
@@ -339,23 +331,6 @@ impl Frame {
         smoothstep(1.0 - width, 1.0, rim) * flicker
     }
 
-    /// Golden diadem mask: a band at the base latitude with `crown_points`
-    /// triangular points towards the north pole. The triangle wave has an
-    /// integer number of periods, so it is continuous across +-pi.
-    pub fn diadem(&self, n: Vector3) -> f32 {
-        let p = &self.params;
-        let lat = n.y.clamp(-1.0, 1.0).asin();
-        let lon = n.z.atan2(n.x);
-        let x = self.points * lon / TAU;
-        let tri = 1.0 - 2.0 * (x - x.floor() - 0.5).abs();
-        let base = self.base_latitude;
-        let top = base + p.crown_height * (0.6 + 0.4 * self.pulse) * tri;
-        let edge = 0.02;
-        let ring = 1.0 - smoothstep(0.03, 0.03 + edge, (lat - base).abs());
-        let tooth = smoothstep(base - edge, base, lat) * (1.0 - smoothstep(top - edge, top, lat));
-        ring.max(tooth)
-    }
-
     /// Combined glow of every plasma loop at unit direction `n`.
     pub fn loop_glow(&self, n: Vector3) -> LoopGlow {
         let mut total = LoopGlow::default();
@@ -380,21 +355,17 @@ impl Frame {
         let loops = self.loop_glow(n);
         temperature = saturate(temperature + 0.3 * (loops.halo + loops.foot));
         let corona = self.corona(n);
-        let diadem = self.diadem(n) * p.crown_strength;
         match self.debug {
             DebugView::Height => return Vector3::one() * temperature,
             DebugView::Materials => {
                 let mut c = hex(0xD21F2B) * 0.5;
                 c = mix3(c, hex(0x151515), penumbra.max(umbra));
                 c = mix3(c, hex(0xFFF2C4), corona);
-                c = mix3(c, hex(0xFFC63A), diadem);
                 return mix3(c, Vector3::one(), saturate(loops.core.max(loops.foot)));
             }
             _ => {}
         }
         let mut color = ramp(&PLASMA_RAMP, temperature);
-        let gold = mix3(hex(0xFFC63A), hex(0xFFF2C4), 0.15 + 0.25 * self.pulse);
-        color = mix3(color, gold, diadem);
         // Loop filaments: a dark crimson sheath separates them from the
         // plasma, then a gold to near-white core burns on top.
         let core = saturate(loops.core);

@@ -121,7 +121,7 @@ fn crown_is_deterministic_and_seeded() {
     assert!(differs > 200, "{differs}");
 }
 
-// ---- C11: corona, sunspots, diadem and eclipse (E01 material animation) ----
+// ---- C11: corona, sunspots and eclipse (E01 material animation) ----
 
 use rust_software_renderer::celestial::crown::eclipse_strength;
 use rust_software_renderer::celestial::{Body, CelestialScene};
@@ -248,25 +248,6 @@ fn eclipse_darkens_the_core_but_not_the_corona() {
     assert!(luminance(eclipsed.shade(&limb)) >= 0.8 * luminance(clear.shade(&limb)));
 }
 
-#[test]
-fn diadem_is_continuous_across_the_antimeridian() {
-    let f = frame(CrownParams::default(), 1.0);
-    for lat_deg in [48.0_f32, 52.0, 58.0, 65.0] {
-        let lat = lat_deg.to_radians();
-        let at = |lon: f32| Vector3::new(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin());
-        let eps = 1e-3;
-        let west = f.diadem(at(std::f32::consts::PI - eps));
-        let east = f.diadem(at(-std::f32::consts::PI + eps));
-        assert!(
-            (west - east).abs() < 0.05,
-            "lat {lat_deg}: {west} vs {east}"
-        );
-    }
-    // The band itself is present at the base latitude.
-    let base = 50.0_f32.to_radians();
-    assert!(f.diadem(Vector3::new(base.cos(), base.sin(), 0.0)) > 0.9);
-}
-
 // ---- Artistic complement: plasma loops that erupt and drain back ----
 
 use rust_software_renderer::celestial::crown::{LOOP_CONE_DEG, plasma_loop};
@@ -369,4 +350,42 @@ fn loops_switch_restores_the_plain_star() {
         .filter(|&n| luminance(on.shade(&sample(n))) > luminance(dim.shade(&sample(n))) + 0.1)
         .count();
     assert!(brighter > 10, "{brighter}");
+}
+
+// ---- No literal star figure on the surface ----
+
+use rust_software_renderer::celestial::CelestialMaterial;
+
+#[test]
+fn no_diadem_figure_is_painted_on_the_star() {
+    // The old five-point diadem forced a gold band at latitude 50 degrees.
+    // Without a figure, that band is as bright as its neighbours.
+    let band = |f: &Frame, lat_deg: f32| {
+        let lat = lat_deg.to_radians();
+        (0..720)
+            .map(|i| {
+                let lon = std::f32::consts::TAU * i as f32 / 720.0;
+                let n = Vector3::new(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin());
+                luminance(f.shade(&sample(n)))
+            })
+            .sum::<f32>()
+            / 720.0
+    };
+    for time in [0.0, 3.0, 7.5, 12.0, 18.0] {
+        let f = frame(CrownParams::default(), time);
+        let ring = band(&f, 50.0);
+        let around = 0.5 * (band(&f, 38.0) + band(&f, 62.0));
+        assert!(ring < 1.1 * around, "t {time}: band {ring} vs {around}");
+    }
+    let mut material =
+        CelestialMaterial::for_body(rust_software_renderer::celestial::Body::KingsCrown);
+    for gone in [
+        "crown_points",
+        "crown_base_latitude",
+        "crown_height",
+        "crown_strength",
+    ] {
+        assert_eq!(material.get(gone), None, "{gone}");
+        assert!(material.set(gone, 1.0).is_err());
+    }
 }
