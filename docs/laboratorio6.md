@@ -59,9 +59,8 @@ Estrella emisiva: no depende de la luz externa.
    La rampa va de vino `#4A0B10` a carmesí `#D21F2B`, naranja `#FF7A00`, oro `#FFC63A` y marfil `#FFF2C4`.
 2. **Manchas.** Tres centros sembrados en un cono de 50° alrededor de la vista oblicua, que derivan con `spot_drift_speed`. Su radio respira: r·(0.7 + 0.3·sen(2πt/P + 2.1i)). La umbra lleva T hacia 0.05 y la penumbra lo multiplica por 0.55.
 3. **Corona.** borde = 1 − n·V. Su ancho pulsa: w·(1 + amp·(2p − 1)), con p = 0.5 + 0.5·sen(2πt/periodo). Se suma oro y marfil en el limbo.
-4. **Diadema.** Banda en la latitud base más `crown_points` puntas triangulares hacia el polo norte. Usa una onda triangular de `puntas·lon/2π`, continua en ±π porque el número de puntas es entero.
-5. **Eclipse.** Ocupa el último `duration/period` de cada ciclo, con centro en t = periodo − duración/2 (22 s por defecto). Oscurece el núcleo por (1 − profundidad·e·(1 − borde)²) mientras la corona sigue encendida.
-6. **Bucles de plasma.** Tres ranuras con periodo `loop_period`·(1 + 0.37·i). En el plano tangente de un pie sembrado (cono de 60°), el bucle es la mitad superior de una elipse de semiejes a y b, girada y deformada por fBm, recorrida de un pie (s = 0) al otro (s = 1). La fase τ controla:
+4. **Eclipse.** Ocupa el último `duration/period` de cada ciclo, con centro en t = periodo − duración/2 (22 s por defecto). Oscurece el núcleo por (1 − profundidad·e·(1 − borde)²) mientras la corona sigue encendida.
+5. **Bucles de plasma.** Tres ranuras con periodo `loop_period`·(1 + 0.37·i). En el plano tangente de un pie sembrado (cono de 60°), el bucle es la mitad superior de una elipse de semiejes a y b, girada y deformada por fBm, recorrida de un pie (s = 0) al otro (s = 1). La fase τ controla:
    - concentración (0-0.12): brillo en el pie;
    - nacimiento y expansión (0.12-0.55): el frente `head` avanza de 0 a 1;
    - máximo (0.55-0.7): núcleo casi blanco;
@@ -77,12 +76,13 @@ Estrella emisiva: no depende de la luz externa.
 - **Altura macro:**
   - cuenca monumental: `crater_profile(d/radio, profundidad)`, con cuenco −p·(1 − d²) y borde +0.35·p·exp(−((d − 1)/0.18)²);
   - colinas: 0.6·fbm(n·escala, 2);
-  - eventos activos.
+  - cráteres-pica activos (solo su altura).
 - **Altura total:** macro + `detail_amplitude`·fbm(3·n·escala, octavas).
 - **Regiones,** en orden de prioridad:
 
   | Condición | Región |
   |---|---|
+  | lava > 0.3 | lava del cráter-pica |
   | grieta > 0.5 | fisura incandescente |
   | borde > 0.25 | ceniza |
   | h < −0.12 | obsidiana |
@@ -90,31 +90,27 @@ Estrella emisiva: no depende de la luz externa.
   | h < 0.2 | tierras carmesí |
   | resto | pizarra |
 
-  Cada región mezcla dos tonos de la paleta Red-Black por ruido.
+  Cada región mezcla dos tonos por ruido. La roca negra y gris domina, las tierras carmesí son mate y la lava se reserva para los cráteres-pica. Una costra ocre marca las transiciones; las paletas están en [lab6-crimson-refinement.md](lab6-crimson-refinement.md).
 
 ### 5.2 Eventos (`events.rs`)
 
-**Tres cráteres.** Periodo de 12 s, ranuras desfasadas 4 s:
-- τ 0–0.15: se agrietan;
-- τ 0.15–0.45: se hunden y crecen;
-- τ 0.45–0.75: estables con magma;
-- τ 0.75–1: se erosionan.
+Un solo fenómeno, el **cráter-pica**, con tres ranuras: grande, mediana y pequeña. El evento m nace en m·P/3, con P = `event_period` = 21 s, y ocupa la ranura m mod 3.
 
-**Dos mesetas ♠.** Periodo de 16 s, ranuras desfasadas 8 s:
-- señal de energía previa;
-- emergencia `envelope(τ, 0.3, 0.25, 0.3)`;
-- apogeo (t = 8 para la pica 0);
-- erosión por ruido.
+- **Altura.** h = A(t)·perfil(s), donde s es la SDF de la pica erosionada en el plano tangente del evento y perfil(s) = −(0.85·smoothstep(0.03, −0.13, s) + 0.15·smoothstep(−0.1, −0.24, s)) + 0.22·exp(−((s − 0.07)/0.05)²). Es la misma altura del parallax, del bump y de la clasificación.
+- **Fases por τ:**
+  - fracturas que dibujan la ♠ (0–0.08);
+  - hundimiento (0.05–0.2);
+  - profundidad máxima (hasta 0.46);
+  - incandescencia, solo después de la profundidad máxima: sube de 0.22 a 0.34 y llega al máximo entre 0.34 y 0.42;
+  - enfriamiento por parches (0.42–0.57);
+  - regeneración (0.46–0.6);
+  - reposo (0.6–1).
 
-**Pica grabada a fuego** (`spade_brand`). Con la distancia firmada s de la pica y la fase τ:
-- el contorno se graba primero: exp(−(s/0.025)²), entre τ 0.06 y 0.2;
-- el interior (s < 0) se enciende entre τ 0.16 y 0.36, modulado por vetas de fBm que fluyen con τ;
-- en el apogeo (τ 0.35-0.75) aparece un núcleo casi blanco;
-- entre τ 0.6 y 0.88 se enfría por parches de ruido.
+  Todo vale 0 en τ = 0 y desde τ = 0.6, así que el traslado no se ve.
+- **Posición.** Cada evento prueba hasta 16 candidatos y acepta el primero cuyo alcance (atan(0.95·tamaño)) más `event_margin` no toque al cráter abierto ni a los tres últimos cerrados. Si ninguno sirve, toma la más despejada de 64 direcciones fijas. Los eventos pares se abren delante de la cámara inicial (cono de 55°) y los impares en cualquier parte (150°). La secuencia se reproduce desde un evento fijo, así que cada centro depende solo de su índice.
+- **Emisión.** La lava (`lava_emission`: `#FF2020` → `#FF4040`, vetas `#FF6030`/`#FF7A00`, núcleo `#FFF2C4`) es independiente de la luz y el 60 % atraviesa las nubes. Sobre un cráter abierto la opacidad de las nubes baja hasta la mitad.
 
-Una franja exterior 0 < s < 0.22 se carboniza. Todo vale 0 en los extremos del ciclo. La emisión es independiente de la luz (`brand_emission`: carmesí → rojo `#FF2A1A`, vetas `#FF7A00`, núcleo `#FFE0D0`). Dentro de la marca sustituye a la roca iluminada y el 60 % atraviesa las nubes.
-
-Cada ciclo elige un centro nuevo con `hash_direction` dentro de un cono de 65° (cráteres) o 60° (picas). Como las envolventes valen 0 en los bordes del ciclo, no hay saltos. La pica solo modifica la **altura** (meseta del SDF con fracturas en |sdf| pequeño); nunca es una calcomanía.
+Detalles y mediciones en [lab6-crimson-refinement.md](lab6-crimson-refinement.md).
 
 ### 5.3 Nubes y sombras (`clouds.rs`)
 
@@ -123,14 +119,14 @@ Cada ciclo elige un centro nuevo con `hash_direction` dentro de un cono de 65° 
 
 ### 5.4 Iluminación (`mod.rs`)
 
-- **Parallax:** n_p = `parallax_shift(n, V, altura_macro, escala, pasos, 3)`. Toda consulta del suelo usa n_p (altura, regiones, albedo, grietas, eventos y bump); la noche, las nubes y las sombras usan n.
-- **Bump:** N_b = normalizar(N − k·(h_t·t + h_b·b)), con el gradiente de la altura total por diferencias centrales en el marco tangente.
+- **Parallax:** n_p = `parallax_shift(n, V, altura_macro, escala, pasos, 3)`, con pasos = `parallax_steps`·(1 − 0.65·(N·V)²) y al menos 2. Toda consulta del suelo usa n_p (altura, regiones, albedo, grietas, eventos y bump); la noche, las nubes y las sombras usan n.
+- **Bump:** N_b = normalizar(N − k·(h_t·t + h_b·b)). El gradiente de la altura total sale de diferencias hacia delante en el marco tangente, a partir de la altura que el suelo ya calculó (2 consultas).
 - **Respuestas:**
   - obsidiana: Blinn-Phong con N_b (tinte cálido `#FFF2C4`);
   - basalto, tierras y pizarra: Lambert mate;
   - ceniza: *wrap* 0.3;
   - fisuras: emisivas (independientes de L).
-- **Noche:** factor = smoothstep(0.05, −ancho_terminador, n·L). Emisión = (grieta + magma)·mezcla(0.12, `night_glow`, factor)·mezcla(`#D21F2B`, `#FF7A00`, núcleo). Es un término aparte de la difusa.
+- **Noche:** factor = smoothstep(0.05, −ancho_terminador, n·L). Emisión = grieta·mezcla(0.12, `night_glow`, factor)·mezcla(`#FF7A00`, `#FF9A28`, grieta). Es un término aparte de la difusa.
 
 ## 6. House of Cards (`src/celestial/house.rs`)
 
@@ -173,10 +169,7 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `corona_width` | 0.45 | 0.02 – 0.6 | Anchura de la corona del limbo |
 | `corona_pulse_period` | 4 | 0.5 – 30 | Segundos por pulso de la corona |
 | `corona_pulse_amount` | 0.35 | 0 – 1 | Amplitud del pulso (tecla `[` / `]`) |
-| `crown_points` | 5 | 3 – 9 | Puntas de la diadema (redondeado) |
-| `crown_base_latitude` | 50 | 20 – 75 | Latitud de la diadema (grados) |
 | `crown_height` | 0.35 | 0 – 0.8 | Altura de las puntas (rad de latitud) |
-| `crown_strength` | 0.8 | 0 – 1 | Opacidad de la diadema |
 | `eclipse_period` | 24 | 4 – 120 | Segundos entre eclipses |
 | `eclipse_duration` | 4 | 0 – 30 | Duración del eclipse |
 | `eclipse_depth` | 0.75 | 0 – 1 | Cuánto se oscurece el núcleo |
@@ -196,17 +189,15 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `detail_amplitude` | 0.18 | 0 – 0.6 | Rugosidad del relieve fino |
 | `basin_depth` | 0.55 | 0 – 1 | Profundidad de la cuenca monumental |
 | `basin_radius` | 0.62 | 0.2 – 1.2 | Radio angular de la cuenca (rad) |
-| `crack_width` | 0.035 | 0.005 – 0.15 | Grosor de las fisuras |
+| `crack_width` | 0.028 | 0.005 – 0.15 | Grosor de las fisuras |
 | `crack_scale` | 7 | 2 – 20 | Densidad de la red de fisuras |
-| `events` | 1 | 0 – 1 | Cráteres y mesetas ♠ migratorios |
-| `crater_period` | 12 | 2 – 60 | Segundos por ciclo de cráter |
-| `crater_radius` | 0.28 | 0.05 – 0.6 | Radio de un cráter maduro (rad) |
-| `crater_depth` | 0.45 | 0 – 1 | Profundidad del cuenco |
-| `spade_period` | 16 | 2 – 60 | Segundos por ciclo de pica |
-| `spade_size` | 0.42 | 0.1 – 0.8 | Tamaño de la meseta ♠ |
-| `spade_height` | 0.6 | 0 – 1 | Altura de la meseta en su apogeo |
-| `brand_glow` | 1 | 0 – 3 | Emisión de la pica incandescente |
-| `char_strength` | 0.85 | 0 – 1 | Oscuridad de la roca carbonizada alrededor de la pica |
+| `events` | 1 | 0 – 1 | Cráteres-pica que se hunden, arden y se cierran |
+| `event_period` | 21 | 6 – 90 | Segundos por ciclo (ranuras desfasadas un tercio) |
+| `event_size` | 0.5 | 0.15 – 0.9 | Tamaño del cráter-pica grande en su plano tangente |
+| `event_depth` | 0.55 | 0 – 1 | Profundidad del cráter-pica grande |
+| `event_margin` | 0.12 | 0 – 0.5 | Separación angular extra entre cráteres-pica (rad) |
+| `lava_glow` | 1 | 0 – 3 | Emisión de la lava del fondo |
+| `char_strength` | 0.85 | 0 – 1 | Oscuridad de la roca carbonizada del cráter-pica |
 | `clouds` | 1 | 0 – 1 | Capa de nubes (tecla `C`) |
 | `cloud_coverage` | 0.45 | 0 – 1 | Fracción del cielo cubierta (tecla `[` / `]`) |
 | `cloud_scale` | 2.4 | 0.5 – 8 | Tamaño de las masas de nubes |
@@ -219,12 +210,12 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `cloud_altitude` | 0.07 | 0 – 0.3 | Altura de la capa: desplazamiento de las sombras |
 | `bump` | 1 | 0 – 1 | Relieve por bump mapping (tecla `B`) |
 | `bump_strength` | 0.8 | 0 – 4 | Inclinación de la normal por el gradiente |
-| `bump_epsilon` | 0.004 | 0.0005 – 0.05 | Paso de las diferencias centrales (rad) |
+| `bump_epsilon` | 0.004 | 0.0005 – 0.05 | Paso de las diferencias del gradiente (rad) |
 | `specular` | 1 | 0 – 1 | Brillo vítreo de la obsidiana |
-| `specular_strength` | 1.4 | 0 – 3 | Intensidad del brillo |
-| `shininess` | 24 | 2 – 256 | Exponente de Blinn-Phong (mayor = brillo más concentrado) |
+| `specular_strength` | 0.9 | 0 – 3 | Intensidad del brillo |
+| `shininess` | 40 | 2 – 256 | Exponente de Blinn-Phong (mayor = brillo más concentrado) |
 | `night_lights` | 1 | 0 – 1 | Fisuras más brillantes de noche |
-| `night_glow` | 1 | 0 – 3 | Emisión nocturna de fisuras y magma |
+| `night_glow` | 1 | 0 – 3 | Emisión nocturna de las fisuras |
 | `terminator_width` | 0.25 | 0.02 – 0.8 | Suavidad del paso del día a la noche |
 | `parallax` | 1 | 0 – 1 | Parallax dependiente de la vista (tecla `P`) |
 | `parallax_scale` | 0.06 | 0 – 0.25 | Profundidad aparente del relieve |
@@ -257,12 +248,12 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 
 | Criterio | Archivos de prueba |
 |---|---|
-| B01 / E01 | `lab6_crown_tests.rs`: emisiva, paleta cálida, corrientes y venas, cambio con cámara y malla fijas, histograma no rígido, manchas que respiran, pulso, eclipse, diadema continua |
-| B02 | `lab6_entrance_terrain_tests.rs` y `lab6_entrance_events_tests.rs`: seis regiones, cuenca, eventos continuos, relocalización, pica simétrica |
+| B01 / E01 | `lab6_crown_tests.rs`: emisiva, paleta cálida, corrientes y venas, cambio con cámara y malla fijas, histograma no rígido, manchas que respiran, pulso, eclipse, ninguna figura de diadema |
+| B02 | `lab6_entrance_terrain_tests.rs` y `lab6_entrance_events_tests.rs`: siete regiones con la roca oscura dominante y la lava solo en los cráteres, cuenca, cráter-pica: un solo sistema de tres ranuras, cuenca con forma de ♠, brillo tras la profundidad máxima, continuidad, separación y zonas recientes |
 | B03 / E05 | `lab6_house_tests.rs`: varianza por latitud, ondulación solo con *warp*, costuras, vórtice estrictamente local, ida y vuelta del contorno ♦, migración |
 | E02 / E03 | `lab6_entrance_lighting_tests.rs`: emisión nocturna ≥ 3×, monotonía, obsidiana dependiente de la vista, roca independiente, fisuras independientes de L |
 | E04 / E08 | `lab6_entrance_clouds_tests.rs`: cobertura monótona, rotación rígida exacta, sin geometría nueva, sombra = máscara en q, nula en el punto subsolar, sin sombra de noche |
-| E06 / E07 | `lab6_entrance_relief_tests.rs`: identidad sin bump, inclinación, luces opuestas, parallax hacia la vista en picas y en sentido contrario en cráteres, desvanecimiento en el limbo, tiempo congelado |
+| E06 / E07 | `lab6_entrance_relief_tests.rs`: identidad sin bump, inclinación, luces opuestas, parallax hacia la vista en colinas y en sentido contrario en cráteres, desvanecimiento en el limbo, tiempo congelado |
 | Restricciones y regresión | `lab6_regression_guard_tests.rs` (21 *hashes* de la nave), `lab6_sphere_asset_tests.rs`, `lab6_final_contract_tests.rs` (sin APIs de dibujo ni texturas, símbolos exclusivos, dependencias, *assets*), `lab6_shaded_pipeline_tests.rs` |
 | B05 | `lab6_cli_tests.rs`, `lab6_timeline_record_tests.rs`, `lab6_docs_evidence_tests.rs` |
 
@@ -306,11 +297,13 @@ Los tres cuerpos sombrean 172 152 fragmentos por cuadro, uno por píxel visible 
 - las regiones;
 - la máscara de nubes y la de la sombra.
 
-En la ventana va a unos 4 cuadros por segundo; los videos se graban sin ventana y no dependen de esa velocidad. El benchmark del Lab 5 y sus CSV no cambiaron.
+En la ventana iba a unos 4 cuadros por segundo; los videos se graban sin ventana y no dependen de esa velocidad. El benchmark del Lab 5 y sus CSV no cambiaron.
+
+Esta tabla es la medición original. Tras el reajuste de Crimson Entrance (bump con 2 alturas, parallax adaptativo, ruido sin saltos mal predichos y cola de bloques para los hilos), en scanline baja a 713.9 ms con 1 hilo y a 61.6 ms con 20, unos 15 cuadros por segundo. Ver [lab6-crimson-refinement.md](lab6-crimson-refinement.md) y [`crimson_refinement_benchmark.csv`](results/lab6/crimson_refinement_benchmark.csv).
 
 ## 11. Limitaciones
 
 - **Silueta poligonal.** La esfera tiene 98 vértices: su sagita máxima es el 4.3 % del radio. Por regla no se modifican vértices; el detalle sale del fragmento.
-- **Relieve aparente.** Cráteres, picas y cuencas son bump, parallax y sombreado: la silueta no muestra mesetas.
+- **Relieve aparente.** Cráteres-pica y cuencas son bump, parallax y sombreado: la silueta no muestra hundimientos.
 - **Parallax aproximado.** Es una búsqueda escalonada y se atenúa a propósito cerca del limbo.
 - **Diferido al proyecto final.** El anillo de cartas ♦, el halo exterior de la estrella y la cámara perspectiva necesitan geometría o pases propios.

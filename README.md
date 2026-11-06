@@ -17,7 +17,7 @@ Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de mode
 
 ## Laboratorio 6 — Planetas y estrellas con shaders
 
-Tres cuerpos celestes sobre **la misma esfera del docente** (`assets/models/sphere.obj`, copiada byte a byte: 98 vértices únicos y 192 triángulos). Toda la apariencia sale de **fragment shaders procedurales en CPU**. No hay texturas, imágenes, materiales externos ni modelos nuevos; los vértices nunca se mueven. Cada cuerpo tiene un símbolo exclusivo de la dirección artística Red-Black: la **corona** de la estrella, la **pica ♠** del planeta rocoso y el **rombo ♦** del gigante gaseoso. La guía técnica completa, con fórmulas, todos los parámetros, pruebas y rendimiento, está en [docs/laboratorio6.md](docs/laboratorio6.md).
+Tres cuerpos celestes sobre **la misma esfera del docente** (`assets/models/sphere.obj`, copiada byte a byte: 98 vértices únicos y 192 triángulos). Toda la apariencia sale de **fragment shaders procedurales en CPU**. No hay texturas, imágenes, materiales externos ni modelos nuevos; los vértices nunca se mueven. Los planetas tienen un símbolo exclusivo de la dirección artística Red-Black: la **pica ♠** del planeta rocoso y el **rombo ♦** del gigante gaseoso. La estrella no lleva ninguna figura dibujada. La guía técnica completa, con fórmulas, todos los parámetros, pruebas y rendimiento, está en [docs/laboratorio6.md](docs/laboratorio6.md).
 
 | The King's Crown (estrella) | Crimson Entrance (rocoso) | House of Cards (gaseoso) |
 |---|---|---|
@@ -72,13 +72,12 @@ Las escenas celestes usan `scanline` por defecto; `--mode` lo cambia y las tecla
 
 ![The King's Crown](docs/screenshots/lab6/01-kings-crown.png)
 
-Estrella regia de plasma vivo con una diadema dorada y una corona que respira. Es emisiva: no depende de la luz externa.
+Estrella regia de plasma vivo con una corona que respira. Es emisiva: no depende de la luz externa.
 
 **Patrones y cómo se combinan:**
 - **Temperatura.** Una fBm sobre un dominio deformado (*domain warp*) que gira y avanza con el tiempo, más venas doradas (cruces por cero de otra fBm) y granulación fina. Pasa por una rampa vino → carmesí → naranja → oro → marfil.
 - **Manchas.** Tres manchas con umbra y penumbra que derivan y respiran con fases distintas.
 - **Corona.** Una corona de Fresnel en el limbo cuyo ancho pulsa.
-- **Diadema.** Cinco puntas triangulares sobre el casquete norte.
 - **Eclipse.** Uno cada 24 s, que oscurece el núcleo mientras la corona sigue ardiendo.
 - **Bucles de plasma.** Tres surcos luminosos con ciclos propios: el plasma se concentra en un pie, un filamento curvo crece hasta el otro pie, arde casi blanco y se drena de vuelta a la superficie. Son trayectorias sobre la esfera, dentro de su silueta, no geometría.
 
@@ -90,35 +89,38 @@ Estrella regia de plasma vivo con una diadema dorada y una corona que respira. E
 | `spot_breath_period` | 9 | 1 – 60 | Segundos por respiración de una mancha |
 | `corona_pulse_period` | 4 | 0.5 – 30 | Segundos por pulso de la corona |
 | `corona_pulse_amount` | 0.35 | 0 – 1 | Amplitud del pulso del limbo |
-| `crown_points` | 5 | 3 – 9 | Puntas de la diadema |
 | `eclipse_period` | 24 | 4 – 120 | Segundos entre eclipses |
 | `loop_period` | 9 | 3 – 60 | Segundos por ciclo de un bucle de plasma |
 | `loop_size` | 0.6 | 0.15 – 0.9 | Tamaño de los arcos de plasma |
 
-### Crimson Entrance — planeta volcánico de cráteres y picas
+### Crimson Entrance — planeta volcánico de cráteres-pica
 
 ![Crimson Entrance](docs/screenshots/lab6/02-crimson-entrance.png)
 
-Planeta volcánico que se abre en cráteres y levanta mesetas en forma de pica ♠ desde su corteza.
+Mundo de basalto, obsidiana, ceniza y costras carmesí, atravesado por grietas de magma. Cada cierto tiempo la corteza se hunde en forma de pica ♠ y deja al descubierto un núcleo al rojo vivo, que se enfría antes de que la superficie vuelva a cerrarse.
 
 **Patrones y cómo se combinan:**
 - **Campo de altura.** Uno solo: una cuenca monumental, colinas de fBm y relieve fino.
-- **Regiones.** El mismo campo se clasifica en seis: llanuras de obsidiana, basalto, tierras carmesí, mesetas de pizarra, bordes de ceniza y fisuras incandescentes.
-- **Eventos sobre la altura.** Tres cráteres que se agrietan, se hunden, brillan con magma y se erosionan; y dos mesetas ♠ cuyo campo de distancia levanta la corteza. Al terminar cada ciclo reaparecen en otro lugar.
-- **Pica grabada a fuego.** Mientras la meseta ♠ existe, el símbolo se marca primero con un contorno de lava, después su interior entero arde en rojo hiperintenso con vetas naranjas y un núcleo casi blanco en el apogeo, rodeado de roca carbonizada. Al enfriarse se rompe en parches y desaparece antes de migrar. Brilla de día y de noche y se transparenta a través de las nubes.
+- **Regiones.** El mismo campo se clasifica en siete, por orden de importancia visual:
+  - la lava de los cráteres-pica;
+  - la roca volcánica negra y gris (obsidiana vítrea, basalto y pizarra), que domina el planeta;
+  - las tierras carmesí mate;
+  - los bordes de ceniza, con costra ocre en las transiciones;
+  - las fisuras ámbar.
+- **Cráter-pica.** Es el único fenómeno geológico, con tres ranuras (grande, mediana y pequeña) desfasadas un tercio de un ciclo de 21 s. La SDF de la pica fractura la corteza, la hunde en una cuenca con forma de ♠ y, ya con la profundidad máxima, enciende su fondo en rojo hiperintenso con un núcleo casi blanco. Después se enfría por parches y la altura vuelve a la base. Los cráteres abiertos nunca se solapan y una zona recién cerrada no se reutiliza enseguida. La lava brilla igual de día y de noche y las nubes se aclaran un poco sobre el cráter. Detalles y mediciones en [docs/lab6-crimson-refinement.md](docs/lab6-crimson-refinement.md).
 - **Nubes de ceniza.** Una capa independiente cuyas sombras siguen a la luz.
 - **Iluminación.** El bump inclina la normal, el parallax desplaza las consultas según la vista, la obsidiana es vítrea y la roca mate, y las fisuras se encienden de noche.
 
 | Parámetro | Por defecto | Rango | Cambio visual |
 |---|---:|---|---|
-| `crater_period` | 12 | 2 – 60 | Segundos por ciclo de cráter |
-| `spade_height` | 0.6 | 0 – 1 | Altura de la meseta ♠ en su apogeo |
-| `brand_glow` | 1 | 0 – 3 | Intensidad de la pica incandescente |
+| `event_period` | 21 | 6 – 90 | Segundos por ciclo de cráter-pica |
+| `event_size` | 0.5 | 0.15 – 0.9 | Tamaño del cráter-pica grande |
+| `lava_glow` | 1 | 0 – 3 | Intensidad de la lava de la pica |
 | `cloud_coverage` | 0.45 | 0 – 1 | Fracción del cielo cubierta por nubes |
 | `cloud_altitude` | 0.07 | 0 – 0.3 | Desplazamiento de las sombras respecto a las nubes |
 | `bump_strength` | 0.8 | 0 – 4 | Intensidad del relieve iluminado |
-| `shininess` | 24 | 2 – 256 | Concentración del brillo de la obsidiana |
-| `night_glow` | 1 | 0 – 3 | Brillo nocturno de fisuras y magma |
+| `shininess` | 40 | 2 – 256 | Concentración del brillo de la obsidiana |
+| `night_glow` | 1 | 0 – 3 | Brillo nocturno de las fisuras |
 | `parallax_scale` | 0.06 | 0 – 0.25 | Profundidad aparente del relieve |
 
 ### House of Cards — gigante gaseoso de tormentas en rombo
@@ -155,7 +157,7 @@ La esfera compartida en wireframe es la misma para los tres cuerpos:
 | Efecto | Nombre | Cuerpo | Archivo y función | Evidencia | Explicación | Parámetro → efecto visual |
 |---|---|---|---|---|---|---|
 | E01 | Material animado | The King's Crown | `src/celestial/crown.rs::Frame::temperature`, `Frame::spots`, `Frame::corona`, `eclipse_strength` | [video](docs/videos/lab6/01-kings-crown-material.mp4) · [GIF](docs/videos/lab6/01-kings-crown-material.gif) | Con cámara, luz y malla fijas, las corrientes cambian de forma, las manchas respiran, la corona pulsa y llega el eclipse; no es una rotación de la esfera | `corona_pulse_period`: segundos por pulso del limbo |
-| E02 | Día y noche | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::night_factor`, `Frame::emission` | [video](docs/videos/lab6/07-entrance-day-night-light.mp4) · [GIF](docs/videos/lab6/07-entrance-day-night-light.gif) | Las fisuras y el magma son un término emisivo que sube de 0.12 a `night_glow` solo en el lado nocturno; con el tiempo congelado, solo gira la luz | `night_glow`: brillo nocturno de la red de fisuras |
+| E02 | Día y noche | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::night_factor`, `Frame::emission` | [video](docs/videos/lab6/07-entrance-day-night-light.mp4) · [GIF](docs/videos/lab6/07-entrance-day-night-light.gif) | Las fisuras son un término emisivo que sube de 0.12 a `night_glow` solo en el lado nocturno; con el tiempo congelado, solo gira la luz | `night_glow`: brillo nocturno de la red de fisuras |
 | E03 | Respuestas a la luz | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::reflect_light`, `terrain.rs::TerrainMaterial::response` | [video](docs/videos/lab6/08-entrance-lighting-responses.mp4) · [regiones](docs/screenshots/lab6/08-entrance-materials.png) | La obsidiana tiene brillo Blinn-Phong que depende de la vista, la roca es mate, la ceniza tiene *wrap* y las fisuras son emisivas, todo según la clase de altura | `shininess`: tamaño del brillo vítreo |
 | E04 | Nubes procedurales | Crimson Entrance | `src/celestial/entrance/clouds.rs::CloudLayer::mask` | [video](docs/videos/lab6/09-entrance-clouds-drift.mp4) · [coberturas](docs/screenshots/lab6/06-entrance-cloud-coverage.png) | Máscara de fBm sobre un dominio que gira y evoluciona, sobre la misma esfera, con un terreno inmóvil | `cloud_coverage`: fracción cubierta |
 | E05 | Vórtice localizado | House of Cards | `src/celestial/house.rs::Storm::warp`, `contour_param`, `contour_point` | [video](docs/videos/lab6/03-house-of-cards-vortex.mp4) · [apagado y encendido](docs/screenshots/lab6/09-house-vortex-off-on.png) | Las bandas se enrollan a lo largo de los contornos ♦ de la norma L1; fuera del rombo la imagen es idéntica | `vortex_strength`: circulación del núcleo |
@@ -180,10 +182,10 @@ Los ocho efectos están implementados, probados y con evidencia. Los videos de b
 ### Limitaciones
 
 - La silueta es poligonal (malla de 98 vértices únicos): no se modifican vértices.
-- Cráteres, picas y cuencas son relieve **aparente** (bump, parallax y sombreado), no geometría.
+- Los cráteres-pica y las cuencas son relieve **aparente** (bump, parallax y sombreado), no geometría.
 - El parallax es una aproximación escalonada que se atenúa cerca del limbo.
 - El anillo de cartas ♦, el halo exterior y la cámara perspectiva quedan para el proyecto final.
-- Crimson Entrance es el shader más costoso: 1.4 s por cuadro con 1 hilo y 0.27 s con 20, unos 4 cuadros por segundo en la ventana ([benchmark](docs/results/lab6/shader_benchmark.csv)).
+- Crimson Entrance es el shader más costoso. Tras el reajuste tarda 0.7 s por cuadro con 1 hilo y 66 ms con 20, unos 15 cuadros por segundo; antes eran 1.76 s y 0.24 s, unos 4 cuadros por segundo ([mediciones](docs/results/lab6/crimson_refinement_benchmark.csv)).
 
 ### Video y pruebas
 
