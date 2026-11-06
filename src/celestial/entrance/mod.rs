@@ -13,7 +13,7 @@ pub mod terrain;
 use crate::celestial::DebugView;
 use crate::pipeline::{ShaderUniforms, SurfaceSample, ViewPreset, direction_from_angles};
 use crate::shading::lighting::{blinn_phong, bump_normal, lambert, parallax_shift, wrap_lambert};
-use crate::shading::math::{hex, mix3, mixf, saturate, smoothstep};
+use crate::shading::math::{hex, mix3, mixf, ramp, saturate, smoothstep};
 use crate::shading::sphere::{angular_distance, hash_direction};
 use raylib::math::Vector3;
 use terrain::TerrainMaterial;
@@ -26,7 +26,7 @@ params! {
         detail_amplitude: 0.18, 0.0, 0.6, "amplitude of the fine relief";
         basin_depth: 0.55, 0.0, 1.0, "depth of the monumental basin";
         basin_radius: 0.62, 0.2, 1.2, "angular radius of the basin, radians";
-        crack_width: 0.035, 0.005, 0.15, "width of the fissures";
+        crack_width: 0.028, 0.005, 0.15, "width of the fissures";
         crack_scale: 7.0, 2.0, 20.0, "frequency of the fissure network";
         events: 1.0, 0.0, 1.0, "switch: spade craters that sink, burn and close (0 or 1)";
         event_period: 21.0, 6.0, 90.0, "seconds per spade crater cycle (slots a third apart)";
@@ -49,8 +49,8 @@ params! {
         bump_strength: 0.8, 0.0, 4.0, "how strongly the height gradient tilts the normal";
         bump_epsilon: 0.004, 0.0005, 0.05, "finite-difference step of the gradient, radians";
         specular: 1.0, 0.0, 1.0, "switch: glassy highlights on the obsidian plains (0 or 1)";
-        specular_strength: 1.4, 0.0, 3.0, "brightness of the obsidian highlights";
-        shininess: 24.0, 2.0, 256.0, "Blinn-Phong exponent: higher = tighter highlight";
+        specular_strength: 0.9, 0.0, 3.0, "brightness of the obsidian highlights";
+        shininess: 40.0, 2.0, 256.0, "Blinn-Phong exponent: higher = tighter highlight";
         night_lights: 1.0, 0.0, 1.0, "switch: fissures glow brighter on the night side (0 or 1)";
         night_glow: 1.0, 0.0, 3.0, "emission of fissures and magma at full night";
         terminator_width: 0.25, 0.02, 0.8, "softness of the day-night transition";
@@ -64,6 +64,15 @@ params! {
 pub const DAY_GLOW: f32 = 0.12;
 /// Fraction of the lava light that still shows through a dense cloud.
 pub const LAVA_THROUGH_CLOUDS: f32 = 0.6;
+/// Largest thinning of the clouds over an open spade crater.
+pub const CRATER_CLEARING: f32 = 0.5;
+
+/// Molten floor from dark ember to hyperintense and incandescent red.
+const LAVA_RAMP: [(f32, Vector3); 3] = [
+    (0.0, hex(0x4A0B10)),
+    (0.45, hex(0xFF2020)),
+    (1.0, hex(0xFF4040)),
+];
 
 /// Per-frame state of the rocky planet shader.
 #[derive(Debug, Clone)]
@@ -112,17 +121,31 @@ impl Frame {
         let l = self.uniforms.light_direction;
         let cloud =
             mix3(hex(0x6E6468), hex(0xD6D0C4), 0.35) * (0.08 + 0.92 * wrap_lambert(n, l, 0.3));
-        let alpha = self.clouds.alpha(n);
+        // The layer keeps moving on its own; it only thins softly over an
+        // open spade crater so the basin stays readable.
+        let alpha = self.clouds.alpha(n) * (1.0 - CRATER_CLEARING * self.crater_clearing(n));
         mix3(surface, cloud, alpha) + lava * (LAVA_THROUGH_CLOUDS * alpha)
     }
 
-    /// Light of the molten floor of a spade crater: a hyperintense crimson
-    /// to red interior, orange veins and a white-hot core at the peak. It is
-    /// self-lit, so it reads the same by day and by night.
+    /// Thinning of the clouds over the open spade craters in `[0, 1]`.
+    pub fn crater_clearing(&self, n: Vector3) -> f32 {
+        if self.params.events < 0.5 {
+            return 0.0;
+        }
+        self.events
+            .iter()
+            .map(|e| e.clearing(n))
+            .fold(0.0, f32::max)
+    }
+
+    /// Light of the molten floor of a spade crater: hyperintense red that
+    /// darkens to ember as it cools, red-orange to orange veins and an
+    /// almost white core at the peak. It is self-lit, so it reads the same
+    /// by day and by night.
     pub fn lava_emission(&self, lava: f32, core: f32) -> Vector3 {
-        let red = mix3(hex(0xD21F2B), hex(0xFF2A1A), lava) * (1.5 * lava);
-        (red + hex(0xFF7A00) * (0.7 * core) + hex(0xFFE0D0) * (0.6 * core * core))
-            * self.params.lava_glow
+        let red = ramp(&LAVA_RAMP, lava) * (1.6 * lava);
+        let hot = mix3(hex(0xFF6030), hex(0xFF7A00), core) * (0.8 * core);
+        (red + hot + hex(0xFFF2C4) * (0.8 * core * core)) * self.params.lava_glow
     }
 
     /// Lookup direction of the ground seen along the view: the geometric
@@ -206,7 +229,7 @@ impl Frame {
         } else {
             DAY_GLOW
         };
-        mix3(hex(0xD21F2B), hex(0xFF7A00), saturate(crack)) * (crack * level)
+        mix3(hex(0xFF7A00), hex(0xFF9A28), saturate(crack)) * (crack * level)
     }
 
     /// Lit ground color without clouds.
@@ -244,15 +267,23 @@ impl Frame {
             DebugView::Materials => return (ground.material.debug_color(), Vector3::zero()),
             _ => {}
         }
-        // Carbonized rock around and inside a spade crater.
+        // Ochre and brown crust where materials meet, then carbonized rock
+        // around and inside a spade crater.
+        let mut albedo = terrain::albedo(ground.material, np, self);
+        if !ground.material.response().emissive {
+            let crust = mix3(hex(0x705047), hex(0x98745B), saturate(ground.crust));
+            albedo = mix3(albedo, crust, 0.7 * saturate(ground.crust));
+        }
         let albedo = mix3(
-            terrain::albedo(ground.material, np, self),
+            albedo,
             hex(0x151515) * 0.5,
             ground.char * self.params.char_strength,
         );
         let v = self.uniforms.eye_direction;
         let color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
-        let lava = self.lava_emission(ground.lava, ground.core);
+        // Crater fractures glow on their own, ahead of the molten floor.
+        let lava = self.lava_emission(ground.lava, ground.core)
+            + hex(0xFF7A00) * (0.4 * ground.fracture * self.params.lava_glow);
         // On the molten floor the lava replaces the lit rock.
         let char = ground.char * self.params.char_strength;
         let lit = color * ((1.0 - 0.6 * ground.lava) * (1.0 - 0.7 * char))

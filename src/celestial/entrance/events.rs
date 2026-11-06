@@ -60,12 +60,13 @@ pub const ORIGIN: i64 = -2;
 /// Envelopes of one life cycle as functions of the phase `tau`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Stages {
-    /// Fine fractures that outline the future ♠, fading as the floor closes.
+    /// Fine fractures that outline the future ♠: full while it sinks, a
+    /// faint residue once the basin is open, gone when the floor closes.
     pub fracture: f32,
     /// Sinking (0.05-0.2), full depth, regeneration (0.46-0.6).
     pub depth: f32,
     /// Incandescence: rises only after the full depth (0.22-0.34), peaks
-    /// (0.34-0.42) and cools (0.42-0.54).
+    /// (0.34-0.42) and cools (0.42-0.57).
     pub glow: f32,
     /// Cooled crust spreading over the floor (0.4-0.6).
     pub cooling: f32,
@@ -80,9 +81,11 @@ pub fn stages(tau: f32) -> Stages {
         return Stages::default();
     }
     Stages {
-        fracture: smoothstep(0.0, 0.08, tau) * (1.0 - smoothstep(0.5, 0.6, tau)),
+        fracture: smoothstep(0.0, 0.08, tau)
+            * mixf(1.0, 0.3, smoothstep(0.22, 0.36, tau))
+            * (1.0 - smoothstep(0.5, 0.6, tau)),
         depth: smoothstep(0.05, 0.2, tau) * (1.0 - smoothstep(0.46, 0.6, tau)),
-        glow: smoothstep(0.22, 0.34, tau) * (1.0 - smoothstep(0.42, 0.54, tau)),
+        glow: smoothstep(0.22, 0.34, tau) * (1.0 - smoothstep(0.42, 0.57, tau)),
         cooling: smoothstep(0.4, 0.5, tau) * (1.0 - smoothstep(0.52, 0.6, tau)),
         scorch: smoothstep(0.08, 0.25, tau) * (1.0 - smoothstep(0.5, 0.6, tau)),
     }
@@ -127,6 +130,8 @@ pub struct SpadeCrater {
     pub stages: Stages,
     /// Cosine of `reach(size)`: an early dot-product test.
     pub reach_cos: f32,
+    /// Cosine of the inner radius where the clouds thin the most.
+    pub clear_cos: f32,
     pub seed: u32,
 }
 
@@ -144,6 +149,8 @@ pub struct CraterSurface {
     pub core: f32,
     /// Carbonized rock: scorched band around the ♠ and cooled floor.
     pub char: f32,
+    /// Heat-altered ochre ring beyond the scorched band.
+    pub crust: f32,
 }
 
 impl SpadeCrater {
@@ -155,6 +162,16 @@ impl SpadeCrater {
     /// Current depth of the basin.
     pub fn amount(&self) -> f32 {
         self.depth * self.stages.depth
+    }
+
+    /// How much the clouds thin over the crater at geometric direction `n`
+    /// in `[0, 1]`: highest over the open basin, 0 beyond its reach.
+    pub fn clearing(&self, n: Vector3) -> f32 {
+        if !self.alive() {
+            return 0.0;
+        }
+        let open = self.stages.depth.max(self.stages.glow);
+        open * smoothstep(self.reach_cos, self.clear_cos, n.dot(self.center))
     }
 
     /// Spade coordinates of `n` and its eroded signed distance; `None`
@@ -203,12 +220,13 @@ impl SpadeCrater {
             let keep = smoothstep(st.cooling - 0.12, st.cooling + 0.12, patches);
             lava = floor * st.glow * self.glow_peak * keep * mixf(0.6, 1.0, vein);
             core = lava
-                * smoothstep(-0.08, -0.2, s)
-                * smoothstep(0.45, 0.8, vein)
+                * smoothstep(-0.1, -0.22, s)
+                * smoothstep(0.5, 0.8, vein)
                 * smoothstep(0.7, 1.0, st.glow);
             cooled = floor * st.cooling * (1.0 - keep);
         }
         let band = smoothstep(-0.01, 0.03, s) * (1.0 - smoothstep(0.08, 0.22, s));
+        let ring = smoothstep(0.1, 0.16, s) * (1.0 - smoothstep(0.2, 0.29, s));
         CraterSurface {
             height: profile(s) * self.amount(),
             rim: lip(s) * st.depth,
@@ -216,6 +234,7 @@ impl SpadeCrater {
             lava,
             core,
             char: (band * st.scorch * mixf(0.75, 1.0, network)).max(cooled),
+            crust: ring * st.scorch,
         }
     }
 }
@@ -257,6 +276,7 @@ pub fn spade_crater(
         tau,
         stages: stages(tau),
         reach_cos: reach(size).cos(),
+        clear_cos: (0.6 * reach(size)).cos(),
         seed: event_seed,
     }
 }

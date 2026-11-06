@@ -296,3 +296,28 @@ fn shadows_only_darken_direct_light() {
     }
     assert!(darker > 100, "{darker}");
 }
+
+// ---- Clouds over open spade craters ----
+
+use rust_software_renderer::celestial::entrance::CRATER_CLEARING;
+
+#[test]
+fn clouds_thin_softly_over_open_craters_only() {
+    let f = frame_at(p(), 8.0);
+    let e = f.events[0];
+    assert!(e.alive() && e.stages.depth > 0.99);
+    assert!(f.crater_clearing(e.center) > 0.95);
+    // Soft: the layer keeps at least half of its opacity, and the edge of
+    // the crater's reach is untouched.
+    const { assert!(CRATER_CLEARING <= 0.5) };
+    let far = directions(4096)
+        .into_iter()
+        .filter(|n| f.events.iter().all(|c| n.dot(c.center) < c.reach_cos))
+        .collect::<Vec<_>>();
+    assert!(far.len() > 2000);
+    for n in far {
+        assert_eq!(f.crater_clearing(n), 0.0);
+    }
+    let off = frame_at(EntranceParams { events: 0.0, ..p() }, 8.0);
+    assert_eq!(off.crater_clearing(e.center), 0.0);
+}

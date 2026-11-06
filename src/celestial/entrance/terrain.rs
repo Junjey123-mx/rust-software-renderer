@@ -4,6 +4,11 @@
 //! (macro height, later used by parallax) and a finer fBm (detail height,
 //! later used by bump mapping). Materials are thresholds of that field, so
 //! relief, regions and lighting always agree.
+//!
+//! Visual hierarchy: black and gray volcanic rock (obsidian, basalt, slate)
+//! is the canvas; matte crimson highlands and ash rims come next, with an
+//! ochre and brown crust where materials meet; thin amber fissures follow;
+//! the hyperincandescent lava is reserved for the floor of spade craters.
 
 use crate::celestial::entrance::Frame;
 use crate::celestial::entrance::events::CraterSurface;
@@ -65,12 +70,12 @@ pub fn height(n: Vector3, f: &Frame) -> f32 {
     macro_height(n, f) + detail_height(n, f)
 }
 
-/// Fissure network in `[0, 1]`: thin zero crossings of an fBm, kept to low
-/// ground (`h < 0.1`).
+/// Fissure network in `[0, 1]`: thin zero crossings of an fBm, kept to the
+/// lower ground (`h < 0.02`) so it stays below the craters in importance.
 pub fn crack_mask(n: Vector3, h: f32, f: &Frame) -> f32 {
     let p = &f.params;
     let line = fbm(n * p.crack_scale, 3, f.seed.wrapping_add(7)).abs();
-    (1.0 - smoothstep(0.0, p.crack_width, line)) * (1.0 - smoothstep(0.05, 0.1, h))
+    (1.0 - smoothstep(0.0, p.crack_width, line)) * (1.0 - smoothstep(-0.04, 0.02, h))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -86,20 +91,23 @@ pub enum TerrainMaterial {
     Ash,
     /// Glowing fissures.
     Crack,
+    /// Molten floor of a spade crater.
+    Lava,
 }
 
 impl TerrainMaterial {
-    pub const ALL: [TerrainMaterial; 6] = [
+    pub const ALL: [TerrainMaterial; 7] = [
         Self::Obsidian,
         Self::Basalt,
         Self::Highland,
         Self::Slate,
         Self::Ash,
         Self::Crack,
+        Self::Lava,
     ];
 
     /// How the material reflects light: glassy obsidian, wrapped ash,
-    /// self-lit fissures and matte rock.
+    /// self-lit fissures and lava, and matte rock.
     pub fn response(self) -> Response {
         match self {
             Self::Obsidian => Response {
@@ -112,7 +120,7 @@ impl TerrainMaterial {
                 wrap: 0.3,
                 emissive: false,
             },
-            Self::Crack => Response {
+            Self::Crack | Self::Lava => Response {
                 specular: 0.0,
                 wrap: 0.0,
                 emissive: true,
@@ -134,6 +142,7 @@ impl TerrainMaterial {
             Self::Slate => hex(0x30D0C0),
             Self::Ash => hex(0xF0F0F0),
             Self::Crack => hex(0xFF9000),
+            Self::Lava => hex(0xFF00C8),
         }
     }
 }
@@ -149,15 +158,21 @@ pub struct Response {
     pub emissive: bool,
 }
 
-/// Region of a point, in priority order: fissure, rim ash, then height bands.
-pub fn classify(h: f32, rim: f32, crack: f32) -> TerrainMaterial {
-    if crack > 0.5 {
+/// Height where basalt gives way to the crimson highlands.
+pub const HIGHLAND_FROM: f32 = 0.08;
+
+/// Region of a point, in priority order: molten crater floor, fissure, rim
+/// ash, then height bands.
+pub fn classify(h: f32, rim: f32, crack: f32, lava: f32) -> TerrainMaterial {
+    if lava > 0.3 {
+        TerrainMaterial::Lava
+    } else if crack > 0.5 {
         TerrainMaterial::Crack
     } else if rim > 0.25 {
         TerrainMaterial::Ash
     } else if h < -0.12 {
         TerrainMaterial::Obsidian
-    } else if h < 0.08 {
+    } else if h < HIGHLAND_FROM {
         TerrainMaterial::Basalt
     } else if h < 0.2 {
         TerrainMaterial::Highland
@@ -166,16 +181,19 @@ pub fn classify(h: f32, rim: f32, crack: f32) -> TerrainMaterial {
     }
 }
 
-/// Base color of a material, varied between two tones by noise.
+/// Base color of a material, varied between two tones by noise: black and
+/// gray rock, matte wine to blood red highlands (never lava bright), ash
+/// grays, amber fissures and red-hot lava.
 pub fn albedo(material: TerrainMaterial, n: Vector3, f: &Frame) -> Vector3 {
     let t = 0.5 + 0.5 * gradient3(n * 11.0, f.seed.wrapping_add(9));
     let (a, b) = match material {
-        TerrainMaterial::Obsidian => (hex(0x4A0B10), hex(0x8F1018)),
-        TerrainMaterial::Basalt => (hex(0x151515), hex(0x252525)),
-        TerrainMaterial::Highland => (hex(0x8F1018), hex(0xD21F2B)),
-        TerrainMaterial::Slate => (hex(0x3A3A42), hex(0x5A1A1E)),
-        TerrainMaterial::Ash => (hex(0xD6D0C4) * 0.8, hex(0xD6D0C4) * 0.65),
-        TerrainMaterial::Crack => (hex(0xFF7A00), hex(0xFF7A00)),
+        TerrainMaterial::Obsidian => (hex(0x151515), hex(0x252525)),
+        TerrainMaterial::Basalt => (hex(0x252525), hex(0x3A3A42)),
+        TerrainMaterial::Highland => (hex(0x4A0B10), hex(0x8F1018)),
+        TerrainMaterial::Slate => (hex(0x3A3A42), hex(0x4A4850)),
+        TerrainMaterial::Ash => (hex(0x6E6468), hex(0x858080)),
+        TerrainMaterial::Crack => (hex(0xFF7A00), hex(0xFF9A28)),
+        TerrainMaterial::Lava => (hex(0xFF2020), hex(0xFF4040)),
     };
     mix3(a, b, t)
 }
@@ -186,6 +204,10 @@ pub struct Ground {
     pub height: f32,
     pub rim: f32,
     pub crack: f32,
+    /// Fractures of a spade crater (self-lit) in `[0, 1]`.
+    pub fracture: f32,
+    /// Ochre and brown crust where materials meet and around open craters.
+    pub crust: f32,
     /// Molten floor of a spade crater in `[0, 1]`.
     pub lava: f32,
     /// White-hot core of the floor in `[0, 1]`.
@@ -208,6 +230,7 @@ pub fn ground(n: Vector3, f: &Frame) -> Ground {
             event.lava = event.lava.max(s.lava);
             event.core = event.core.max(s.core);
             event.char = event.char.max(s.char);
+            event.crust = event.crust.max(s.crust);
         }
     }
     let h = base_height(n, f) + event.height + detail_height(n, f);
@@ -215,15 +238,20 @@ pub fn ground(n: Vector3, f: &Frame) -> Ground {
     let d = basin_distance(n, f);
     let rim = (-((d - 1.0) / 0.1).powi(2)).exp()
         * (0.5 + 1.4 * fbm(n * 5.0, 2, f.seed.wrapping_add(11))).clamp(0.0, 1.0);
-    let rim = rim.max(event.rim * (0.6 + 0.4 * gradient3(n * 13.0, f.seed.wrapping_add(12))));
+    let grain = gradient3(n * 13.0, f.seed.wrapping_add(12));
+    let rim = rim.max(event.rim * (0.6 + 0.4 * grain));
     let crack = crack_mask(n, h, f).max(event.fracture);
+    // Dry crust in a broken band where basalt meets the highlands.
+    let seam = 1.0 - smoothstep(0.0, 0.035, (h - HIGHLAND_FROM).abs());
     Ground {
         height: h,
         rim,
         crack,
+        fracture: event.fracture,
+        crust: (seam * (0.55 + 0.45 * grain)).max(event.crust),
         lava: event.lava,
         core: event.core,
         char: event.char,
-        material: classify(h, rim, crack.max(event.lava)),
+        material: classify(h, rim, crack, event.lava),
     }
 }

@@ -141,3 +141,113 @@ fn height_debug_view_is_grayscale() {
         assert_eq!(m.shade(&sample(n)), material.debug_color());
     }
 }
+
+// ---- Volcanic material hierarchy ----
+
+use rust_software_renderer::shading::sdf::spade;
+use rust_software_renderer::shading::sphere::from_local;
+
+fn frame_at(time: f32) -> Frame {
+    let u = ShaderUniforms {
+        time,
+        light_direction: direction_from_angles(-1.3, 0.35),
+        eye_direction: direction_from_angles(-2.45, 0.55),
+    };
+    prepare(&EntranceParams::default(), &u, DebugView::None)
+}
+
+#[test]
+fn dark_volcanic_rock_dominates_the_visible_disk() {
+    let f = frame_at(8.0);
+    let eye = f.uniforms.eye_direction;
+    let visible: Vec<Vector3> = directions(8192)
+        .into_iter()
+        .filter(|n| n.dot(eye) > 0.0)
+        .collect();
+    let share = |wanted: &[TerrainMaterial]| {
+        visible
+            .iter()
+            .filter(|&&n| wanted.contains(&terrain::ground(n, &f).material))
+            .count() as f32
+            / visible.len() as f32
+    };
+    use TerrainMaterial::*;
+    let rock = share(&[Obsidian, Basalt, Slate]);
+    assert!(rock >= 0.6, "dark rock covers {rock}");
+    assert!(share(&[Highland]) < rock / 3.0);
+    assert!(share(&[Crack]) < 0.08, "fissures stay secondary");
+    assert!(share(&[Lava]) < 0.05, "lava is reserved for the craters");
+    for m in [Obsidian, Basalt, Slate, Highland, Ash] {
+        assert!(!m.response().emissive, "{m:?}");
+    }
+    assert!(Crack.response().emissive && Lava.response().emissive);
+}
+
+#[test]
+fn crimson_highlands_are_matte_rock_not_lava() {
+    let f = frame_at(8.0);
+    let highland = TerrainMaterial::Highland.response();
+    assert_eq!((highland.specular, highland.wrap), (0.0, 0.0));
+    // A typical molten floor at the peak (lava 0.6-1.0).
+    let lava = f.lava_emission(0.8, 0.0);
+    for n in directions(512) {
+        let a = terrain::albedo(TerrainMaterial::Highland, n, &f);
+        assert!(a.x <= 0.6 && a.x > 2.5 * a.y, "matte blood red {a:?}");
+        // Even fully lit, the rock stays below half of the molten floor.
+        assert!(a.x < 0.5 * lava.x, "{a:?} vs {lava:?}");
+    }
+}
+
+#[test]
+fn lava_only_exists_inside_open_spade_craters() {
+    for time in [0.0, 6.5, 8.0, 15.0, 29.0] {
+        let f = frame_at(time);
+        for n in directions(8192) {
+            if terrain::ground(n, &f).material == TerrainMaterial::Lava {
+                let near = f
+                    .events
+                    .iter()
+                    .any(|e| e.alive() && e.stages.glow > 0.0 && n.dot(e.center) >= e.reach_cos);
+                assert!(near, "stray lava at t {time}");
+            }
+        }
+    }
+}
+
+#[test]
+fn crater_lips_read_as_ash() {
+    // The large crater at full depth (tau 0.3).
+    let f = frame_at(6.3);
+    let e = f.events[0];
+    let (mut lip, mut ash) = (0, 0);
+    for i in 0..60 {
+        for j in 0..60 {
+            let (x, y) = (-0.9 + i as f32 * 0.03, -0.9 + j as f32 * 0.03);
+            let s = spade((x, y));
+            if (s - 0.07).abs() < 0.015 {
+                lip += 1;
+                let n = from_local(e.center, e.east, e.north, x * e.size, y * e.size);
+                if terrain::ground(n, &f).material == TerrainMaterial::Ash {
+                    ash += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        lip > 30 && ash * 2 >= lip,
+        "{ash} of {lip} lip points are ash"
+    );
+}
+
+#[test]
+fn shaded_colors_are_finite_and_bounded() {
+    for time in [0.0, 3.0, 6.5, 8.0, 10.2, 40.0] {
+        let f = frame_at(time);
+        for n in directions(4096) {
+            let c = f.shade(&sample(n));
+            for v in [c.x, c.y, c.z] {
+                assert!(v.is_finite() && (0.0..=4.0).contains(&v), "t {time}: {c:?}");
+            }
+        }
+    }
+}

@@ -324,30 +324,48 @@ fn events_switch_disables_all_events() {
 #[test]
 fn molten_spade_reads_hyperintense_red_by_day_and_night() {
     let t = time_of(0, 0.38);
-    let f = frame_at(EntranceParams { clouds: 0.0, ..p() }, t);
+    let calm = EntranceParams { clouds: 0.0, ..p() };
+    let f = frame_at(calm, t);
     let red = f.lava_emission(1.0, 0.0);
-    assert!(red.x >= 1.4 && red.y < 0.4 && red.z < 0.4, "{red:?}");
-    // The lava is self-lit: shade a molten point under opposite lights.
+    assert!(
+        red.x >= 1.4 && red.x > 3.0 * red.y && red.x > 3.0 * red.z,
+        "{red:?}"
+    );
+    // The lava is self-lit: the mean of the molten interior under opposite
+    // lights stays a hyperintense red.
     let e = f.events[0];
-    let n = at(&e, 0.0, 0.1);
-    let sample = SurfaceSample {
-        x: 0,
-        y: 0,
-        depth: 0.0,
-        object_position: n,
-        normal: n,
-        face_normal: n,
-    };
-    for light in [n, -n] {
+    let interior: Vec<Vector3> = grid(&e)
+        .into_iter()
+        .filter(|&(_, s)| s < -0.12)
+        .map(|(n, _)| n)
+        .collect();
+    let mean = |light: Vector3| {
         let u = ShaderUniforms {
             time: t,
             light_direction: light,
-            eye_direction: n,
+            eye_direction: e.center,
         };
-        let lit = prepare(&EntranceParams { clouds: 0.0, ..p() }, &u, DebugView::None);
-        let c = lit.shade(&sample);
-        assert!(c.x >= 0.95 && c.x > 1.6 * c.y && c.x > 3.0 * c.z, "{c:?}");
+        let lit = prepare(&calm, &u, DebugView::None);
+        interior
+            .iter()
+            .map(|&n| {
+                lit.shade(&SurfaceSample {
+                    x: 0,
+                    y: 0,
+                    depth: 0.0,
+                    object_position: n,
+                    normal: n,
+                    face_normal: n,
+                })
+            })
+            .fold(Vector3::zero(), |a, c| a + c)
+            / interior.len() as f32
+    };
+    let (day, night) = (mean(e.center), mean(-e.center));
+    for c in [day, night] {
+        assert!(c.x >= 0.95 && c.x > 2.0 * c.y && c.x > 2.5 * c.z, "{c:?}");
     }
+    assert!((day.x - night.x).abs() < 0.15, "{day:?} vs {night:?}");
 }
 
 // ---- Spatial and temporal distribution ----
