@@ -74,8 +74,12 @@ pub fn height(n: Vector3, f: &Frame) -> f32 {
 /// lower ground (`h < 0.02`) so it stays below the craters in importance.
 pub fn crack_mask(n: Vector3, h: f32, f: &Frame) -> f32 {
     let p = &f.params;
+    let low = 1.0 - smoothstep(-0.04, 0.02, h);
+    if low <= 0.0 {
+        return 0.0;
+    }
     let line = fbm(n * p.crack_scale, 3, f.seed.wrapping_add(7)).abs();
-    (1.0 - smoothstep(0.0, p.crack_width, line)) * (1.0 - smoothstep(-0.04, 0.02, h))
+    (1.0 - smoothstep(0.0, p.crack_width, line)) * low
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -160,6 +164,8 @@ pub struct Response {
 
 /// Height where basalt gives way to the crimson highlands.
 pub const HIGHLAND_FROM: f32 = 0.08;
+/// Rim strength from which the ground is ash.
+pub const ASH_FROM: f32 = 0.25;
 
 /// Region of a point, in priority order: molten crater floor, fissure, rim
 /// ash, then height bands.
@@ -168,7 +174,7 @@ pub fn classify(h: f32, rim: f32, crack: f32, lava: f32) -> TerrainMaterial {
         TerrainMaterial::Lava
     } else if crack > 0.5 {
         TerrainMaterial::Crack
-    } else if rim > 0.25 {
+    } else if rim > ASH_FROM {
         TerrainMaterial::Ash
     } else if h < -0.12 {
         TerrainMaterial::Obsidian
@@ -234,10 +240,16 @@ pub fn ground(n: Vector3, f: &Frame) -> Ground {
         }
     }
     let h = base_height(n, f) + event.height + detail_height(n, f);
-    // Irregular dusty edge: a narrow rim band broken up by noise.
+    // Irregular dusty edge: a narrow rim band broken up by noise. Where the
+    // band is below the ash threshold it cannot make ash, so its noise is
+    // skipped.
     let d = basin_distance(n, f);
-    let rim = (-((d - 1.0) / 0.1).powi(2)).exp()
-        * (0.5 + 1.4 * fbm(n * 5.0, 2, f.seed.wrapping_add(11))).clamp(0.0, 1.0);
+    let band = (-((d - 1.0) / 0.1).powi(2)).exp();
+    let rim = if band > ASH_FROM {
+        band * (0.5 + 1.4 * fbm(n * 5.0, 2, f.seed.wrapping_add(11))).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     let grain = gradient3(n * 13.0, f.seed.wrapping_add(12));
     let rim = rim.max(event.rim * (0.6 + 0.4 * grain));
     let crack = crack_mask(n, h, f).max(event.fracture);

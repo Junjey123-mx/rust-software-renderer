@@ -37,10 +37,13 @@ pub fn fresnel(n: Vector3, v: Vector3, power: f32) -> f32 {
 }
 
 /// Normal perturbed by the tangent-plane gradient of `height`, estimated
-/// with central differences of step `eps`: `N' = normalize(N - k (h_t t +
-/// h_b b))`. The gradient does not depend on the chosen frame.
+/// with forward differences of step `eps` from the height `h0` the caller
+/// already knows at `n` (two lookups instead of four central ones):
+/// `N' = normalize(N - k (h_t t + h_b b))`. The gradient does not depend on
+/// the chosen frame.
 pub fn bump_normal(
     n: Vector3,
+    h0: f32,
     height: impl Fn(Vector3) -> f32,
     eps: f32,
     strength: f32,
@@ -49,9 +52,8 @@ pub fn bump_normal(
         return n;
     }
     let (t, b) = tangent_frame(n);
-    let h = |d: Vector3| height((n + d * eps).normalized());
-    let h_t = (h(t) - h(-t)) / (2.0 * eps);
-    let h_b = (h(b) - h(-b)) / (2.0 * eps);
+    let h_t = (height((n + t * eps).normalized()) - h0) / eps;
+    let h_b = (height((n + b * eps).normalized()) - h0) / eps;
     (n - (t * h_t + b * h_b) * strength).normalized()
 }
 

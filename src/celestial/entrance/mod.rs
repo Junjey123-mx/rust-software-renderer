@@ -151,17 +151,22 @@ impl Frame {
     /// Lookup direction of the ground seen along the view: the geometric
     /// direction shifted by a stepped search of the macro height field
     /// (parallax). Identity when disabled, at zero scale or facing the eye.
+    /// `parallax_steps` is the count at grazing views; steep views, whose
+    /// search covers a shorter stretch of ground, use down to a third.
     pub fn parallax_direction(&self, n: Vector3) -> Vector3 {
         let p = &self.params;
         if p.parallax < 0.5 {
             return n;
         }
+        let v = self.uniforms.eye_direction;
+        let vn = n.dot(v).clamp(0.0, 1.0);
+        let steps = (p.parallax_steps * (1.0 - 0.65 * vn * vn)).round().max(2.0);
         parallax_shift(
             n,
-            self.uniforms.eye_direction,
+            v,
             |q| terrain::macro_height(q, self),
             p.parallax_scale,
-            p.parallax_steps.round() as u32,
+            steps as u32,
             3,
         )
     }
@@ -170,12 +175,18 @@ impl Frame {
     /// the gradient of the full height field (bump mapping). Night, cloud
     /// and shadow terms keep the geometric normal.
     pub fn shading_normal(&self, n: Vector3) -> Vector3 {
+        self.bumped_normal(n, terrain::height(n, self))
+    }
+
+    /// `shading_normal` at a direction whose full height `h0` is known.
+    fn bumped_normal(&self, n: Vector3, h0: f32) -> Vector3 {
         let p = &self.params;
         if p.bump < 0.5 {
             return n;
         }
         bump_normal(
             n,
+            h0,
             |q| terrain::height(q, self),
             p.bump_epsilon,
             p.bump_strength,
@@ -255,7 +266,7 @@ impl Frame {
             return gray((angular_distance(n, np) * 40.0).min(1.0));
         }
         let ground = terrain::ground(np, self);
-        let lit_normal = self.shading_normal(np);
+        let lit_normal = self.bumped_normal(np, ground.height);
         match self.debug {
             DebugView::Normals => {
                 return (

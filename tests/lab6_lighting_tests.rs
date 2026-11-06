@@ -43,10 +43,10 @@ fn fresnel_is_zero_facing_and_one_grazing() {
 fn bump_with_zero_strength_or_flat_height_is_identity() {
     let n = unit(0.2, 0.5, 0.8);
     let rough = |q: Vector3| (q.x * 13.0).sin();
-    assert_eq!(bump_normal(n, rough, 0.004, 0.0), n);
-    let flat = bump_normal(n, |_| 0.3, 0.004, 2.0);
+    assert_eq!(bump_normal(n, rough(n), rough, 0.004, 0.0), n);
+    let flat = bump_normal(n, 0.3, |_| 0.3, 0.004, 2.0);
     assert!((flat - n).length() < 1e-5);
-    let bumped = bump_normal(n, rough, 0.004, 1.0);
+    let bumped = bump_normal(n, rough(n), rough, 0.004, 1.0);
     assert!((bumped.length() - 1.0).abs() < 1e-5);
 }
 
@@ -61,9 +61,10 @@ fn bump_gradient_is_frame_invariant() {
         unit(-0.02, -0.9997, 0.01),
         unit(0.0, 1.0, 0.0),
     ] {
-        let numeric = bump_normal(n, |q| q.x, 0.004, k);
+        let numeric = bump_normal(n, n.x, |q| q.x, 0.004, k);
         let analytic = (n - (x - n * n.x) * k).normalized();
-        assert!((numeric - analytic).length() < 1e-3, "{n:?}");
+        // Forward differences are first order: error about k * eps / 2.
+        assert!((numeric - analytic).length() < 3e-3, "{n:?}");
     }
 }
 

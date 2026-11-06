@@ -156,3 +156,73 @@ fn cycle_and_envelope_are_continuous_at_boundaries() {
         prev = e;
     }
 }
+
+// ---- The optimized noise is bit-identical to the original formulation ----
+
+use rust_software_renderer::shading::noise::hash3;
+
+/// The original single-pass lattice hash.
+fn reference_hash3(i: i32, j: i32, k: i32, seed: u32) -> u32 {
+    let mut h = seed ^ 0x9e37_79b9;
+    h = (h ^ i as u32).wrapping_mul(0x85eb_ca6b);
+    h ^= h >> 13;
+    h = (h ^ j as u32).wrapping_mul(0xc2b2_ae35);
+    h ^= h >> 16;
+    h = (h ^ k as u32).wrapping_mul(0x27d4_eb2f);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^= h >> 12;
+    h = h.wrapping_mul(0x297a_2d39);
+    h ^ (h >> 15)
+}
+
+/// The original gradient noise with one branch per cube-edge gradient.
+fn reference_gradient3(p: Vector3, seed: u32) -> f32 {
+    let grad = |h: u32, x: f32, y: f32, z: f32| match h % 12 {
+        0 => x + y,
+        1 => -x + y,
+        2 => x - y,
+        3 => -x - y,
+        4 => x + z,
+        5 => -x + z,
+        6 => x - z,
+        7 => -x - z,
+        8 => y + z,
+        9 => -y + z,
+        10 => y - z,
+        _ => -y - z,
+    };
+    let fade = |t: f32| t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let (fx, fy, fz) = (p.x.floor(), p.y.floor(), p.z.floor());
+    let (i, j, k) = (fx as i32, fy as i32, fz as i32);
+    let (x, y, z) = (p.x - fx, p.y - fy, p.z - fz);
+    let (u, v, w) = (fade(x), fade(y), fade(z));
+    let g = |di: i32, dj: i32, dk: i32| {
+        grad(
+            reference_hash3(i + di, j + dj, k + dk, seed),
+            x - di as f32,
+            y - dj as f32,
+            z - dk as f32,
+        )
+    };
+    let x00 = lerp(g(0, 0, 0), g(1, 0, 0), u);
+    let x10 = lerp(g(0, 1, 0), g(1, 1, 0), u);
+    let x01 = lerp(g(0, 0, 1), g(1, 0, 1), u);
+    let x11 = lerp(g(0, 1, 1), g(1, 1, 1), u);
+    lerp(lerp(x00, x10, v), lerp(x01, x11, v), w) * 0.95
+}
+
+#[test]
+fn optimized_noise_matches_the_original_bit_for_bit() {
+    for (n, p) in points(20_000, 40.0).into_iter().enumerate() {
+        let seed = (n as u32).wrapping_mul(2_654_435_761);
+        assert_eq!(
+            gradient3(p, seed).to_bits(),
+            reference_gradient3(p, seed).to_bits(),
+            "{p:?} seed {seed}"
+        );
+        let (i, j, k) = (p.x as i32, p.y as i32 * 7, -(p.z as i32));
+        assert_eq!(hash3(i, j, k, seed), reference_hash3(i, j, k, seed));
+    }
+}

@@ -7,12 +7,23 @@ use raylib::math::Vector3;
 
 /// Integer lattice hash with a final avalanche.
 pub fn hash3(i: i32, j: i32, k: i32, seed: u32) -> u32 {
-    let mut h = seed ^ 0x9e37_79b9;
-    h = (h ^ i as u32).wrapping_mul(0x85eb_ca6b);
-    h ^= h >> 13;
-    h = (h ^ j as u32).wrapping_mul(0xc2b2_ae35);
-    h ^= h >> 16;
-    h = (h ^ k as u32).wrapping_mul(0x27d4_eb2f);
+    hash_k(hash_j(hash_i(i, seed), j), k)
+}
+
+// The three stages of `hash3`, split so `gradient3` can share the `i` and
+// `ij` prefixes of its eight lattice corners.
+fn hash_i(i: i32, seed: u32) -> u32 {
+    let h = (seed ^ 0x9e37_79b9 ^ i as u32).wrapping_mul(0x85eb_ca6b);
+    h ^ (h >> 13)
+}
+
+fn hash_j(h: u32, j: i32) -> u32 {
+    let h = (h ^ j as u32).wrapping_mul(0xc2b2_ae35);
+    h ^ (h >> 16)
+}
+
+fn hash_k(h: u32, k: i32) -> u32 {
+    let mut h = (h ^ k as u32).wrapping_mul(0x27d4_eb2f);
     h ^= h >> 15;
     h = h.wrapping_mul(0x2c1b_3c6d);
     h ^= h >> 12;
@@ -24,22 +35,27 @@ fn fade(t: f32) -> f32 {
     t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
 }
 
-/// Dot product with one of the 12 cube-edge gradients.
+/// The 12 cube-edge gradients, indexed by `hash % 12`.
+const GRADIENTS: [[f32; 3]; 12] = [
+    [1.0, 1.0, 0.0],
+    [-1.0, 1.0, 0.0],
+    [1.0, -1.0, 0.0],
+    [-1.0, -1.0, 0.0],
+    [1.0, 0.0, 1.0],
+    [-1.0, 0.0, 1.0],
+    [1.0, 0.0, -1.0],
+    [-1.0, 0.0, -1.0],
+    [0.0, 1.0, 1.0],
+    [0.0, -1.0, 1.0],
+    [0.0, 1.0, -1.0],
+    [0.0, -1.0, -1.0],
+];
+
+/// Dot product with one of the 12 cube-edge gradients. A table lookup, not
+/// a branch per case: the hash is random, so a `match` mispredicts.
 fn grad(h: u32, x: f32, y: f32, z: f32) -> f32 {
-    match h % 12 {
-        0 => x + y,
-        1 => -x + y,
-        2 => x - y,
-        3 => -x - y,
-        4 => x + z,
-        5 => -x + z,
-        6 => x - z,
-        7 => -x - z,
-        8 => y + z,
-        9 => -y + z,
-        10 => y - z,
-        _ => -y - z,
-    }
+    let [gx, gy, gz] = GRADIENTS[(h % 12) as usize];
+    gx * x + gy * y + gz * z
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
@@ -55,9 +71,14 @@ pub fn gradient3(p: Vector3, seed: u32) -> f32 {
     let (i, j, k) = (fx as i32, fy as i32, fz as i32);
     let (x, y, z) = (p.x - fx, p.y - fy, p.z - fz);
     let (u, v, w) = (fade(x), fade(y), fade(z));
+    let hi = [hash_i(i, seed), hash_i(i + 1, seed)];
+    let hij = [
+        [hash_j(hi[0], j), hash_j(hi[0], j + 1)],
+        [hash_j(hi[1], j), hash_j(hi[1], j + 1)],
+    ];
     let g = |di: i32, dj: i32, dk: i32| {
         grad(
-            hash3(i + di, j + dj, k + dk, seed),
+            hash_k(hij[di as usize][dj as usize], k + dk),
             x - di as f32,
             y - dj as f32,
             z - dk as f32,

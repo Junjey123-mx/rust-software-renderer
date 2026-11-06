@@ -236,3 +236,32 @@ fn face_normal_source_is_flat_per_triangle() {
         .collect();
     assert!(!colors.is_empty() && colors.len() <= 96, "{}", colors.len());
 }
+
+#[test]
+fn many_shading_chunks_keep_the_image_independent_of_threads() {
+    use rust_software_renderer::celestial::{Body, CelestialScene};
+    use rust_software_renderer::pipeline::ViewPreset;
+    // The rocky planet has very uneven per-fragment cost and this size
+    // gives dozens of shading chunks to the work queue.
+    let render = |threads: usize| {
+        let mut scene =
+            CelestialScene::new(Body::CrimsonEntrance, ViewPreset::Oblique, 320, 240).unwrap();
+        scene.time = 8.0;
+        let mut fb = Framebuffer::new(320, 240);
+        let stats = scene
+            .render(
+                &mut fb,
+                TriangleMode::FilledScanline,
+                ShadedOptions {
+                    threads,
+                    ..ShadedOptions::default()
+                },
+            )
+            .unwrap();
+        assert!(stats.fragments_shaded > 20 * 512);
+        fb.to_rgba_bytes()
+    };
+    let one = render(1);
+    assert_eq!(one, render(7));
+    assert_eq!(one, render(20));
+}

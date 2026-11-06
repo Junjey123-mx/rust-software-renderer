@@ -15,6 +15,7 @@ use crate::rasterization::coverage::{interpolation_weights, vertex_point};
 use crate::rasterization::{RasterBounds, TriangleMode, fill_barycentric, fill_scanline};
 use crate::rendering::Framebuffer;
 use raylib::math::Vector3;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// Options of the shaded stage.
@@ -178,8 +179,13 @@ where
     Ok(stats)
 }
 
-/// Evaluates the shader on contiguous chunks and joins them in order, so the
-/// result does not depend on the number of threads.
+/// Fragments per job of the shader threads.
+const SHADE_CHUNK: usize = 512;
+
+/// Evaluates the shader on small chunks that idle threads take from a shared
+/// queue, so fast and slow cores (and cheap and expensive regions) stay
+/// busy. Every color is written at its sample's index, so the result does
+/// not depend on the number of threads.
 fn shade_all<S>(samples: &[SurfaceSample], shader: &S, threads: usize) -> Vec<Vector3>
 where
     S: Fn(&SurfaceSample) -> Vector3 + Sync,
@@ -191,19 +197,26 @@ where
     if n <= 1 || samples.len() < 2 {
         return samples.iter().map(|s| sanitize(shader(s))).collect();
     }
-    let chunk = samples.len().div_ceil(n).max(1);
+    let mut colors = vec![Vector3::zero(); samples.len()];
+    let jobs = Mutex::new(
+        samples
+            .chunks(SHADE_CHUNK)
+            .zip(colors.chunks_mut(SHADE_CHUNK)),
+    );
     std::thread::scope(|scope| {
-        let handles: Vec<_> = samples
-            .chunks(chunk)
-            .map(|part| {
-                scope.spawn(move || part.iter().map(|s| sanitize(shader(s))).collect::<Vec<_>>())
-            })
-            .collect();
-        handles
-            .into_iter()
-            .flat_map(|h| h.join().expect("shader thread panicked"))
-            .collect()
-    })
+        for _ in 0..n.min(samples.len().div_ceil(SHADE_CHUNK)) {
+            scope.spawn(|| {
+                loop {
+                    let job = jobs.lock().expect("shader job queue").next();
+                    let Some((part, out)) = job else { break };
+                    for (s, c) in part.iter().zip(out) {
+                        *c = sanitize(shader(s));
+                    }
+                }
+            });
+        }
+    });
+    colors
 }
 
 /// Non-finite components become 0 so a shader bug cannot poison the image.
