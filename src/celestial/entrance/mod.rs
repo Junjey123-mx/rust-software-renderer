@@ -1,8 +1,10 @@
-//! Crimson Entrance: volcanic planet of craters and spade mesas (rocky).
+//! Crimson Entrance: volcanic planet of spade craters (rocky).
 //!
 //! The surface is classified from one procedural height field (see
 //! `terrain`): obsidian plains, basalt, crimson highlands, slate mesas, ash
-//! rims and glowing fissures. Its only symbol is the spade.
+//! rims and glowing fissures. Its single geological event, the spade crater
+//! (see `events`), sinks the crust into a ♠ and exposes a molten floor. Its
+//! only symbol is the spade.
 
 pub mod clouds;
 pub mod events;
@@ -26,15 +28,12 @@ params! {
         basin_radius: 0.62, 0.2, 1.2, "angular radius of the basin, radians";
         crack_width: 0.035, 0.005, 0.15, "width of the fissures";
         crack_scale: 7.0, 2.0, 20.0, "frequency of the fissure network";
-        events: 1.0, 0.0, 1.0, "switch: migrating craters and spade mesas (0 or 1)";
-        crater_period: 12.0, 2.0, 60.0, "seconds per crater life cycle";
-        crater_radius: 0.28, 0.05, 0.6, "angular radius of a mature crater, radians";
-        crater_depth: 0.45, 0.0, 1.0, "depth of a crater bowl";
-        spade_period: 16.0, 2.0, 60.0, "seconds per spade mesa life cycle";
-        spade_size: 0.42, 0.1, 0.8, "size of the spade mesa in its tangent plane";
-        spade_height: 0.6, 0.0, 1.0, "height of the spade mesa at its apogee";
-        brand_glow: 1.0, 0.0, 3.0, "emission of the spade burned into the crust";
-        char_strength: 0.85, 0.0, 1.0, "how dark the carbonized rock around the spade gets";
+        events: 1.0, 0.0, 1.0, "switch: spade craters that sink, burn and close (0 or 1)";
+        event_period: 21.0, 6.0, 90.0, "seconds per spade crater cycle (slots a third apart)";
+        event_size: 0.5, 0.15, 0.9, "tangent-plane size of the large spade crater";
+        event_depth: 0.55, 0.0, 1.0, "depth of the large spade crater at full sink";
+        lava_glow: 1.0, 0.0, 3.0, "emission of the molten spade floor";
+        char_strength: 0.85, 0.0, 1.0, "how dark the carbonized rock of a spade crater gets";
         clouds: 1.0, 0.0, 1.0, "switch: procedural cloud layer (0 or 1)";
         cloud_coverage: 0.45, 0.0, 1.0, "fraction of the sky covered by clouds";
         cloud_scale: 2.4, 0.5, 8.0, "frequency of the cloud masses";
@@ -60,10 +59,10 @@ params! {
     }
 }
 
-/// Emission of fissures and magma on the day side.
+/// Emission of fissures on the day side.
 pub const DAY_GLOW: f32 = 0.12;
-/// Fraction of the brand light that still shows through a dense cloud.
-pub const BRAND_THROUGH_CLOUDS: f32 = 0.6;
+/// Fraction of the lava light that still shows through a dense cloud.
+pub const LAVA_THROUGH_CLOUDS: f32 = 0.6;
 
 /// Per-frame state of the rocky planet shader.
 #[derive(Debug, Clone)]
@@ -75,8 +74,8 @@ pub struct Frame {
     /// Direction the default camera looks at; events are seeded around it.
     pub focus: Vector3,
     pub basin_center: Vector3,
-    /// Craters and spade mesas of this frame (boxed: built once per frame).
-    pub events: Box<[events::ActiveEvent; events::CRATER_SLOTS + events::SPADE_SLOTS]>,
+    /// Spade craters of this frame by slot (boxed: built once per frame).
+    pub events: Box<[events::SpadeCrater; events::EVENT_SLOTS]>,
     pub clouds: clouds::CloudLayer,
 }
 
@@ -105,24 +104,24 @@ impl Frame {
             // Ground debug views are shown without clouds.
             _ => return self.surface_color(n),
         }
-        let (surface, brand) = self.surface_parts(n);
+        let (surface, lava) = self.surface_parts(n);
         // Clouds over the ground, with their own soft lighting and the
-        // geometric normal (they float above the relief). A burning brand
+        // geometric normal (they float above the relief). A molten floor
         // still glows red through them.
         let l = self.uniforms.light_direction;
         let cloud =
             mix3(hex(0x6E6468), hex(0xD6D0C4), 0.35) * (0.08 + 0.92 * wrap_lambert(n, l, 0.3));
         let alpha = self.clouds.alpha(n);
-        mix3(surface, cloud, alpha) + brand * (BRAND_THROUGH_CLOUDS * alpha)
+        mix3(surface, cloud, alpha) + lava * (LAVA_THROUGH_CLOUDS * alpha)
     }
 
-    /// Light of a spade burned into the crust: a hyperintense crimson to red
-    /// interior, orange veins and a white-hot core at the apogee. It is
+    /// Light of the molten floor of a spade crater: a hyperintense crimson
+    /// to red interior, orange veins and a white-hot core at the peak. It is
     /// self-lit, so it reads the same by day and by night.
-    pub fn brand_emission(&self, brand: f32, core: f32) -> Vector3 {
-        let red = mix3(hex(0xD21F2B), hex(0xFF2A1A), brand) * (1.5 * brand);
+    pub fn lava_emission(&self, lava: f32, core: f32) -> Vector3 {
+        let red = mix3(hex(0xD21F2B), hex(0xFF2A1A), lava) * (1.5 * lava);
         (red + hex(0xFF7A00) * (0.7 * core) + hex(0xFFE0D0) * (0.6 * core * core))
-            * self.params.brand_glow
+            * self.params.lava_glow
     }
 
     /// Lookup direction of the ground seen along the view: the geometric
@@ -196,18 +195,17 @@ impl Frame {
         smoothstep(0.05, -self.params.terminator_width, n.dot(l))
     }
 
-    /// Self-emission of fissures and molten crater floors: a dim day level
-    /// that rises to `night_glow` on the night side. A separate term, never
-    /// a darkened diffuse.
-    pub fn emission(&self, crack: f32, magma: f32, n: Vector3, l: Vector3) -> Vector3 {
+    /// Self-emission of fissures: a dim day level that rises to
+    /// `night_glow` on the night side. A separate term, never a darkened
+    /// diffuse.
+    pub fn emission(&self, crack: f32, n: Vector3, l: Vector3) -> Vector3 {
         let p = &self.params;
         let level = if p.night_lights >= 0.5 {
             mixf(DAY_GLOW, p.night_glow, self.night_factor(n, l))
         } else {
             DAY_GLOW
         };
-        let core = saturate(crack.max(magma));
-        mix3(hex(0xD21F2B), hex(0xFF7A00), core) * ((crack + magma) * level)
+        mix3(hex(0xD21F2B), hex(0xFF7A00), saturate(crack)) * (crack * level)
     }
 
     /// Lit ground color without clouds.
@@ -215,7 +213,7 @@ impl Frame {
         self.surface_parts(n).0
     }
 
-    /// Lit ground color without clouds, and the brand emission it contains.
+    /// Lit ground color without clouds, and the lava emission it contains.
     fn surface_parts(&self, n: Vector3) -> (Vector3, Vector3) {
         let l = self.uniforms.light_direction;
         // Cloud shadows attenuate direct light only; emission is untouched.
@@ -245,7 +243,7 @@ impl Frame {
             DebugView::Materials => return (ground.material.debug_color(), Vector3::zero()),
             _ => {}
         }
-        // Carbonized rock around a burning spade.
+        // Carbonized rock around and inside a spade crater.
         let albedo = mix3(
             terrain::albedo(ground.material, np, self),
             hex(0x151515) * 0.5,
@@ -253,12 +251,12 @@ impl Frame {
         );
         let v = self.uniforms.eye_direction;
         let color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
-        let brand = self.brand_emission(ground.brand, ground.brand_core);
-        // Inside the brand the molten crust replaces the lit rock.
+        let lava = self.lava_emission(ground.lava, ground.core);
+        // On the molten floor the lava replaces the lit rock.
         let char = ground.char * self.params.char_strength;
-        let lit = color * ((1.0 - 0.6 * ground.brand) * (1.0 - 0.7 * char))
-            + self.emission(ground.crack, ground.magma, n, l)
-            + brand;
-        (lit, brand)
+        let lit = color * ((1.0 - 0.6 * ground.lava) * (1.0 - 0.7 * char))
+            + self.emission(ground.crack, n, l)
+            + lava;
+        (lit, lava)
     }
 }

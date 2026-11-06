@@ -135,7 +135,6 @@ fn opposite_lights_reverse_bump_shading() {
 
 // ---- C21: view-dependent parallax (E07) ----
 
-use rust_software_renderer::celestial::entrance::events::CRATER_SLOTS;
 use rust_software_renderer::celestial::entrance::terrain;
 
 fn frame_seen_from(params: EntranceParams, time: f32, eye: Vector3) -> Frame {
@@ -172,32 +171,37 @@ fn parallax_is_identity_without_scale_or_at_normal_incidence() {
 }
 
 #[test]
-fn raised_spades_shift_toward_the_view_and_craters_away() {
-    // Spade slot 0 at its apogee (t = 8) and crater slot 0 mature (t = 6).
-    let spade_frame = frame_at(p(), 8.0);
-    let spade = spade_frame.events[CRATER_SLOTS].center;
-    let crater_frame = frame_at(p(), 6.0);
-    let crater = crater_frame.events[0].center;
-    assert!(terrain::macro_height(spade, &spade_frame) > 0.0);
-    assert!(terrain::macro_height(crater, &crater_frame) < 0.0);
-    for (n, time, toward) in [(spade, 8.0, true), (crater, 6.0, false)] {
+fn raised_ground_shifts_toward_the_view_and_crater_floors_away() {
+    // The large spade crater at full depth (t = 6.3) and the highest hill
+    // near the default view.
+    let f0 = frame_at(p(), 6.3);
+    let floor = f0.events[0].center;
+    let eye = default_eye();
+    let hill = directions(4096)
+        .into_iter()
+        .filter(|&n| n.dot(eye) > 0.5)
+        .max_by(|a, b| terrain::macro_height(*a, &f0).total_cmp(&terrain::macro_height(*b, &f0)))
+        .unwrap();
+    assert!(terrain::macro_height(hill, &f0) > 0.0);
+    assert!(terrain::macro_height(floor, &f0) < 0.0);
+    for (n, toward) in [(hill, true), (floor, false)] {
         let (t, _) = tangent_frame(n);
         let v = tilted(n, t, std::f32::consts::FRAC_PI_4);
-        let f = frame_seen_from(p(), time, v);
+        let f = frame_seen_from(p(), 6.3, v);
         let np = f.parallax_direction(n);
         assert!(
             angular_distance(n, np) > 0.1_f32.to_radians(),
             "shift too small"
         );
         let along = (np - n).dot(v - n * n.dot(v));
-        assert_eq!(along > 0.0, toward, "shift direction at t = {time}");
+        assert_eq!(along > 0.0, toward, "shift direction (raised = {toward})");
     }
 }
 
 #[test]
 fn parallax_fades_near_the_limb() {
     let f0 = frame_at(p(), 8.0);
-    let n = f0.events[CRATER_SLOTS].center;
+    let n = f0.events[0].center;
     let (t, _) = tangent_frame(n);
     // V . N = 0.05: grazing, the approximation is faded out completely.
     let grazing = frame_seen_from(p(), 8.0, tilted(n, t, 0.05_f32.acos()));

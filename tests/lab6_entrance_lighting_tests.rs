@@ -117,8 +117,8 @@ fn normal_with(l: Vector3, n_dot_l: f32) -> Vector3 {
 fn fissures_glow_brighter_at_night() {
     let f = frame(p());
     let l = unit(0.6, 0.4, 0.7);
-    let night = f.emission(1.0, 0.0, normal_with(l, -0.5), l);
-    let day = f.emission(1.0, 0.0, normal_with(l, 0.5), l);
+    let night = f.emission(1.0, normal_with(l, -0.5), l);
+    let day = f.emission(1.0, normal_with(l, 0.5), l);
     assert!(
         night.x >= 3.0 * day.x && day.x > 0.0,
         "{night:?} vs {day:?}"
@@ -127,10 +127,7 @@ fn fissures_glow_brighter_at_night() {
         night_glow: 0.0,
         ..p()
     });
-    assert_eq!(
-        off.emission(1.0, 0.0, normal_with(l, -0.9), l),
-        Vector3::zero()
-    );
+    assert_eq!(off.emission(1.0, normal_with(l, -0.9), l), Vector3::zero());
 }
 
 #[test]
@@ -157,8 +154,8 @@ fn night_lights_switch_keeps_day_level() {
     });
     let on = frame(p());
     let l = unit(0.6, 0.4, 0.7);
-    let day = on.emission(1.0, 0.0, normal_with(l, 0.7), l);
+    let day = on.emission(1.0, normal_with(l, 0.7), l);
     for n_dot_l in [0.7, 0.0, -0.4, -0.95] {
-        assert_eq!(off.emission(1.0, 0.0, normal_with(l, n_dot_l), l), day);
+        assert_eq!(off.emission(1.0, normal_with(l, n_dot_l), l), day);
     }
 }
