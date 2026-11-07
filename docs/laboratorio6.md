@@ -24,7 +24,7 @@ vertex_shader ─ project_orbit ─ primitive_assembly        (sin cambios, Lab 
 Presenter (textura raylib)  o  --record (rgb24 a stdout, sin ventana)
 ```
 
-- **Aditivo.** Ningún archivo de prueba existente se modificó. `Fragment`, `Vertex`, `CliArgs`, `RenderSettings`, `Uniforms`, los rellenos, la cámara y el framebuffer no cambiaron. Un oráculo de 21 *hashes* FNV-1a (`tests/lab6_regression_guard_tests.rs`) congela la nave, sus tres modos, la cámara orbital y el Z-buffer.
+- **Aditivo.** Ningún archivo de prueba de los laboratorios 4 y 5 se modificó. `Fragment`, `Vertex`, `CliArgs`, `RenderSettings`, `Uniforms`, los rellenos, la cámara y el framebuffer no cambiaron. Un oráculo de 21 *hashes* FNV-1a (`tests/lab6_regression_guard_tests.rs`) congela la nave, sus tres modos, la cámara orbital y el Z-buffer.
 - **Paralelo y determinista.** Las muestras se reparten en trozos contiguos y se unen en orden, así que la imagen es idéntica con 1 o N hilos (`--threads`).
 - **Compatible con el proyecto final.** Los colores pasan por `point_depth`, de modo que la nave y los planetas podrán compartir framebuffer y Z-buffer. `NormalSource::Face` sombrea mallas que no son esferas.
 
@@ -45,7 +45,7 @@ La cobertura sigue siendo la del algoritmo elegido. Como la interpolación es la
 | `noise.rs` | `hash3`, `gradient3` (ruido de gradiente con 12 gradientes de arista, *fade* quíntico), `fbm` (lacunaridad 2, ganancia 0.5, normalizado), `ridged`, `warp` |
 | `cycle.rs` | `cycle(t, periodo, fase)` → (k, τ); `envelope(τ, subida, meseta, bajada)`, que vale 0 en τ = 0 y τ = 1 |
 | `sdf.rs` | `circle`, `triangle` (exacta), `smooth_min`, `spade` (♠: dos lóbulos, hoja y tallo) y `diamond_l1` (♦: \|x\|/a + \|y\|/b − 1) |
-| `sphere.rs` | `tangent_frame`, `east_north`, `local_plane` (gnomónica), `from_local`, `rotate_y`, `rotate_axis`, `angular_distance`, `hash_direction` (uniforme en un casquete) |
+| `sphere.rs` | `tangent_frame`, `east_north`, `local_plane` (gnomónica), `from_local`, `rotate_y`, `rotate_axis`, `angular_distance`, `hash_direction` (uniforme en un casquete), `clearance` y `fibonacci_direction` (colocación de cráteres y tormentas) |
 | `lighting.rs` | `lambert`, `wrap_lambert`, `blinn_phong`, `fresnel`, `bump_normal`, `parallax_shift`, `shell_exit` |
 
 ## 4. The King's Crown (`src/celestial/crown.rs`)
@@ -60,7 +60,12 @@ Estrella emisiva: no depende de la luz externa.
 2. **Manchas.** Tres centros sembrados en un cono de 50° alrededor de la vista oblicua, que derivan con `spot_drift_speed`. Su radio respira: r·(0.7 + 0.3·sen(2πt/P + 2.1i)). La umbra lleva T hacia 0.05 y la penumbra lo multiplica por 0.55.
 3. **Corona.** borde = 1 − n·V. Su ancho pulsa: w·(1 + amp·(2p − 1)), con p = 0.5 + 0.5·sen(2πt/periodo). Se suma oro y marfil en el limbo.
 4. **Eclipse.** Ocupa el último `duration/period` de cada ciclo, con centro en t = periodo − duración/2 (22 s por defecto). Oscurece el núcleo por (1 − profundidad·e·(1 − borde)²) mientras la corona sigue encendida.
-5. **Bucles de plasma.** Tres ranuras con periodo `loop_period`·(1 + 0.37·i). En el plano tangente de un pie sembrado (cono de 60°), el bucle es la mitad superior de una elipse de semiejes a y b, girada y deformada por fBm, recorrida de un pie (s = 0) al otro (s = 1). La fase τ controla:
+5. **Bucles de plasma.** Hasta seis ranuras (`plasma_loop_count`: 2, 4 o 6). La ranura i tiene periodo `loop_period`·(1 + 0.37·(i mod 3) + 0.17·⌊i/3⌋), de 9 a 17.2 s, y fase 0.45·i·periodo, así que nunca arden todas a la vez.
+   - **Regiones.** Las zonas son los vértices de un octaedro cuyo eje triple apunta a la vista inicial. Las ranuras pares quedan a 55° de ese eje, repartidas cada 120° alrededor del disco visible (arriba, abajo a la izquierda y abajo a la derecha); las impares, en sus antípodas, en el hemisferio oculto. Con 2, 4 o 6 ranuras queda siempre la mitad en cada hemisferio.
+   - **Variación.** En cada ciclo el pie se siembra en un cono de 45° alrededor de su zona, y cambian el tamaño, el brillo (0.75-1) y el grosor del surco (0.8-1.2).
+   - **Forma.** En el plano tangente del pie, el bucle es la mitad superior de una elipse de semiejes a y b, girada y deformada por fBm, recorrida de un pie (s = 0) al otro (s = 1).
+
+   La fase τ controla:
    - concentración (0-0.12): brillo en el pie;
    - nacimiento y expansión (0.12-0.55): el frente `head` avanza de 0 a 1;
    - máximo (0.55-0.7): núcleo casi blanco;
@@ -96,6 +101,9 @@ Estrella emisiva: no depende de la luz externa.
 
 Un solo fenómeno, el **cráter-pica**, con tres ranuras: grande, mediana y pequeña. El evento m nace en m·P/3, con P = `event_period` = 21 s, y ocupa la ranura m mod 3.
 
+- **Dos a la vez.** Cada evento vive 0.6·P = 12.6 s, así que dos consecutivos coexisten 0.27·P = 5.6 s de cada 7, con tamaños distintos. El brillo del primero ya decae cuando el segundo llega a la profundidad máxima, así que nunca alcanzan juntos el máximo brillo.
+- **Uno a la vez.** Con `spade_crater_count = 1` se abren solo los eventos pares de la misma secuencia: mismos lugares y tamaños, uno cada 14 s.
+
 - **Altura.** h = A(t)·perfil(s), donde s es la SDF de la pica erosionada en el plano tangente del evento y perfil(s) = −(0.85·smoothstep(0.03, −0.13, s) + 0.15·smoothstep(−0.1, −0.24, s)) + 0.22·exp(−((s − 0.07)/0.05)²). Es la misma altura del parallax, del bump y de la clasificación.
 - **Fases por τ:**
   - fracturas que dibujan la ♠ (0–0.08);
@@ -107,7 +115,10 @@ Un solo fenómeno, el **cráter-pica**, con tres ranuras: grande, mediana y pequ
   - reposo (0.6–1).
 
   Todo vale 0 en τ = 0 y desde τ = 0.6, así que el traslado no se ve.
-- **Posición.** Cada evento prueba hasta 16 candidatos y acepta el primero cuyo alcance (atan(0.95·tamaño)) más `event_margin` no toque al cráter abierto ni a los tres últimos cerrados. Si ninguno sirve, toma la más despejada de 64 direcciones fijas. Los eventos pares se abren delante de la cámara inicial (cono de 55°) y los impares en cualquier parte (150°). La secuencia se reproduce desde un evento fijo, así que cada centro depende solo de su índice.
+- **Posición.** Cada evento prueba hasta 16 candidatos. Los eventos pares se abren delante de la cámara inicial (cono de 55°) y los impares en cualquier parte (150°). La secuencia se reproduce desde un evento fijo, así que cada centro depende solo de su índice. El orden de preferencia es:
+  1. el primer candidato cuyo alcance (atan(0.95·tamaño)) más `event_margin` no toque al cráter abierto ni a los tres últimos cerrados y que además quede a menos de `PAIR_SPAN_DEG` = 100° del cráter abierto, para que una cámara entre ambos vea los dos;
+  2. si ninguno cumple ambas cosas, un evento par acepta el primero que solo esté despejado; un impar no relaja el límite de 100°;
+  3. si tampoco hay ninguno, la mejor de 64 direcciones fijas según ese mismo criterio.
 - **Emisión.** La lava (`lava_emission`: `#FF2020` → `#FF4040`, vetas `#FF6030`/`#FF7A00`, núcleo `#FFF2C4`) es independiente de la luz y el 60 % atraviesa las nubes. Sobre un cráter abierto la opacidad de las nubes baja hasta la mitad.
 
 Detalles y mediciones en [lab6-crimson-refinement.md](lab6-crimson-refinement.md).
@@ -138,9 +149,25 @@ Detalles y mediciones en [lab6-crimson-refinement.md](lab6-crimson-refinement.md
   - s' = s + W·(4/2π)·caída(d), con caída = (1 − smoothstep(0.6, 1, d))·exp(−2.5d);
   - el punto se reconstruye sobre **el mismo contorno** y las bandas se muestrean en él;
   - fuera de d ≥ 1 es la identidad exacta.
-- **Ciclo del vórtice:** periodo de 18 s con calma, perturbación, formación, apogeo (τ ≈ 0.55, t = 9.9), disolución y estabilidad. W = 0 en los bordes del ciclo, y después el centro migra (latitud ≤ 45°). Una tormenta secundaria (periodo de 11 s, escala 0.5) sigue el mismo esquema.
-- **Relámpagos neón** (`strike`, `Frame::lightning`). Hay tres canales con ranuras de 0.11, 0.17 y 0.23 s. En cada ranura un *hash* decide si cae un rayo:
-  - canal 0: con probabilidad `lightning_rate`·(0.15 + 0.75·envolvente de la tormenta), solo con el vórtice activo; nace dentro del rombo y se anula antes de su borde;
+- **Tres tormentas** (`vortex_count`: 1 a 3, por ranuras en orden). Comparten el periodo P = `vortex_period` = 18 s, y la tormenta m nace en m·P/3 en la ranura m mod 3:
+
+  | Ranura | Tamaño (× `vortex_radius`) | Circulación | Giro del núcleo | Rayos (× canal grande) |
+  |---|---:|---|---:|---:|
+  | grande | 1 | `vortex_strength` | 2 rad/s | 1 |
+  | mediana | 0.72 | −`secondary_strength` (anticiclón) | 2.6 rad/s | 0.75 |
+  | pequeña | 0.5 | `secondary_strength` | 3.3 rad/s | 0.55 |
+
+  La deformación total es la composición de los tres vórtices (`Frame::vortex_warp`). Cada uno sale por una comparación exacta con el radio angular de su rombo antes de calcular nada.
+- **Ciclo de cada tormenta:** calma, perturbación, formación, apogeo, disolución y estabilidad, como una envolvente sobre τ ∈ [0.1, 0.9]. La grande culmina en t = 9.9 s. W = 0 en los bordes del ciclo, así que el traslado no se ve. Como las ranuras van un tercio desfasadas, nunca coinciden dos apogeos y siempre hay dos o tres tormentas vivas.
+- **Posición** (`place_storms`). Cada tormenta prueba hasta 16 candidatos sembrados dentro de la latitud `vortex_max_latitude`:
+  - la grande, en un cono de 35° alrededor de la vista inicial; la mediana, de 120°; la pequeña, en cualquier parte;
+  - su rombo debe quedar a `STORM_MARGIN` de las dos tormentas con las que comparte el cielo y al menos a un radio de donde su ranura se formó la última vez;
+  - la mediana y la pequeña prefieren dejarle a la grande el centro de la vista inicial;
+  - si ningún candidato sirve, toma la más despejada de 64 direcciones fijas.
+
+  La secuencia se reproduce desde una tormenta fija, así que un centro nunca se mueve mientras su tormenta es visible.
+- **Relámpagos neón** (`strike`, `Frame::lightning`). Hay cinco canales con ranuras de 0.11, 0.17, 0.23, 0.13 y 0.19 s. En cada ranura un *hash* decide si cae un rayo:
+  - canales 0, 3 y 4, uno por tormenta (grande, mediana y pequeña): con probabilidad `lightning_rate`·(0.15 + 0.75·envolvente)·(1, 0.75 o 0.55), solo con su tormenta activa; nacen dentro de su rombo y se anulan antes de su borde;
   - canales 1 y 2: con probabilidad `lightning_rate`·0.22, en un casquete del hemisferio visible.
 
   El destello es exp(−5·fase), a veces con un segundo pulso. El rayo es un trazo dentado (ruido 1D de 4 octavas con los extremos anclados) con dos ramas a ±25-35°, en el plano tangente del punto de impacto. En la tormenta las coordenadas salen del dominio deformado por el vórtice. Lleva un núcleo pálido `#F8E8FF`, un halo `#C13CFF`/`#FF4FB8` y un resplandor tenue en las nubes, todo como emisión.
@@ -169,12 +196,12 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `corona_width` | 0.45 | 0.02 – 0.6 | Anchura de la corona del limbo |
 | `corona_pulse_period` | 4 | 0.5 – 30 | Segundos por pulso de la corona |
 | `corona_pulse_amount` | 0.35 | 0 – 1 | Amplitud del pulso (tecla `[` / `]`) |
-| `crown_height` | 0.35 | 0 – 0.8 | Altura de las puntas (rad de latitud) |
 | `eclipse_period` | 24 | 4 – 120 | Segundos entre eclipses |
 | `eclipse_duration` | 4 | 0 – 30 | Duración del eclipse |
 | `eclipse_depth` | 0.75 | 0 – 1 | Cuánto se oscurece el núcleo |
 | `loops` | 1 | 0 – 1 | Bucles de plasma que brotan y se reabsorben |
-| `loop_period` | 9 | 3 – 60 | Segundos por ciclo de un bucle |
+| `plasma_loop_count` | 6 | 2 – 6 | Ranuras de bucles en uso, la mitad en cada hemisferio (redondeado) |
+| `loop_period` | 9 | 3 – 60 | Segundos por ciclo de la ranura más rápida |
 | `loop_size` | 0.6 | 0.15 – 0.9 | Semiamplitud del arco en su plano tangente |
 | `loop_width` | 0.05 | 0.01 – 0.12 | Grosor del filamento |
 | `loop_brightness` | 1.1 | 0 – 3 | Emisión de los bucles |
@@ -192,6 +219,7 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `crack_width` | 0.028 | 0.005 – 0.15 | Grosor de las fisuras |
 | `crack_scale` | 7 | 2 – 20 | Densidad de la red de fisuras |
 | `events` | 1 | 0 – 1 | Cráteres-pica que se hunden, arden y se cierran |
+| `spade_crater_count` | 2 | 1 – 2 | Cráteres-pica abiertos a la vez (redondeado) |
 | `event_period` | 21 | 6 – 90 | Segundos por ciclo (ranuras desfasadas un tercio) |
 | `event_size` | 0.5 | 0.15 – 0.9 | Tamaño del cráter-pica grande en su plano tangente |
 | `event_depth` | 0.55 | 0 – 1 | Profundidad del cráter-pica grande |
@@ -234,11 +262,12 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 | `rim_strength` | 0.6 | 0 – 2 | Halo violeta y magenta del limbo |
 | `wrap` | 0.35 | 0 – 1 | Iluminación envolvente de las nubes |
 | `vortex` | 1 | 0 – 1 | Tormentas ♦ |
-| `vortex_period` | 18 | 4 – 90 | Segundos por ciclo de la tormenta |
-| `vortex_radius` | 0.45 | 0.1 – 0.5 | Semidiagonal del rombo |
-| `vortex_strength` | 6 | 0 – 8 | Circulación del núcleo, rad (tecla `[` / `]`) |
+| `vortex_count` | 3 | 1 – 3 | Tormentas en uso: grande, + mediana, + pequeña (redondeado) |
+| `vortex_period` | 18 | 4 – 90 | Segundos por ciclo de una tormenta (desfasadas un tercio) |
+| `vortex_radius` | 0.45 | 0.1 – 0.5 | Semidiagonal del rombo grande |
+| `vortex_strength` | 6 | 0 – 8 | Circulación del núcleo grande, rad (tecla `[` / `]`) |
 | `vortex_aspect` | 1.35 | 0.6 – 2 | Diagonal norte-sur sobre la este-oeste |
-| `secondary_strength` | 0.6 | 0 – 2 | Circulación de la tormenta secundaria |
+| `secondary_strength` | 4.5 | 0 – 8 | Circulación de las tormentas mediana y pequeña, rad |
 | `vortex_max_latitude` | 45 | 0 – 60 | Latitud máxima de los centros (grados) |
 | `lightning` | 1 | 0 – 1 | Relámpagos neón en las tormentas |
 | `lightning_rate` | 1 | 0 – 3 | Frecuencia de los relámpagos |
@@ -248,9 +277,9 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 
 | Criterio | Archivos de prueba |
 |---|---|
-| B01 / E01 | `lab6_crown_tests.rs`: emisiva, paleta cálida, corrientes y venas, cambio con cámara y malla fijas, histograma no rígido, manchas que respiran, pulso, eclipse, ninguna figura de diadema |
-| B02 | `lab6_entrance_terrain_tests.rs` y `lab6_entrance_events_tests.rs`: siete regiones con la roca oscura dominante y la lava solo en los cráteres, cuenca, cráter-pica: un solo sistema de tres ranuras, cuenca con forma de ♠, brillo tras la profundidad máxima, continuidad, separación y zonas recientes |
-| B03 / E05 | `lab6_house_tests.rs`: varianza por latitud, ondulación solo con *warp*, costuras, vórtice estrictamente local, ida y vuelta del contorno ♦, migración |
+| B01 / E01 | `lab6_crown_tests.rs`: emisiva, paleta cálida, corrientes y venas, cambio con cámara y malla fijas, histograma no rígido, manchas que respiran, pulso, eclipse, ninguna figura de diadema, ranuras de bucles enteras, zonas en ambos hemisferios, bucles desfasados y variación por ciclo |
+| B02 | `lab6_entrance_terrain_tests.rs` y `lab6_entrance_events_tests.rs`: siete regiones con la roca oscura dominante y la lava solo en los cráteres, cuenca, cráter-pica: un solo sistema de tres ranuras, cuenca con forma de ♠, brillo tras la profundidad máxima, continuidad, separación y zonas recientes, dos cráteres en fases y tamaños distintos, la configuración de uno conserva los eventos pares |
+| B03 / E05 | `lab6_house_tests.rs`: varianza por latitud, ondulación solo con *warp*, costuras, vórtice estrictamente local, ida y vuelta del contorno ♦, migración, tres tormentas que no se solapan, apogeos desfasados, centros quietos mientras son visibles, `vortex_count`, deformación sin NaN y rayos propios por tormenta |
 | E02 / E03 | `lab6_entrance_lighting_tests.rs`: emisión nocturna ≥ 3×, monotonía, obsidiana dependiente de la vista, roca independiente, fisuras independientes de L |
 | E04 / E08 | `lab6_entrance_clouds_tests.rs`: cobertura monótona, rotación rígida exacta, sin geometría nueva, sombra = máscara en q, nula en el punto subsolar, sin sombra de noche |
 | E06 / E07 | `lab6_entrance_relief_tests.rs`: identidad sin bump, inclinación, luces opuestas, parallax hacia la vista en colinas y en sentido contrario en cráteres, desvanecimiento en el limbo, tiempo congelado |
@@ -259,18 +288,29 @@ Todos se cambian con `--set nombre=valor` (se valida el nombre y el rango). Los 
 
 ## 9. Reproducción de evidencias
 
-- **Capturas 01-04:** salen de la ventana real (`--screenshot`).
-- **Montajes 05-09:** se componen con fotogramas sin ventana:
+- **Capturas 01-04:** salen de la ventana real (`--screenshot`), con la vista oblicua y scanline:
   ```bash
-  ./target/release/rust-software-renderer <args> --record 0.04 --fps 25 | \
-    ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 25 -i - -frames:v 1 panel.png
+  ./target/release/rust-software-renderer --scene crown --time 12 --screenshot docs/screenshots/lab6/01-kings-crown.png
+  ./target/release/rust-software-renderer --scene entrance --time 44 --screenshot docs/screenshots/lab6/02-crimson-entrance.png
+  ./target/release/rust-software-renderer --scene house --time 31 --screenshot docs/screenshots/lab6/03-house-of-cards.png
+  ./target/release/rust-software-renderer --scene entrance --mode wireframe --screenshot docs/screenshots/lab6/04-shared-sphere-wireframe.png
   ```
-  Los paneles se unen con `hstack`.
+  Los instantes se eligieron con la línea de tiempo de los eventos:
+  - t = 12 s: tres bucles encendidos en zonas distintas;
+  - t = 44 s: la pica pequeña en su máximo brillo mientras la grande se fractura;
+  - t = 31 s: las tormentas grande y mediana con sus rayos.
+- **Montajes 05-09:** `encode.sh stills`. Cada panel es un fotograma sin ventana (`--record 0.04 --fps 25`); los paneles se rotulan y se unen con `hstack`. Crimson Entrance usa t = 8 s, con la pica grande en su máximo brillo frente a la cámara. House of Cards usa t = 30 s con `lightning=0`, así que entre los paneles solo cambia el vórtice.
 - **Videos:** se regeneran con [`docs/videos/lab6/encode.sh`](videos/lab6/encode.sh) `all`, que contiene la tabla exacta de argumentos. El flujo:
   1. `--record` produce rgb24.
   2. ffmpeg lo convierte en un intermedio FFV1 sin pérdida a 30 fps (declarado con `-framerate`).
   3. Del intermedio salen el MP4 H.264 y el GIF.
-- **Codificador:** el script lo elige con una prueba funcional. En esta máquina fue `h264_nvenc` (`-rc constqp -qp 32 -bf 0`, sin AQ, para que cada archivo quede por debajo de unos 4 MB; `QP=34` en la órbita del clip 06, que cambia todos los píxeles); `libx264` no está disponible. Los GIF van a 8 fps, con 64 colores y 320 px de ancho (640 en las comparaciones lado a lado). Sin codificador H.264, `ALLOW_GIF_ONLY=1` produce solo GIF.
+  4. Antes de reemplazar el archivo anterior, el script comprueba que no esté vacío y su códec, tamaño y número de fotogramas, y lo decodifica completo.
+- **Tomas de los tres cuerpos:**
+  - 01: cámara fija desde t = 0 (criterio E01).
+  - 02: empieza en t = 27 s. Desde la vista inicial se abren por turnos tres cráteres-pica (mediano, pequeño y grande), y dos coexisten entre 35-40 s y 42-47 s.
+  - 03: usa `--view side --timeline showcase`. El cuarto de vuelta muestra el ciclo completo de las tormentas mediana, pequeña y grande, porque desde la vista oblicua la pequeña queda casi siempre en el otro hemisferio.
+  - 10: compara en el mismo instante la vista oblicua (bucles de las ranuras pares) y la lateral (ranuras impares).
+- **Codificador:** el script lo elige con una prueba funcional. En esta máquina fue `h264_nvenc` (`-rc constqp -qp 32 -bf 0`, sin AQ, para que cada archivo quede cerca de 4 MB o por debajo; `QP=34` en la órbita del clip 06, que cambia todos los píxeles, y en los dos paneles de plasma del clip 10); `libx264` no está disponible. Los GIF van a 8 fps (5 fps en el clip 10), con 64 colores y 320 px de ancho (640 en las comparaciones lado a lado). Sin codificador H.264, `ALLOW_GIF_ONLY=1` produce solo GIF.
 - **Aislamiento:** los clips de bump (05), parallax (06) y respuestas a la luz (08) se graban con `--set clouds=0` para aislar el efecto. El de parallax usa además la escala de demostración `parallax_scale=0.12`.
 - **Líneas de tiempo:**
 
@@ -300,6 +340,16 @@ Los tres cuerpos sombrean 172 152 fragmentos por cuadro, uno por píxel visible 
 En la ventana iba a unos 4 cuadros por segundo; los videos se graban sin ventana y no dependen de esa velocidad. El benchmark del Lab 5 y sus CSV no cambiaron.
 
 Esta tabla es la medición original. Tras el reajuste de Crimson Entrance (bump con 2 alturas, parallax adaptativo, ruido sin saltos mal predichos y cola de bloques para los hilos), en scanline baja a 713.9 ms con 1 hilo y a 61.6 ms con 20, unos 15 cuadros por segundo. Ver [lab6-crimson-refinement.md](lab6-crimson-refinement.md) y [`crimson_refinement_benchmark.csv`](results/lab6/crimson_refinement_benchmark.csv).
+
+**Medición de la versión final** (2026-11-06): el mismo `--benchmark-shaders`, con dos cráteres-pica, tres tormentas y seis bucles. Son medianas de tres ejecuciones de 5 rondas, en scanline; los totales con 20 hilos varían cerca de ±10 % entre ejecuciones.
+
+| Cuerpo | 1 hilo (ms) | 20 hilos (ms) | Cuadros por segundo (20 hilos) |
+|---|---:|---:|---:|
+| The King's Crown | 260.2 | 28.9 | 35 |
+| Crimson Entrance | 696.6 | 65.4 | 15 |
+| House of Cards | 139.1 | 16.2 | 62 |
+
+El costo de los eventos depende del instante medido (t = 6 s) y de dónde caen: un bucle o una tormenta cerca del limbo cubre menos píxeles que en el centro del disco.
 
 ## 11. Limitaciones
 

@@ -23,6 +23,15 @@ Tres cuerpos celestes sobre **la misma esfera del docente** (`assets/models/sphe
 |---|---|---|
 | ![The King's Crown](docs/videos/lab6/01-kings-crown-material.gif) | ![Crimson Entrance](docs/videos/lab6/02-crimson-entrance-events.gif) | ![House of Cards](docs/videos/lab6/03-house-of-cards-vortex.gif) |
 
+Los GIF son la vista rápida, a 8 fps. Los videos completos son MP4 H.264 a 800×600 y 30 fps, grabados sin ventana con el mismo renderer:
+
+| Video | Qué muestra |
+|---|---|
+| ▶ [The King's Crown](docs/videos/lab6/01-kings-crown-material.mp4) · 24 s | Con la cámara fija, los bucles de plasma nacen, arden y se reabsorben en tres zonas distintas del disco y en momentos distintos. Las manchas respiran, la corona pulsa y a los 20 s llega el eclipse |
+| ▶ [Los dos hemisferios de la estrella](docs/videos/lab6/10-kings-crown-hemispheres.mp4) · 24 s · [GIF](docs/videos/lab6/10-kings-crown-hemispheres.gif) | El mismo instante desde dos cámaras fijas: los bucles también recorren el hemisferio oculto desde la vista inicial |
+| ▶ [Crimson Entrance](docs/videos/lab6/02-crimson-entrance-events.mp4) · 30 s | Desde t = 27 s, tres cráteres-pica (mediano, pequeño y grande) se fracturan, se hunden, arden, se enfrían y se cierran por turnos. Dos de ellos coexisten en fases distintas |
+| ▶ [House of Cards](docs/videos/lab6/03-house-of-cards-vortex.mp4) · 36 s | Un cuarto de vuelta de cámara desde la vista lateral descubre el ciclo completo de las tormentas ♦ mediana, pequeña y grande, con sus rayos neón |
+
 ### Cómo ejecutar
 
 Compila siempre en `--release`: los shaders se evalúan por fragmento en CPU.
@@ -35,6 +44,9 @@ cargo run --release -- --scene entrance --mode wireframe     # la esfera compart
 cargo run --release -- --scene entrance --mode barycentric   # mismo shader con el relleno baricéntrico
 cargo run --release -- --scene house --time 9.9 --screenshot vortice.png
 cargo run --release -- --scene entrance --set cloud_coverage=0.7 --set bump_strength=2
+cargo run --release -- --scene entrance --set spade_crater_count=1  # un cráter-pica a la vez (por defecto, 2)
+cargo run --release -- --scene house --set vortex_count=1           # solo la tormenta grande (por defecto, 3)
+cargo run --release -- --scene crown --set plasma_loop_count=2      # dos ranuras de bucles (por defecto, 6)
 cargo run --release -- --scene entrance --debug-view clouds  # none height materials clouds shadows normals night parallax
 cargo run --release -- --scene crown --record 4 --fps 30 | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - corona.mp4
 cargo run --release -- --benchmark-shaders            # sin ventana → docs/results/lab6/shader_benchmark.csv
@@ -77,9 +89,13 @@ Estrella regia de plasma vivo con una corona que respira. Es emisiva: no depende
 **Patrones y cómo se combinan:**
 - **Temperatura.** Una fBm sobre un dominio deformado (*domain warp*) que gira y avanza con el tiempo, más venas doradas (cruces por cero de otra fBm) y granulación fina. Pasa por una rampa vino → carmesí → naranja → oro → marfil.
 - **Manchas.** Tres manchas con umbra y penumbra que derivan y respiran con fases distintas.
-- **Corona.** Una corona de Fresnel en el limbo cuyo ancho pulsa.
+- **Corona.** Una corona de Fresnel en el limbo, dentro de la silueta, cuyo ancho pulsa.
 - **Eclipse.** Uno cada 24 s, que oscurece el núcleo mientras la corona sigue ardiendo.
-- **Bucles de plasma.** Tres surcos luminosos con ciclos propios: el plasma se concentra en un pie, un filamento curvo crece hasta el otro pie, arde casi blanco y se drena de vuelta a la superficie. Son trayectorias sobre la esfera, dentro de su silueta, no geometría.
+- **Bucles de plasma.** Hasta seis surcos luminosos con ciclos propios: el plasma se concentra en un pie, un filamento curvo crece hasta el otro pie, arde casi blanco y se drena de vuelta a la superficie. Cada ranura tiene su región:
+  - tres rodean el disco visible desde la cámara inicial (arriba, abajo a la izquierda y abajo a la derecha);
+  - las otras tres están en el hemisferio opuesto.
+
+  Cada ranura tiene su periodo (de 9 a 17.2 s) y su fase, así que nunca coinciden las seis en su máximo. En cada ciclo cambian el lugar dentro de la región, el tamaño, el brillo y el grosor. Son trayectorias sobre la esfera, no geometría, y no hay ninguna figura dibujada.
 
 | Parámetro | Por defecto | Rango | Cambio visual |
 |---|---:|---|---|
@@ -90,14 +106,15 @@ Estrella regia de plasma vivo con una corona que respira. Es emisiva: no depende
 | `corona_pulse_period` | 4 | 0.5 – 30 | Segundos por pulso de la corona |
 | `corona_pulse_amount` | 0.35 | 0 – 1 | Amplitud del pulso del limbo |
 | `eclipse_period` | 24 | 4 – 120 | Segundos entre eclipses |
-| `loop_period` | 9 | 3 – 60 | Segundos por ciclo de un bucle de plasma |
+| `plasma_loop_count` | 6 | 2 – 6 | Ranuras de bucles en uso, la mitad en cada hemisferio |
+| `loop_period` | 9 | 3 – 60 | Segundos por ciclo del bucle más rápido |
 | `loop_size` | 0.6 | 0.15 – 0.9 | Tamaño de los arcos de plasma |
 
 ### Crimson Entrance — planeta volcánico de cráteres-pica
 
 ![Crimson Entrance](docs/screenshots/lab6/02-crimson-entrance.png)
 
-Mundo de basalto, obsidiana, ceniza y costras carmesí, atravesado por grietas de magma. Cada cierto tiempo la corteza se hunde en forma de pica ♠ y deja al descubierto un núcleo al rojo vivo, que se enfría antes de que la superficie vuelva a cerrarse.
+Mundo de basalto, obsidiana, ceniza y costras carmesí, atravesado por grietas de magma. Cada cierto tiempo la corteza se hunde en forma de pica ♠ y deja al descubierto un núcleo al rojo vivo, que se enfría antes de que la superficie vuelva a cerrarse; después la pica reaparece en otra zona. Dos picas de tamaños distintos pueden estar abiertas a la vez, en fases distintas.
 
 **Patrones y cómo se combinan:**
 - **Campo de altura.** Uno solo: una cuenca monumental, colinas de fBm y relieve fino.
@@ -107,12 +124,18 @@ Mundo de basalto, obsidiana, ceniza y costras carmesí, atravesado por grietas d
   - las tierras carmesí mate;
   - los bordes de ceniza, con costra ocre en las transiciones;
   - las fisuras ámbar.
-- **Cráter-pica.** Es el único fenómeno geológico, con tres ranuras (grande, mediana y pequeña) desfasadas un tercio de un ciclo de 21 s. La SDF de la pica fractura la corteza, la hunde en una cuenca con forma de ♠ y, ya con la profundidad máxima, enciende su fondo en rojo hiperintenso con un núcleo casi blanco. Después se enfría por parches y la altura vuelve a la base. Los cráteres abiertos nunca se solapan y una zona recién cerrada no se reutiliza enseguida. La lava brilla igual de día y de noche y las nubes se aclaran un poco sobre el cráter. Detalles y mediciones en [docs/lab6-crimson-refinement.md](docs/lab6-crimson-refinement.md).
+- **Cráter-pica.** Es el único fenómeno geológico, con tres ranuras (grande, mediana y pequeña) desfasadas un tercio de un ciclo de 21 s. La SDF de la pica fractura la corteza, la hunde en una cuenca con forma de ♠ y, ya con la profundidad máxima, enciende su fondo en rojo hiperintenso con un núcleo casi blanco. Después se enfría por parches y la altura vuelve a la base.
+  - **Coexistencia.** Nace un cráter cada 7 s y cada uno vive 12.6 s, así que dos coexisten 5.6 s de cada 7. Mientras uno arde, el siguiente se fractura y se hunde, y nunca llegan juntos al brillo máximo.
+  - **Separación.** Los cráteres abiertos nunca se solapan y una zona recién cerrada no se reutiliza enseguida. Cuando puede, el nuevo se abre a menos de 100° del que sigue abierto, para que una misma cámara vea los dos.
+  - **Uno a la vez.** Con `spade_crater_count = 1` se abren solo los eventos pares de la misma secuencia.
+
+  La lava brilla igual de día y de noche y las nubes se aclaran un poco sobre el cráter. Detalles y mediciones en [docs/lab6-crimson-refinement.md](docs/lab6-crimson-refinement.md).
 - **Nubes de ceniza.** Una capa independiente cuyas sombras siguen a la luz.
 - **Iluminación.** El bump inclina la normal, el parallax desplaza las consultas según la vista, la obsidiana es vítrea y la roca mate, y las fisuras se encienden de noche.
 
 | Parámetro | Por defecto | Rango | Cambio visual |
 |---|---:|---|---|
+| `spade_crater_count` | 2 | 1 – 2 | Cráteres-pica abiertos a la vez |
 | `event_period` | 21 | 6 – 90 | Segundos por ciclo de cráter-pica |
 | `event_size` | 0.5 | 0.15 – 0.9 | Tamaño del cráter-pica grande |
 | `lava_glow` | 1 | 0 – 3 | Intensidad de la lava de la pica |
@@ -127,23 +150,33 @@ Mundo de basalto, obsidiana, ceniza y costras carmesí, atravesado por grietas d
 
 ![House of Cards](docs/screenshots/lab6/03-house-of-cards.png)
 
-Gigante gaseoso violeta donde la circulación atmosférica se organiza en rombos ♦ que nacen, culminan y se disuelven.
+Gigante gaseoso violeta donde la circulación atmosférica se organiza en hasta tres rombos ♦ que nacen, culminan, se disuelven y vuelven a formarse en otra región.
 
 **Patrones y cómo se combinan:**
 - **Bandas.** Seis bandas de latitud onduladas por fBm, con transiciones líquidas en una rampa violeta, magenta y perla, más un tinte vino y filamentos.
 - **Vientos diferenciales.** Una rotación de la dirección de muestreo que depende de la latitud, así que las bandas vecinas se deslizan.
-- **Vórtice ♦.** El dominio se advecta a lo largo de los contornos de la norma L1 (un rombo) en el plano tangente del centro de la tormenta. Las bandas vecinas se enrollan en espirales romboidales con un núcleo luminoso, y en cada ciclo la tormenta migra.
+- **Vórtices ♦.** El dominio se advecta a lo largo de los contornos de la norma L1 (un rombo) en el plano tangente del centro de cada tormenta. Las bandas vecinas se enrollan en espirales romboidales con un núcleo luminoso.
+- **Tres tormentas.** Una grande, una mediana (un anticiclón que gira al revés) y una pequeña.
+  - **Fases.** Nacen con un tercio de periodo de diferencia (6 s), así que nunca coinciden dos apogeos y siempre hay dos o tres en el cielo.
+  - **Regiones.** La grande se forma frente a la cámara inicial; la mediana y la pequeña recorren la franja de latitudes hasta 45°, a menudo en el otro hemisferio, y se descubren al orbitar la cámara.
+  - **Migración.** Los rombos nunca se solapan. Al terminar su ciclo, cada tormenta se disuelve y reaparece al menos un radio más lejos, y su centro no se mueve mientras es visible.
 - **Halo.** Un halo atmosférico de Fresnel en el limbo.
-- **Relámpagos neón.** Rayos dentados con dos ramas, de núcleo pálido y halo violeta o rosa neón, que destellan y se apagan en fracciones de segundo. Uno de los canales cae solo dentro del rombo de la tormenta, más a menudo cerca de su apogeo, y se enrosca con el remolino; los otros saltan de vez en cuando entre las bandas. Se suman como emisión, sin tocar las bandas ni el rombo.
+- **Relámpagos neón.** Rayos dentados con dos ramas, de núcleo pálido y halo violeta o rosa neón, que destellan y se apagan en fracciones de segundo.
+  - Cada tormenta tiene su propio canal, con su ritmo: cae solo dentro de su rombo, más a menudo cerca del apogeo, y se enrosca con el remolino.
+  - Otros dos canales saltan de vez en cuando entre las bandas.
+
+  Se suman como emisión, sin tocar las bandas ni los rombos.
 
 | Parámetro | Por defecto | Rango | Cambio visual |
 |---|---:|---|---|
 | `band_count` | 6 | 3 – 14 | Número de bandas |
 | `band_warp` | 0.25 | 0 – 1.5 | Ondulación de los bordes de banda |
 | `differential_wind` | 0.06 | 0 – 1.5 | Deslizamiento entre latitudes |
-| `vortex_strength` | 6 | 0 – 8 | Cuánto se enrollan las bandas en el rombo |
-| `vortex_radius` | 0.45 | 0.1 – 0.5 | Tamaño de la tormenta ♦ |
-| `vortex_period` | 18 | 4 – 90 | Segundos entre migraciones |
+| `vortex_count` | 3 | 1 – 3 | Tormentas ♦ en uso: grande, + mediana, + pequeña |
+| `vortex_strength` | 6 | 0 – 8 | Cuánto se enrollan las bandas en el rombo grande |
+| `secondary_strength` | 4.5 | 0 – 8 | Circulación de las tormentas mediana y pequeña |
+| `vortex_radius` | 0.45 | 0.1 – 0.5 | Tamaño de la tormenta ♦ grande |
+| `vortex_period` | 18 | 4 – 90 | Segundos por ciclo de una tormenta (desfasadas un tercio) |
 | `rim_strength` | 0.6 | 0 – 2 | Halo violeta y magenta del limbo |
 | `lightning_rate` | 1 | 0 – 3 | Frecuencia de los relámpagos |
 | `lightning_intensity` | 1.4 | 0 – 3 | Brillo de los relámpagos |
@@ -160,12 +193,12 @@ La esfera compartida en wireframe es la misma para los tres cuerpos:
 | E02 | Día y noche | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::night_factor`, `Frame::emission` | [video](docs/videos/lab6/07-entrance-day-night-light.mp4) · [GIF](docs/videos/lab6/07-entrance-day-night-light.gif) | Las fisuras son un término emisivo que sube de 0.12 a `night_glow` solo en el lado nocturno; con el tiempo congelado, solo gira la luz | `night_glow`: brillo nocturno de la red de fisuras |
 | E03 | Respuestas a la luz | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::reflect_light`, `terrain.rs::TerrainMaterial::response` | [video](docs/videos/lab6/08-entrance-lighting-responses.mp4) · [regiones](docs/screenshots/lab6/08-entrance-materials.png) | La obsidiana tiene brillo Blinn-Phong que depende de la vista, la roca es mate, la ceniza tiene *wrap* y las fisuras son emisivas, todo según la clase de altura | `shininess`: tamaño del brillo vítreo |
 | E04 | Nubes procedurales | Crimson Entrance | `src/celestial/entrance/clouds.rs::CloudLayer::mask` | [video](docs/videos/lab6/09-entrance-clouds-drift.mp4) · [coberturas](docs/screenshots/lab6/06-entrance-cloud-coverage.png) | Máscara de fBm sobre un dominio que gira y evoluciona, sobre la misma esfera, con un terreno inmóvil | `cloud_coverage`: fracción cubierta |
-| E05 | Vórtice localizado | House of Cards | `src/celestial/house.rs::Storm::warp`, `contour_param`, `contour_point` | [video](docs/videos/lab6/03-house-of-cards-vortex.mp4) · [apagado y encendido](docs/screenshots/lab6/09-house-vortex-off-on.png) | Las bandas se enrollan a lo largo de los contornos ♦ de la norma L1; fuera del rombo la imagen es idéntica | `vortex_strength`: circulación del núcleo |
-| E06 | Bump mapping | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::shading_normal`, `src/shading/lighting.rs::bump_normal` | [video](docs/videos/lab6/05-entrance-bump-light.mp4) · [apagado y encendido](docs/screenshots/lab6/05-entrance-bump-off-on.png) | El gradiente del campo de altura (diferencias centrales en el marco tangente) inclina la normal de iluminación; no se mueve ningún vértice | `bump_strength`: relieve más marcado |
+| E05 | Vórtice localizado | House of Cards | `src/celestial/house.rs::Storm::warp`, `Frame::vortex_warp`, `contour_param`, `contour_point` | [video](docs/videos/lab6/03-house-of-cards-vortex.mp4) · [apagado y encendido](docs/screenshots/lab6/09-house-vortex-off-on.png) | Las bandas se enrollan a lo largo de los contornos ♦ de la norma L1 de cada tormenta; fuera de los rombos la imagen es idéntica | `vortex_strength`: circulación del núcleo de la tormenta grande |
+| E06 | Bump mapping | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::shading_normal`, `src/shading/lighting.rs::bump_normal` | [video](docs/videos/lab6/05-entrance-bump-light.mp4) · [apagado y encendido](docs/screenshots/lab6/05-entrance-bump-off-on.png) | El gradiente del campo de altura (diferencias hacia delante en el marco tangente, desde la altura ya calculada) inclina la normal de iluminación; no se mueve ningún vértice | `bump_strength`: relieve más marcado |
 | E07 | Parallax | Crimson Entrance | `src/celestial/entrance/mod.rs::Frame::parallax_direction`, `src/shading/lighting.rs::parallax_shift` | [video](docs/videos/lab6/06-entrance-parallax-orbit.mp4) · [GIF](docs/videos/lab6/06-entrance-parallax-orbit.gif) | Búsqueda escalonada con bisección sobre la altura macro a lo largo de la vista. Con el tiempo congelado y la cámara orbitando, la pica y los bordes se desplazan (el video va sin nubes y con `parallax_scale` = 0.12 de demostración) | `parallax_scale`: profundidad aparente |
 | E08 | Sombras de nubes | Crimson Entrance | `src/celestial/entrance/clouds.rs::CloudLayer::shadow`, `src/shading/lighting.rs::shell_exit` | [video](docs/videos/lab6/04-entrance-cloud-shadows-light.mp4) · [máscaras](docs/screenshots/lab6/07-entrance-cloud-shadow-masks.png) | La sombra es la máscara de nubes muestreada donde el rayo hacia la luz sale de la capa; no tiene desplazamiento en el punto subsolar y se estira hacia el terminador | `cloud_altitude`: separación entre sombra y nube |
 
-Los ocho efectos están implementados, probados y con evidencia. Los videos de bump, parallax y respuestas a la luz se grabaron con `--set clouds=0`, para aislar cada efecto. Más montajes: [cráteres y picas en el tiempo](docs/videos/lab6/02-crimson-entrance-events.mp4) y [nubes sobre el terreno inmóvil](docs/videos/lab6/09-entrance-clouds-drift.gif). Los videos se regeneran con [`docs/videos/lab6/encode.sh`](docs/videos/lab6/encode.sh) `all`.
+Los ocho efectos están implementados y cada uno tiene pruebas automáticas y evidencia grabada (la relación entre pruebas y criterios está en la [guía técnica](docs/laboratorio6.md)). Los videos de bump, parallax y respuestas a la luz se grabaron con `--set clouds=0`, para aislar cada efecto. Más montajes: [cráteres-pica en el tiempo](docs/videos/lab6/02-crimson-entrance-events.mp4) y [nubes sobre el terreno inmóvil](docs/videos/lab6/09-entrance-clouds-drift.gif). Los videos se regeneran con [`docs/videos/lab6/encode.sh`](docs/videos/lab6/encode.sh) `all` y los montajes 05-09 con `encode.sh stills`. El script verifica cada archivo antes de reemplazar el anterior.
 
 ### Puntos reclamados
 
@@ -185,12 +218,12 @@ Los ocho efectos están implementados, probados y con evidencia. Los videos de b
 - Los cráteres-pica y las cuencas son relieve **aparente** (bump, parallax y sombreado), no geometría.
 - El parallax es una aproximación escalonada que se atenúa cerca del limbo.
 - El anillo de cartas ♦, el halo exterior y la cámara perspectiva quedan para el proyecto final.
-- Crimson Entrance es el shader más costoso. Tras el reajuste tarda 0.7 s por cuadro con 1 hilo y 66 ms con 20, unos 15 cuadros por segundo; antes eran 1.76 s y 0.24 s, unos 4 cuadros por segundo ([mediciones](docs/results/lab6/crimson_refinement_benchmark.csv)).
+- Crimson Entrance es el shader más costoso. En la versión final tarda 0.7 s por cuadro con 1 hilo y 65 ms con 20, unos 15 cuadros por segundo; antes del reajuste eran 1.76 s y 0.24 s, unos 4 cuadros por segundo ([mediciones](docs/results/lab6/crimson_refinement_benchmark.csv)). Con 20 hilos, The King's Crown tarda 29 ms y House of Cards 16 ms. Son medianas de tres ejecuciones de `--benchmark-shaders` (2026-11-06); detalles en la [guía técnica](docs/laboratorio6.md).
 
 ### Video y pruebas
 
-- **Videos:** H.264 con `h264_nvenc`, el primer codificador que pasó la prueba funcional en esta máquina (`libx264` no está instalado). Los MP4 van a 30 fps; los GIF se generan desde el mismo intermedio FFV1 sin pérdida, a 8 fps.
-- **Pruebas:** `cargo test` ejecuta **360 pruebas**: las 207 de los laboratorios 4 y 5 y de la vista interactiva, más 153 del Laboratorio 6, entre ellas el oráculo de 21 *hashes* que congela la nave y sus tres modos.
+- **Videos:** H.264 con `h264_nvenc`, el primer codificador que pasó la prueba funcional en esta máquina (`libx264` no está instalado). Los MP4 van a 30 fps; los GIF se generan desde el mismo intermedio FFV1 sin pérdida, a 8 fps (5 fps el de los dos hemisferios). Antes de reemplazar un archivo, `encode.sh` comprueba su códec, tamaño y fotogramas y lo decodifica completo.
+- **Pruebas:** `cargo test` ejecuta **402 pruebas**: las 207 de los laboratorios 4 y 5 y de la vista interactiva, más 195 del Laboratorio 6, entre ellas el oráculo de 21 *hashes* que congela la nave y sus tres modos.
 
 ---
 
@@ -453,7 +486,7 @@ rust-software-renderer/
 │   ├── laboratorio5.md                     guía técnica Lab 5
 │   ├── laboratorio6.md                     guía técnica Lab 6: shaders, fórmulas, parámetros, pruebas
 │   ├── screenshots/lab6/                   01..04 cuerpos y esfera; 05..09 montajes de efectos
-│   ├── videos/lab6/                        MP4 y GIF de los ocho efectos; encode.sh los regenera
+│   ├── videos/lab6/                        MP4 y GIF de los tres cuerpos y de los ocho efectos; encode.sh los regenera
 │   ├── results/lab6/                       shader_benchmark.csv
 │   ├── screenshots/lab4/                   final_render.png, 01-nave-wireframe.png
 │   ├── screenshots/lab5/                   01..03 escena sintética; 04..06 nave oblicua interactiva
@@ -524,7 +557,7 @@ Una ruta inexistente, un OBJ inválido o un argumento desconocido terminan con m
 ### Pruebas y validación
 
 ```bash
-cargo test                                   # 360 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 153 del Lab 6)
+cargo test                                   # 402 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 195 del Lab 6)
 cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings
@@ -539,7 +572,7 @@ Las pruebas cubren: configuración, malla e índices, parser OBJ, integración c
 - **No** se agregó perspectiva 3D ni texturas. El Z-buffer y el sombreado plano existen solo en la vista interactiva opcional; `cargo run`, `--scene triangles`, el benchmark y el perfil del Lab 5 no los usan.
 - **No** se agregaron crates adicionales: solo `raylib` y la biblioteca estándar.
 - El Laboratorio 4 permanece intacto: `cargo run` sin argumentos sigue mostrando la nave en wireframe y sus 91 pruebas originales siguen pasando.
-- Laboratorio 6: los tres cuerpos usan la misma `sphere.obj` del docente sin modificar. No se cargan imágenes, texturas ni materiales y no se agregaron modelos ni *crates*. Ninguna prueba existente se modificó, y la nave, sus tres modos, la cámara y el Z-buffer conservan su salida bit a bit (oráculo dorado).
+- Laboratorio 6: los tres cuerpos usan la misma `sphere.obj` del docente sin modificar. No se cargan imágenes, texturas ni materiales y no se agregaron modelos ni *crates*. Ninguna prueba de los laboratorios 4 y 5 se modificó, y la nave, sus tres modos, la cámara y el Z-buffer conservan su salida bit a bit (oráculo dorado).
 
 ## Autor
 
