@@ -311,7 +311,7 @@ fn vortex_switch_restores_plain_bands() {
 
 // ---- Artistic complement: neon lightning in the storms ----
 
-use rust_software_renderer::celestial::house::{STRIKE_SLOTS, strike};
+use rust_software_renderer::celestial::house::{CHANNEL_STORM, STRIKE_SLOTS, strike};
 
 #[test]
 fn lightning_is_off_when_disabled() {
@@ -332,7 +332,11 @@ fn lightning_is_off_when_disabled() {
 fn lightning_flashes_are_brief_and_intermittent() {
     let p = HouseParams::default();
     let storm = frame_at(p, 0.0).storms[0];
-    for (c, &slot) in STRIKE_SLOTS.iter().enumerate().skip(1) {
+    let between_bands = STRIKE_SLOTS
+        .iter()
+        .enumerate()
+        .filter(|(c, _)| CHANNEL_STORM[*c].is_none());
+    for (c, &slot) in between_bands {
         let slots = 400;
         let active = (0..slots)
             .filter(|&k| strike(&p, &storm, c, (k as f32 + 0.02) * slot).flash > 0.0)
@@ -367,10 +371,13 @@ fn storm_lightning_stays_inside_the_diamond_and_follows_its_life() {
             );
         }
         for n in directions(512) {
-            if f.storms[0].coords(n).is_none()
-                && f.strikes[1].flash == 0.0
-                && f.strikes[2].flash == 0.0
-            {
+            let in_a_storm = f.storms.iter().any(|st| st.coords(n).is_some());
+            let band_idle = f
+                .strikes
+                .iter()
+                .filter(|st| st.storm.is_none())
+                .all(|st| st.flash == 0.0);
+            if !in_a_storm && band_idle {
                 assert_eq!(
                     f.lightning(n),
                     Vector3::zero(),
@@ -410,4 +417,198 @@ fn lightning_is_neon_violet_and_pink_without_saturating() {
         }
     }
     assert!(bolts > 0);
+}
+
+// ---- Experiment: three diamond storms ----
+
+use rust_software_renderer::celestial::house::{
+    STORM_HISTORY, STORM_MARGIN, STORM_ORIGIN, STORM_SLOTS, place_storms, storm_reach,
+};
+use rust_software_renderer::shading::sphere::clearance;
+
+fn storms_count(count: f32) -> HouseParams {
+    HouseParams {
+        vortex_count: count,
+        ..HouseParams::default()
+    }
+}
+
+#[test]
+fn three_storms_of_different_sizes_never_overlap() {
+    let p = HouseParams::default();
+    for i in 0..1500 {
+        let t = i as f32 * 0.137;
+        let f = frame_at(p, t);
+        for (slot, st) in f.storms.iter().enumerate() {
+            assert_eq!(st.slot, slot);
+            assert!(st.w.is_finite() && st.envelope.is_finite());
+        }
+        assert!(f.storms[0].a > f.storms[1].a && f.storms[1].a > f.storms[2].a);
+        let alive: Vec<_> = f.storms.iter().filter(|s| s.envelope > 0.0).collect();
+        for (k, a) in alive.iter().enumerate() {
+            for b in &alive[k + 1..] {
+                let gap = angular_distance(a.center, b.center);
+                let needed = storm_reach(&p, a.slot) + storm_reach(&p, b.slot) + STORM_MARGIN;
+                assert!(gap >= needed - 1e-4, "t {t}: {gap} < {needed}");
+            }
+        }
+    }
+}
+
+#[test]
+fn storms_form_and_peak_at_different_times() {
+    let p = HouseParams::default();
+    let (mut apogees, mut several) = (0, 0);
+    for i in 0..3600 {
+        let f = frame_at(p, i as f32 * 0.01);
+        let peaking = f.storms.iter().filter(|s| s.envelope > 0.99).count();
+        assert!(
+            peaking <= 1,
+            "t {}: {peaking} storms at apogee",
+            i as f32 * 0.01
+        );
+        apogees += peaking;
+        several += usize::from(f.storms.iter().filter(|s| s.envelope > 0.2).count() >= 2);
+    }
+    assert!(apogees > 0 && several > 0, "{apogees} {several}");
+    // Each slot is born a third of a period after the previous one.
+    let third = p.vortex_period / STORM_SLOTS as f32;
+    for slot in 0..STORM_SLOTS {
+        let born = slot as f32 * third;
+        assert!(frame_at(p, born + 1e-3).storms[slot].w.abs() < 1e-3);
+        assert!(frame_at(p, born + 0.5 * p.vortex_period).storms[slot].envelope > 0.9);
+    }
+}
+
+#[test]
+fn storm_centers_hold_still_while_visible_and_relocate_after() {
+    let p = HouseParams::default();
+    let mut previous = frame_at(p, 0.0).storms;
+    let mut moved = [0; STORM_SLOTS];
+    for i in 1..4000 {
+        let storms = frame_at(p, i as f32 * 0.02).storms;
+        for slot in 0..STORM_SLOTS {
+            let (a, b) = (previous[slot], storms[slot]);
+            if a.center != b.center {
+                moved[slot] += 1;
+                assert!(
+                    a.envelope == 0.0 && b.envelope == 0.0,
+                    "slot {slot} jumped while visible"
+                );
+                assert_ne!(a.cycle, b.cycle);
+            }
+        }
+        previous = storms;
+    }
+    assert!(moved.iter().all(|&m| m >= 3), "{moved:?}");
+}
+
+#[test]
+fn new_storms_keep_clear_and_spread_over_the_planet() {
+    let p = HouseParams::default();
+    let focus = direction_from_angles(-2.45, 0.55);
+    let placed = place_storms(&p, focus, 600);
+    assert_eq!(placed[0].index, STORM_ORIGIN);
+    let (mut far, mut north, mut south) = (0, 0, 0);
+    for i in 1..placed.len() {
+        let recent = &placed[i.saturating_sub(STORM_HISTORY)..i];
+        let gap = clearance(placed[i].center, placed[i].reach, recent, STORM_MARGIN);
+        assert!(gap >= 0.0, "storm {}: {gap}", placed[i].index);
+        if i >= STORM_SLOTS {
+            let moved = angular_distance(placed[i].center, placed[i - STORM_SLOTS].center);
+            assert!(moved >= placed[i].reach - 1e-4, "slot reused its region");
+        }
+        far += usize::from(placed[i].center.dot(focus) < 0.0);
+        north += usize::from(placed[i].center.y > 0.2);
+        south += usize::from(placed[i].center.y < -0.2);
+    }
+    let n = placed.len();
+    assert!(far * 5 >= n, "{far} of {n} on the far side");
+    // The large storm keeps forming in the opening view.
+    let large: Vec<_> = placed.iter().filter(|s| s.index % 3 == 0).collect();
+    let in_view = large
+        .iter()
+        .filter(|s| angular_distance(s.center, focus) <= 35.0_f32.to_radians() + 1e-3)
+        .count();
+    assert!(
+        in_view * 10 >= large.len() * 9,
+        "{in_view} of {}",
+        large.len()
+    );
+    assert!(
+        north * 5 >= n && south * 5 >= n,
+        "{north} north, {south} south"
+    );
+}
+
+#[test]
+fn vortex_count_switches_whole_storms_in_slot_order() {
+    for i in 0..300 {
+        let t = i as f32 * 0.31;
+        let all = frame_at(storms_count(3.0), t);
+        for count in 1..=3 {
+            let f = frame_at(storms_count(count as f32), t);
+            for slot in 0..STORM_SLOTS {
+                assert_eq!(f.storms[slot].center, all.storms[slot].center);
+                if slot < count {
+                    assert_eq!(f.storms[slot], all.storms[slot]);
+                } else {
+                    assert_eq!(f.storms[slot].w, 0.0);
+                    assert_eq!(f.storms[slot].envelope, 0.0);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn deformation_stays_inside_the_diamonds_without_nan() {
+    let p = HouseParams::default();
+    for t in [4.0, 9.9, 15.0, 21.3, 33.0] {
+        let f = frame_at(p, t);
+        let mut deformed = 0;
+        for n in directions(4096) {
+            let warped = f.vortex_warp(n);
+            assert!(warped.x.is_finite() && (warped.length() - 1.0).abs() < 1e-3);
+            let c = f.shade(&sample(n));
+            assert!(c.x.is_finite() && c.y.is_finite() && c.z.is_finite());
+            if f.storms.iter().all(|s| s.coords(n).is_none()) {
+                assert_eq!(warped, n);
+            } else if angular_distance(n, warped) > 1.0_f32.to_radians() {
+                deformed += 1;
+            }
+        }
+        assert!(deformed > 20, "t {t}: {deformed}");
+    }
+}
+
+#[test]
+fn each_storm_has_its_own_independent_lightning() {
+    let p = HouseParams::default();
+    let mut flashes = [0; STORM_SLOTS];
+    let mut all_three = 0;
+    for i in 0..6000 {
+        let f = frame_at(p, i as f32 * 0.0123);
+        let mut lit = 0;
+        for (c, st) in f.strikes.iter().enumerate() {
+            let Some(slot) = CHANNEL_STORM[c] else {
+                continue;
+            };
+            assert_eq!(st.storm, Some(slot));
+            if st.flash > 0.0 {
+                lit += 1;
+                flashes[slot] += 1;
+                assert!(
+                    f.storms[slot].coords(st.center).is_some(),
+                    "bolt seeded in its own diamond"
+                );
+            }
+        }
+        all_three += usize::from(lit == STORM_SLOTS);
+    }
+    assert!(flashes.iter().all(|&k| k > 50), "{flashes:?}");
+    assert!(
+        all_three * 20 < 6000,
+        "three storms flash together too often"
+    );
 }
