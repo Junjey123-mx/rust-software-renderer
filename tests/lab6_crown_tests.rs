@@ -250,7 +250,9 @@ fn eclipse_darkens_the_core_but_not_the_corona() {
 
 // ---- Artistic complement: plasma loops that erupt and drain back ----
 
-use rust_software_renderer::celestial::crown::{LOOP_CONE_DEG, plasma_loop};
+use rust_software_renderer::celestial::crown::{
+    LOOP_CONE_DEG, LOOP_SLOTS, loop_cycle_period, loop_home, plasma_loop,
+};
 use rust_software_renderer::shading::sphere::from_local;
 
 /// Strongest filament core of loop `slot` over directions near its arc.
@@ -297,9 +299,9 @@ fn plasma_loops_are_born_flare_and_drain_back() {
 #[test]
 fn plasma_loops_vanish_at_cycle_boundaries_and_relocate() {
     let p = CrownParams::default();
-    for slot in 0..3 {
+    for slot in 0..LOOP_SLOTS {
         for k in 1..4 {
-            let period = p.loop_period * (1.0 + 0.37 * slot as f32);
+            let period = loop_cycle_period(&p, slot);
             let boundary = k as f32 * period - 0.45 * slot as f32 * period;
             if boundary <= 0.0 {
                 continue;
@@ -320,9 +322,11 @@ fn plasma_loops_vanish_at_cycle_boundaries_and_relocate() {
     assert_ne!(a.cycle, b.cycle);
     assert!(rust_software_renderer::shading::sphere::angular_distance(a.center, b.center) > 0.05);
     let focus = direction_from_angles(-2.45, 0.55);
-    for i in 0..60 {
-        let l = plasma_loop(&p, 7, i % 3, i as f32 * 1.7);
-        let angle = rust_software_renderer::shading::sphere::angular_distance(l.center, focus);
+    for i in 0..120 {
+        let slot = i % LOOP_SLOTS;
+        let l = plasma_loop(&p, 7, slot, i as f32 * 1.7);
+        let home = loop_home(focus, slot);
+        let angle = rust_software_renderer::shading::sphere::angular_distance(l.center, home);
         assert!(angle <= LOOP_CONE_DEG.to_radians() + 1e-4);
     }
 }
@@ -387,5 +391,110 @@ fn no_diadem_figure_is_painted_on_the_star() {
     ] {
         assert_eq!(material.get(gone), None, "{gone}");
         assert!(material.set(gone, 1.0).is_err());
+    }
+}
+
+// ---- Experiment: plasma loops over the whole star ----
+
+fn loops_count(count: f32) -> CrownParams {
+    CrownParams {
+        plasma_loop_count: count,
+        ..CrownParams::default()
+    }
+}
+
+#[test]
+fn plasma_loop_count_switches_whole_slots() {
+    for count in [2.0_f32, 4.0, 6.0] {
+        let p = loops_count(count);
+        let mut active = [false; LOOP_SLOTS];
+        for i in 0..600 {
+            let t = i as f32 * 0.21;
+            for (slot, seen) in active.iter_mut().enumerate() {
+                let l = plasma_loop(&p, 7, slot, t);
+                let full = plasma_loop(&loops_count(6.0), 7, slot, t);
+                assert_eq!(l.center, full.center, "same places in every config");
+                if slot >= count as usize {
+                    assert_eq!((l.intensity, l.heat, l.foot), (0.0, 0.0, 0.0));
+                } else {
+                    assert_eq!(l, full);
+                    *seen |= l.intensity > 0.5;
+                }
+            }
+        }
+        let used = active.iter().filter(|&&a| a).count();
+        assert_eq!(used, count as usize, "count {count}");
+    }
+}
+
+#[test]
+fn loop_homes_cover_both_hemispheres_and_every_side() {
+    let focus = direction_from_angles(-2.45, 0.55);
+    let homes: Vec<Vector3> = (0..LOOP_SLOTS).map(|s| loop_home(focus, s)).collect();
+    for (s, h) in homes.iter().enumerate() {
+        assert!((h.length() - 1.0).abs() < 1e-4);
+        let facing = h.dot(focus);
+        if s % 2 == 0 {
+            assert!(facing > 0.5, "slot {s} on the visible disk");
+        } else {
+            assert!(facing < -0.5, "slot {s} on the hidden side");
+            assert!((*h + homes[s - 1]).length() < 1e-4, "antipodal pairs");
+        }
+        for other in &homes[s + 1..] {
+            let gap = rust_software_renderer::shading::sphere::angular_distance(*h, *other);
+            assert!(gap > 1.5, "homes {gap} rad apart");
+        }
+    }
+    // Every count keeps half of its slots on each hemisphere.
+    for count in [2, 4, 6] {
+        let front = homes[..count].iter().filter(|h| h.dot(focus) > 0.0).count();
+        assert_eq!(front * 2, count);
+    }
+    // Northern and southern regions of the star both get loops.
+    assert!(homes.iter().any(|h| h.y > 0.5) && homes.iter().any(|h| h.y < -0.5));
+}
+
+#[test]
+fn loops_flare_out_of_phase_and_keep_the_star_active() {
+    let p = CrownParams::default();
+    let (mut idle, mut crowded, frames) = (0, 0, 8000);
+    for i in 0..frames {
+        let t = i as f32 * 0.05;
+        let loops: Vec<_> = (0..LOOP_SLOTS).map(|s| plasma_loop(&p, 7, s, t)).collect();
+        let hot = loops.iter().filter(|l| l.heat > 0.9).count();
+        assert!(hot < LOOP_SLOTS, "t {t}: every loop at its maximum");
+        crowded += usize::from(hot >= 3);
+        idle += usize::from(loops.iter().all(|l| l.intensity < 0.5));
+    }
+    assert!(crowded * 20 < frames, "{crowded} crowded frames");
+    assert!(idle * 50 < frames, "{idle} frames without a lit loop");
+    let periods: Vec<f32> = (0..LOOP_SLOTS).map(|s| loop_cycle_period(&p, s)).collect();
+    for (s, a) in periods.iter().enumerate() {
+        assert!(
+            periods[s + 1..].iter().all(|b| (a - b).abs() > 0.5),
+            "{periods:?}"
+        );
+    }
+}
+
+#[test]
+fn loops_vary_in_size_brightness_and_width_between_cycles() {
+    let p = CrownParams::default();
+    for slot in 0..LOOP_SLOTS {
+        let period = loop_cycle_period(&p, slot);
+        let times: Vec<f32> = (0..12).map(|k| (k as f32 + 0.5) * period).collect();
+        let cycles: Vec<_> = times.iter().map(|&t| plasma_loop(&p, 7, slot, t)).collect();
+        for (l, &t) in cycles.iter().zip(&times) {
+            assert!((0.75..=1.0).contains(&l.brightness));
+            assert!((0.8..=1.2).contains(&l.width));
+            assert_eq!(*l, plasma_loop(&p, 7, slot, t), "deterministic");
+        }
+        let spread = |f: fn(&rust_software_renderer::celestial::crown::PlasmaLoop) -> f32| {
+            let v: Vec<f32> = cycles.iter().map(f).collect();
+            v.iter().cloned().fold(f32::MIN, f32::max) - v.iter().cloned().fold(f32::MAX, f32::min)
+        };
+        assert!(spread(|l| l.brightness) > 0.08, "slot {slot}");
+        assert!(spread(|l| l.width) > 0.1, "slot {slot}");
+        assert!(spread(|l| l.a) > 0.1, "slot {slot}");
     }
 }

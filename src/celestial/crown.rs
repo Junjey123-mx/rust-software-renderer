@@ -5,10 +5,13 @@
 //! an ivory, gold, orange, crimson and wine ramp. Three drifting sunspots
 //! breathe, a limb corona pulses and a periodic eclipse darkens the core.
 //! Plasma loops gather at a foot point, arc across the surface, flare and
-//! drain back into the plasma. Everything stays inside the silhouette of the
-//! sphere: the loops are luminous paths on the surface, not geometry. The
-//! star is emissive: it ignores the external light. No figure is drawn on
-//! its surface; its royalty is the gold of the living plasma.
+//! drain back into the plasma; up to six run on their own cycles, each in
+//! its own region of the star (three around the visible disk, three on the
+//! hidden side), with seeded size, brightness and width. Everything stays
+//! inside the silhouette of the sphere: the loops are luminous paths on the
+//! surface, not geometry. The star is emissive: it ignores the external
+//! light. No figure is drawn on its surface; its royalty is the gold of the
+//! living plasma.
 
 use crate::celestial::DebugView;
 use crate::pipeline::ViewPreset;
@@ -17,7 +20,9 @@ use crate::pipeline::{ShaderUniforms, SurfaceSample};
 use crate::shading::cycle::{cycle, envelope};
 use crate::shading::math::{hex, mix3, ramp, saturate, smoothstep};
 use crate::shading::noise::{fbm, gradient3, hash3, warp};
-use crate::shading::sphere::{angular_distance, east_north, hash_direction, local_plane, rotate_y};
+use crate::shading::sphere::{
+    angular_distance, east_north, hash_direction, local_plane, rotate_y, tangent_frame,
+};
 use raylib::math::Vector3;
 use std::f32::consts::PI;
 use std::f32::consts::TAU;
@@ -44,7 +49,8 @@ params! {
         eclipse_duration: 4.0, 0.0, 30.0, "seconds an eclipse lasts";
         eclipse_depth: 0.75, 0.0, 1.0, "how much the eclipse darkens the core";
         loops: 1.0, 0.0, 1.0, "switch: plasma loops that erupt and drain back (0 or 1)";
-        loop_period: 9.0, 3.0, 60.0, "seconds per plasma loop life cycle";
+        plasma_loop_count: 6.0, 2.0, 6.0, "plasma loop slots in use, half on each hemisphere (2 to 6, rounded)";
+        loop_period: 9.0, 3.0, 60.0, "seconds per plasma loop life cycle (the shortest slot)";
         loop_size: 0.6, 0.15, 0.9, "half-span of a plasma loop in its tangent plane";
         loop_width: 0.05, 0.01, 0.12, "thickness of the plasma filament";
         loop_brightness: 1.1, 0.0, 3.0, "emission of the plasma loops";
@@ -63,10 +69,32 @@ const PLASMA_RAMP: [(f32, Vector3); 5] = [
     (1.0, hex(0xFFF2C4)),
 ];
 
-/// Plasma loops alive at once, each on its own cycle.
-pub const LOOP_SLOTS: usize = 3;
-/// Loop feet are seeded within this angle of the default view direction.
-pub const LOOP_CONE_DEG: f32 = 60.0;
+/// Plasma loop slots, each on its own cycle and region of the star.
+pub const LOOP_SLOTS: usize = 6;
+/// Loop feet are seeded within this angle of their slot home.
+pub const LOOP_CONE_DEG: f32 = 45.0;
+
+/// Home of loop `slot`: the six vertices of an octahedron whose three-fold
+/// axis is the default view direction `focus`. Even slots sit 55 degrees
+/// around the visible disk (up, lower left, lower right), each odd slot at
+/// the antipode of the one before, so every `plasma_loop_count` spreads
+/// evenly between the visible and the hidden hemisphere.
+pub fn loop_home(focus: Vector3, slot: usize) -> Vector3 {
+    let (east, north) = tangent_frame(focus);
+    let (sin_t, cos_t) = ((2.0_f32 / 3.0).sqrt(), (1.0_f32 / 3.0).sqrt());
+    let phi = (90.0 + 120.0 * (slot / 2) as f32).to_radians();
+    let front = focus * cos_t + (east * phi.cos() + north * phi.sin()) * sin_t;
+    if slot.is_multiple_of(2) {
+        front
+    } else {
+        -front
+    }
+}
+
+/// Seconds per life cycle of loop `slot`: each slot has its own duration.
+pub fn loop_cycle_period(params: &CrownParams, slot: usize) -> f32 {
+    params.loop_period * (1.0 + 0.37 * (slot % 3) as f32 + 0.17 * (slot / 3) as f32)
+}
 
 /// One plasma loop in its current cycle. In the tangent plane at `center`
 /// the loop is the upper half of an ellipse with half-span `a` and height
@@ -92,6 +120,10 @@ pub struct PlasmaLoop {
     pub foot: f32,
     /// Thickness multiplier: thins while the loop drains back.
     pub thickness: f32,
+    /// Seeded brightness of this cycle in `[0.75, 1]`.
+    pub brightness: f32,
+    /// Seeded width multiplier of this cycle in `[0.8, 1.2]`.
+    pub width: f32,
     /// Cosine of the angular radius beyond which the loop cannot appear.
     reach_cos: f32,
     seed: u32,
@@ -103,11 +135,11 @@ pub struct PlasmaLoop {
 /// foot B) and stabilization (0.88-1, nothing). Every term is 0 at both
 /// ends of the cycle, so relocating never pops.
 pub fn plasma_loop(params: &CrownParams, seed: u32, slot: usize, t: f32) -> PlasmaLoop {
-    let period = params.loop_period * (1.0 + 0.37 * slot as f32);
+    let period = loop_cycle_period(params, slot);
     let (k, tau) = cycle(t, period, 0.45 * slot as f32 * period);
     let (az, el) = ViewPreset::Oblique.angles();
-    let focus = direction_from_angles(az, el);
-    let center = hash_direction(seed, 30 + slot as u32, k, focus, LOOP_CONE_DEG.to_radians());
+    let home = loop_home(direction_from_angles(az, el), slot);
+    let center = hash_direction(seed, 30 + slot as u32, k, home, LOOP_CONE_DEG.to_radians());
     let (east, north) = east_north(center);
     let lo = k as i32;
     let hashed = |salt: u32| {
@@ -115,7 +147,12 @@ pub fn plasma_loop(params: &CrownParams, seed: u32, slot: usize, t: f32) -> Plas
     };
     let a = params.loop_size * (0.75 + 0.5 * hashed(1));
     let b = a * (0.55 + 0.35 * hashed(2));
-    let on = if params.loops >= 0.5 { 1.0 } else { 0.0 };
+    let used = slot < params.plasma_loop_count.round() as usize;
+    let on = if params.loops >= 0.5 && used {
+        1.0
+    } else {
+        0.0
+    };
     let intensity = on * smoothstep(0.12, 0.3, tau) * (1.0 - smoothstep(0.7, 0.88, tau));
     let reach = (1.6 * a.max(b)).atan() + 0.1;
     PlasmaLoop {
@@ -133,6 +170,8 @@ pub fn plasma_loop(params: &CrownParams, seed: u32, slot: usize, t: f32) -> Plas
         heat: on * smoothstep(0.45, 0.6, tau) * (1.0 - smoothstep(0.66, 0.8, tau)),
         foot: on * smoothstep(0.0, 0.12, tau) * (1.0 - smoothstep(0.3, 0.55, tau)),
         thickness: 1.0 - 0.5 * smoothstep(0.7, 0.88, tau),
+        brightness: 0.75 + 0.25 * hashed(4),
+        width: 0.8 + 0.4 * hashed(5),
         reach_cos: reach.min(1.5).cos(),
         seed: hash3(slot as i32, lo, 7, seed),
     }
@@ -188,13 +227,15 @@ impl PlasmaLoop {
         let radius = ((self.a * theta.cos()).powi(2) + (self.b * theta.sin()).powi(2)).sqrt();
         let distance = (rho - 1.0).abs() * radius;
         let w = width
+            * self.width
             * self.thickness
             * (0.7 + 0.6 * (0.5 + 0.5 * gradient3(n * 11.0 + wobble, self.seed ^ 0x5bd1)));
         let reveal = smoothstep(self.tail - 0.03, self.tail + 0.03, s)
             * (1.0 - smoothstep(self.head - 0.03, self.head + 0.03, s));
         let knots = 0.75 + 0.25 * (20.0 * s - 7.0 * time).sin();
-        let core = (-(distance / w).powi(2)).exp() * reveal * knots * self.intensity;
-        let halo = (-(distance / (3.5 * w)).powi(2)).exp() * reveal * self.intensity * 0.4;
+        let lit = reveal * self.intensity * self.brightness;
+        let core = (-(distance / w).powi(2)).exp() * lit * knots;
+        let halo = (-(distance / (3.5 * w)).powi(2)).exp() * lit * 0.4;
         LoopGlow {
             core,
             halo,
