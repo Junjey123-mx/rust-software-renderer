@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Regenerates the laboratory 6 evidence videos (MP4 + GIF) from the renderer.
+# Regenerates the laboratory 6 evidence (MP4 + GIF videos and the comparison
+# montages) from the renderer.
 #
-#   docs/videos/lab6/encode.sh all
+#   docs/videos/lab6/encode.sh all      every video (01-10)
+#   docs/videos/lab6/encode.sh stills   the comparison montages 05-09 (PNG)
 #   docs/videos/lab6/encode.sh single <name> <seconds> -- <renderer args...>
 #   docs/videos/lab6/encode.sh pair <name> <seconds> "<args A>" "<args B>" "<label A>" "<label B>"
 #
@@ -13,10 +15,14 @@
 # h264_vaapi, h264_qsv, libopenh264. H264_ENCODER (and VAAPI_DEVICE) may be
 # given in the environment; they are validated the same way. Without any
 # working encoder the script stops, unless ALLOW_GIF_ONLY=1 (GIF only).
+# Every file is written to a temporary directory and checked (codec, size,
+# frame count, full decode) before it replaces the previous evidence in OUT
+# (videos) or SHOTS (montages).
 set -euo pipefail
 
 BIN="${BIN:-./target/release/rust-software-renderer}"
 OUT="${OUT:-docs/videos/lab6}"
+SHOTS="${SHOTS:-docs/screenshots/lab6}"
 FPS=30
 GIF_FPS="${GIF_FPS:-8}"
 # Defaults keep every MP4 and GIF under about 4 MB (noisy procedural content).
@@ -26,7 +32,21 @@ trap 'rm -rf "$tmp"' EXIT
 
 die() { echo "encode.sh: $*" >&2; exit 1; }
 [ -x "$BIN" ] || die "renderer not found at $BIN (run cargo build --release)"
-mkdir -p "$OUT"
+mkdir -p "$OUT" "$SHOTS"
+
+# stream <file> <entries>: one ffprobe line for the first video stream.
+stream() {
+  ffprobe -v error -count_frames -select_streams v:0 -show_entries "stream=$2" -of csv=p=0 "$1"
+}
+# check <file> <expected "codec,width,height[,...]"> <entries>: the file is
+# not empty, has the expected stream and decodes without errors.
+check() {
+  local file="$1" want="$2" got
+  [ -s "$file" ] || die "$file is empty"
+  got=$(stream "$file" "$3")
+  [ "$got" = "$want" ] || die "$file has $got (expected $want)"
+  [ -z "$(ffmpeg -v error -i "$file" -f null - 2>&1)" ] || die "$file does not decode cleanly"
+}
 
 # With pipefail, "ffmpeg -filters | grep -q" can fail by SIGPIPE, so the
 # filter list is captured once.
@@ -103,16 +123,25 @@ record() {
 }
 
 # finish <intermediate> <name> <gif width>: MP4 (if an encoder works) and GIF.
+# Both are checked before they replace the previous files.
 finish() {
-  local src="$1" name="$2" gif_width="$3"
+  local src="$1" name="$2" gif_width="$3" size frames gif_frames
+  size=$(stream "$src" width,height)
+  frames=$(stream "$src" nb_read_frames)
   if [ -n "$ENCODER" ]; then
     # shellcheck disable=SC2046
     ffmpeg -v error $(pre_for "$ENCODER" "${VAAPI_DEVICE:-}") -i "$src" $(encoder_options "$ENCODER") \
-      -r "$FPS" -movflags +faststart -y "$OUT/$name.mp4"
+      -r "$FPS" -movflags +faststart -y "$tmp/$name.mp4"
+    check "$tmp/$name.mp4" "h264,$size,$FPS/1,$frames" codec_name,width,height,r_frame_rate,nb_read_frames
   fi
   ffmpeg -v error -i "$src" -vf "fps=$GIF_FPS,scale=$gif_width:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff:max_colors=64[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
-    -loop 0 -y "$OUT/$name.gif"
-  echo "encode.sh: wrote $name (${ENCODER:-gif only})" >&2
+    -loop 0 -y "$tmp/$name.gif"
+  gif_frames=$(stream "$tmp/$name.gif" nb_read_frames)
+  [ "$gif_frames" -gt 1 ] || die "$name.gif is not animated"
+  check "$tmp/$name.gif" "gif,$gif_width,$gif_frames" codec_name,width,nb_read_frames
+  if [ -n "$ENCODER" ]; then mv -f "$tmp/$name.mp4" "$OUT/$name.mp4"; fi
+  mv -f "$tmp/$name.gif" "$OUT/$name.gif"
+  echo "encode.sh: wrote $name: $frames frames, GIF $gif_frames frames (${ENCODER:-gif only})" >&2
 }
 
 label() { # drawtext filter for a panel label, or a no-op without drawtext
@@ -143,9 +172,14 @@ pair() { # pair <name> <seconds> "<args A>" "<args B>" "<label A>" "<label B>"
 
 all() {
   local entrance="--scene entrance"
+  # Fixed camera (E01): the three front loop regions flare in turn, then the eclipse.
   single 01-kings-crown-material 24 -- --scene crown --timeline material
-  single 02-crimson-entrance-events 32 -- $entrance --timeline material
-  single 03-house-of-cards-vortex 36 -- --scene house --timeline material
+  # From t = 27 s the default view sees three spade craters of different
+  # sizes open in turn, two of them at once in 35-40 s and 42-47 s.
+  single 02-crimson-entrance-events 30 -- $entrance --timeline material --time 27
+  # A quarter turn from the side view shows the full cycle of the medium
+  # (6-22 s), small (16-28 s) and large (22-34 s) storms.
+  single 03-house-of-cards-vortex 36 -- --scene house --view side --timeline showcase
   pair 04-entrance-cloud-shadows-light 12 \
     "$entrance --timeline light --time 8 --freeze-time --set cloud_shadows=0" \
     "$entrance --timeline light --time 8 --freeze-time --set cloud_shadows=1" \
@@ -167,11 +201,69 @@ all() {
     "$entrance --timeline material --set events=0" \
     "$entrance --timeline material --set events=0 --debug-view clouds" \
     "imagen final" "debug-view clouds"
+  # Same simulated time from two fixed cameras: the oblique view sees the
+  # even loop slots and the side view the odd ones, on the other hemisphere.
+  # Two panels of noisy plasma: QP 34 and a 5 fps GIF keep each file near 4 MB.
+  QP=34 GIF_FPS=5 pair 10-kings-crown-hemispheres 24 \
+    "--scene crown --timeline material" \
+    "--scene crown --timeline material --view side" \
+    "vista oblicua" "vista lateral"
+}
+
+# frame <file.png> <renderer args...>: the first frame of a recording.
+frame() {
+  local file="$1"; shift
+  "$BIN" --record 0.04 --fps 25 "$@" 2>/dev/null |
+    ffmpeg -v error -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 25 -i - -frames:v 1 -y "$file"
+}
+
+# montage <name> <panel width> "<args>" "<label>" ...: labelled panels side by side.
+montage() {
+  local name="$1" width="$2" n=0 inputs=() filters="" pads="" height
+  shift 2
+  while [ $# -gt 0 ]; do
+    # shellcheck disable=SC2086
+    frame "$tmp/$name-$n.png" $1
+    inputs+=(-i "$tmp/$name-$n.png")
+    filters+="[$n]$(label "$2"),scale=$width:-2:flags=lanczos[p$n];"
+    pads+="[p$n]"
+    n=$((n + 1))
+    shift 2
+  done
+  ffmpeg -v error "${inputs[@]}" -filter_complex "${filters}${pads}hstack=inputs=$n" -frames:v 1 -y "$tmp/$name.png"
+  height=$((width * 600 / 800))
+  check "$tmp/$name.png" "png,$((width * n)),$height" codec_name,width,height
+  mv -f "$tmp/$name.png" "$SHOTS/$name.png"
+  echo "encode.sh: wrote $SHOTS/$name.png" >&2
+}
+
+# The montages share t = 8 s, when the large spade crater glows in front of
+# the default camera, and t = 30 s for House of Cards (large and medium storms).
+stills() {
+  local entrance="--scene entrance --time 8"
+  montage 05-entrance-bump-off-on 800 \
+    "$entrance --light-elevation 8 --set clouds=0 --set bump=0" "bump = 0" \
+    "$entrance --light-elevation 8 --set clouds=0 --set bump=1" "bump = 1"
+  montage 06-entrance-cloud-coverage 600 \
+    "$entrance --set cloud_coverage=0.2" "cloud_coverage = 0.2" \
+    "$entrance --set cloud_coverage=0.45" "cloud_coverage = 0.45" \
+    "$entrance --set cloud_coverage=0.7" "cloud_coverage = 0.7"
+  montage 07-entrance-cloud-shadow-masks 600 \
+    "$entrance" "imagen final" \
+    "$entrance --debug-view clouds" "debug-view clouds" \
+    "$entrance --debug-view shadows" "debug-view shadows"
+  montage 08-entrance-materials 800 \
+    "$entrance --set clouds=0" "imagen final (clouds = 0)" \
+    "$entrance --set clouds=0 --debug-view materials" "debug-view materials"
+  montage 09-house-vortex-off-on 800 \
+    "--scene house --time 30 --set lightning=0 --set vortex=0" "vortex = 0" \
+    "--scene house --time 30 --set lightning=0 --set vortex=1" "vortex = 1"
 }
 
 case "${1:-}" in
   all) all ;;
+  stills) stills ;;
   single) shift; single "$@" ;;
   pair) shift; pair "$@" ;;
-  *) die "usage: encode.sh all | single <name> <seconds> -- <args> | pair <name> <seconds> <args A> <args B> <label A> <label B>" ;;
+  *) die "usage: encode.sh all | stills | single <name> <seconds> -- <args> | pair <name> <seconds> <args A> <args B> <label A> <label B>" ;;
 esac
