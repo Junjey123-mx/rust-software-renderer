@@ -447,3 +447,107 @@ fn craters_spread_over_the_planet_and_open_in_view() {
     assert_eq!(first.index, 0);
     assert!(first.center.dot(f.focus) >= front);
 }
+
+// ---- Experiment: two spade craters at once ----
+
+use rust_software_renderer::celestial::entrance::events::{PAIR_SPAN_DEG, opens};
+
+fn with_count(count: f32) -> EntranceParams {
+    EntranceParams {
+        spade_crater_count: count,
+        ..p()
+    }
+}
+
+#[test]
+fn two_spade_craters_coexist_in_different_phases_and_sizes() {
+    let (mut one_or_more, mut two, frames) = (0, 0, 1200);
+    for i in 0..frames {
+        let t = i as f32 * 0.07;
+        let f = frame_at(with_count(2.0), t);
+        let alive: Vec<&SpadeCrater> = f.events.iter().filter(|e| e.alive()).collect();
+        assert!(alive.len() <= 2, "t {t}");
+        one_or_more += usize::from(!alive.is_empty());
+        if let [a, b] = alive[..] {
+            two += 1;
+            assert_ne!(a.slot, b.slot, "t {t}: two craters of the same size");
+            assert!(a.size != b.size);
+            assert!((a.index - b.index).abs() == 1, "consecutive events");
+            assert!(
+                (a.tau - b.tau).abs() > 0.3,
+                "t {t}: born apart ({} vs {})",
+                a.tau,
+                b.tau
+            );
+            assert!(
+                a.stages.glow.min(b.stages.glow) < 0.9,
+                "t {t}: both at peak glow"
+            );
+        }
+    }
+    assert!(one_or_more == frames, "a crater is always open");
+    assert!(
+        (frames * 6 / 10..=frames * 9 / 10).contains(&two),
+        "two craters during part of the cycle: {two} of {frames}"
+    );
+}
+
+#[test]
+fn one_spade_crater_config_keeps_the_even_events_of_the_same_sequence() {
+    let (mut open, frames) = (0, 1200);
+    for i in 0..frames {
+        let t = i as f32 * 0.07;
+        let single = frame_at(with_count(1.0), t);
+        let pair = frame_at(with_count(2.0), t);
+        let alive = single.events.iter().filter(|e| e.alive()).count();
+        assert!(alive <= 1, "t {t}: {alive} open");
+        open += alive;
+        for (s, d) in single.events.iter().zip(pair.events.iter()) {
+            assert_eq!(s.index, d.index);
+            assert_eq!(s.center, d.center, "same places in both configs");
+            if opens(&with_count(1.0), s.index) {
+                assert_eq!(s, d);
+            } else {
+                assert!(!s.alive() && s.index % 2 != 0);
+            }
+        }
+    }
+    assert!(open * 100 >= frames * 85, "{open} of {frames}");
+}
+
+#[test]
+fn roaming_craters_open_within_view_of_the_crater_still_open() {
+    let f = frame_at(p(), 0.0);
+    let placed = place_events(&p(), f.seed, f.focus, 400);
+    let span = PAIR_SPAN_DEG.to_radians() + 1e-4;
+    let (mut close, mut even) = (0, 0);
+    for pair in placed.windows(2) {
+        let gap = angular_distance(pair[0].center, pair[1].center);
+        if pair[1].index % 2 != 0 {
+            assert!(gap <= span, "event {}: {gap}", pair[1].index);
+        } else {
+            even += 1;
+            close += usize::from(gap <= span);
+        }
+    }
+    assert!(
+        close * 2 >= even,
+        "{close} of {even} even pairs within the span"
+    );
+}
+
+#[test]
+fn spade_crater_count_rounds_and_is_deterministic() {
+    for t in [3.0, 8.0, 17.5, 40.0] {
+        assert_eq!(
+            frame_at(with_count(1.0), t).events,
+            frame_at(with_count(1.4), t).events
+        );
+        assert_eq!(
+            frame_at(with_count(2.0), t).events,
+            frame_at(with_count(1.6), t).events
+        );
+        assert_eq!(frame_at(p(), t).events, frame_at(p(), t).events);
+    }
+    assert_eq!(p().spade_crater_count, 2.0, "the experiment is the default");
+}

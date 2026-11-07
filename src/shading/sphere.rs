@@ -69,3 +69,30 @@ pub fn hash_direction(seed: u32, slot: u32, cycle: i64, focus: Vector3, cone: f3
     let (t, b) = tangent_frame(focus);
     (focus * cos_t + (t * phi.cos() + b * phi.sin()) * sin_t).normalized()
 }
+
+/// Center of one placed event and the angular radius it occupies.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Placement {
+    pub index: i64,
+    pub center: Vector3,
+    pub reach: f32,
+}
+
+/// Smallest angular gap between an event at `center` with reach `r` and the
+/// `earlier` ones once both reaches and `margin` are subtracted. Not
+/// negative = no overlap.
+pub fn clearance(center: Vector3, r: f32, earlier: &[Placement], margin: f32) -> f32 {
+    earlier
+        .iter()
+        .map(|e| angular_distance(center, e.center) - (r + e.reach + margin))
+        .fold(f32::INFINITY, f32::min)
+}
+
+/// Direction `i` of `count` spread evenly over the sphere (Fibonacci).
+pub fn fibonacci_direction(i: usize, count: usize) -> Vector3 {
+    let golden = std::f32::consts::PI * (3.0 - 5.0_f32.sqrt());
+    let y = 1.0 - 2.0 * (i as f32 + 0.5) / count as f32;
+    let r = (1.0 - y * y).sqrt();
+    let phi = golden * i as f32;
+    Vector3::new(r * phi.cos(), y, r * phi.sin())
+}

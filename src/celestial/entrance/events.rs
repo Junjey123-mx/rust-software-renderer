@@ -8,21 +8,29 @@
 //! after `LIFETIME`, so relocating never pops.
 //!
 //! Event `m` is born at `m * P / 3` and belongs to slot `m mod 3` (large,
-//! medium, small), so the three slots run a third of a period apart.
+//! medium, small), so the three slots run a third of a period apart. An
+//! event lives `0.6 P`, so two consecutive ones overlap for `0.27 P` and
+//! never reach their glow peak together; with `spade_crater_count = 1` only
+//! the even events open, one at a time.
 //!
 //! Placement: each new crater tries seeded candidates and keeps the first
 //! one whose region of influence stays `event_margin` away from the crater
 //! still open and from the three that closed last, so active craters never
-//! overlap and a zone is not reused right after it closes. The sequence is
-//! replayed from a fixed first event, so every center is a pure function of
-//! its index and never moves while visible.
+//! overlap and a zone is not reused right after it closes. It also tries
+//! to stay within `PAIR_SPAN_DEG` of the crater still open (always for a
+//! roaming, odd one), so a camera between them shows both. The sequence is
+//! replayed from a fixed first event, so every center is a pure function
+//! of its index and never moves while visible.
 
 use crate::celestial::entrance::EntranceParams;
 use crate::shading::cycle::cycle;
 use crate::shading::math::{mixf, smoothstep};
 use crate::shading::noise::{fbm, gradient3, hash3};
 use crate::shading::sdf::spade;
-use crate::shading::sphere::{angular_distance, east_north, hash_direction, local_plane};
+pub use crate::shading::sphere::{Placement, clearance};
+use crate::shading::sphere::{
+    angular_distance, east_north, fibonacci_direction, hash_direction, local_plane,
+};
 use raylib::math::Vector3;
 
 pub const EVENT_SLOTS: usize = 3;
@@ -56,6 +64,9 @@ pub const ATTEMPTS: u32 = 16;
 const FALLBACK_DIRECTIONS: usize = 64;
 /// First event replayed: the oldest one alive at `t = 0`.
 pub const ORIGIN: i64 = -2;
+/// Largest angle between a roaming crater and the one still open, degrees:
+/// a view centered between them sees both within 50 degrees of its axis.
+pub const PAIR_SPAN_DEG: f32 = 100.0;
 
 /// Envelopes of one life cycle as functions of the phase `tau`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -281,51 +292,38 @@ pub fn spade_crater(
     }
 }
 
-/// Center of one event and the angular radius it occupies.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Placement {
-    pub index: i64,
-    pub center: Vector3,
-    pub reach: f32,
-}
-
-/// Smallest angular gap between a crater at `center` with reach `r` and the
-/// `earlier` ones once both reaches and `margin` are subtracted. Not
-/// negative = no overlap.
-pub fn clearance(center: Vector3, r: f32, earlier: &[Placement], margin: f32) -> f32 {
-    earlier
-        .iter()
-        .map(|e| angular_distance(center, e.center) - (r + e.reach + margin))
-        .fold(f32::INFINITY, f32::min)
-}
-
-fn fallback_direction(i: usize) -> Vector3 {
-    let golden = std::f32::consts::PI * (3.0 - 5.0_f32.sqrt());
-    let y = 1.0 - 2.0 * (i as f32 + 0.5) / FALLBACK_DIRECTIONS as f32;
-    let r = (1.0 - y * y).sqrt();
-    let phi = golden * i as f32;
-    Vector3::new(r * phi.cos(), y, r * phi.sin())
-}
-
 /// Places every event from `ORIGIN` to `last` in birth order. Each one
-/// keeps the first candidate clear of the previous `HISTORY` events; if
-/// none of the `ATTEMPTS` is, the fixed direction with the largest
-/// clearance is used.
+/// keeps the first candidate clear of the previous `HISTORY` events and
+/// within `PAIR_SPAN_DEG` of the one still open. An even event that finds
+/// no such candidate settles for the first one that is only clear, so it
+/// still opens in view; an odd (roaming) one always keeps the span. If
+/// none of the `ATTEMPTS` fits, the fixed direction that best meets its
+/// conditions is used.
 // ponytail: O(last) replay per frame (about 500 events per hour of
 // simulated time); checkpoint the sequence if days-long runs matter.
 pub fn place_events(p: &EntranceParams, seed: u32, focus: Vector3, last: i64) -> Vec<Placement> {
+    let span = PAIR_SPAN_DEG.to_radians();
     let mut placed: Vec<Placement> = Vec::new();
     for index in ORIGIN..=last.max(ORIGIN) {
         let slot = index.rem_euclid(EVENT_SLOTS as i64) as usize;
         let r = reach(p.event_size * SLOT_SIZE[slot]);
         let recent = &placed[placed.len().saturating_sub(HISTORY)..];
-        let fits = |c: Vector3| clearance(c, r, recent, p.event_margin);
-        let center = (0..ATTEMPTS)
-            .map(|a| candidate(seed, index, a, focus))
-            .find(|&c| fits(c) >= 0.0)
+        let clear = |c: Vector3| clearance(c, r, recent, p.event_margin);
+        let paired = |c: Vector3| {
+            recent.last().map_or(clear(c), |e| {
+                clear(c).min(span - angular_distance(c, e.center))
+            })
+        };
+        let roaming = index.rem_euclid(2) == 1;
+        let fits = |c: Vector3| if roaming { paired(c) } else { clear(c) };
+        let candidates = (0..ATTEMPTS).map(|a| candidate(seed, index, a, focus));
+        let center = candidates
+            .clone()
+            .find(|&c| paired(c) >= 0.0)
+            .or_else(|| candidates.clone().find(|&c| fits(c) >= 0.0))
             .unwrap_or_else(|| {
                 (0..FALLBACK_DIRECTIONS)
-                    .map(fallback_direction)
+                    .map(|i| fibonacci_direction(i, FALLBACK_DIRECTIONS))
                     .max_by(|a, b| fits(*a).total_cmp(&fits(*b)))
                     .expect("fallback directions")
             });
@@ -345,7 +343,14 @@ pub fn slot_cycle(period: f32, slot: usize, t: f32) -> (i64, f32) {
     (EVENT_SLOTS as i64 * k + slot as i64, tau)
 }
 
-/// The three spade craters at time `t` (clamped to `t >= 0`), by slot.
+/// Whether event `index` opens with `spade_crater_count` (rounded) craters
+/// at once: all of them for 2, the even ones (one at a time) for 1.
+pub fn opens(p: &EntranceParams, index: i64) -> bool {
+    p.spade_crater_count >= 1.5 || index.rem_euclid(2) == 0
+}
+
+/// The three spade craters at time `t` (clamped to `t >= 0`), by slot. An
+/// event that does not open keeps its place and index with `tau = 0`.
 pub fn active_events(
     p: &EntranceParams,
     seed: u32,
@@ -359,6 +364,7 @@ pub fn active_events(
     std::array::from_fn(|slot| {
         let (index, tau) = cycles[slot];
         let center = placed[(index - ORIGIN) as usize].center;
+        let tau = if opens(p, index) { tau } else { 0.0 };
         spade_crater(p, seed, index, center, tau)
     })
 }

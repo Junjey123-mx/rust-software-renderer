@@ -29,6 +29,7 @@ params! {
         crack_width: 0.028, 0.005, 0.15, "width of the fissures";
         crack_scale: 7.0, 2.0, 20.0, "frequency of the fissure network";
         events: 1.0, 0.0, 1.0, "switch: spade craters that sink, burn and close (0 or 1)";
+        spade_crater_count: 2.0, 1.0, 2.0, "spade craters open at once: 1 or 2 (rounded)";
         event_period: 21.0, 6.0, 90.0, "seconds per spade crater cycle (slots a third apart)";
         event_size: 0.5, 0.15, 0.9, "tangent-plane size of the large spade crater";
         event_depth: 0.55, 0.0, 1.0, "depth of the large spade crater at full sink";
