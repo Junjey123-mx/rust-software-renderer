@@ -13,6 +13,7 @@ pub mod render;
 pub mod screen_mapping;
 pub mod shaded;
 pub mod surface;
+pub mod transform;
 pub mod uniforms;
 pub mod vertex_shader;
 
@@ -31,5 +32,6 @@ pub use screen_mapping::{
 };
 pub use shaded::{ShadedOptions, ShadedStats, render_shaded};
 pub use surface::{NormalSource, ShaderUniforms, SurfaceSample, direction_from_angles};
+pub use transform::Transform;
 pub use uniforms::Uniforms;
 pub use vertex_shader::vertex_shader;
