@@ -11,6 +11,7 @@ use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
 use crate::solar::flight::{FlightInput, FlightMode, space_step};
 use crate::solar::input::{SolarAction, poll_solar};
+use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField};
 use crate::solar::{SolarMeshes, SolarScene};
 use raylib::math::Vector3;
 use std::error::Error;
@@ -35,6 +36,11 @@ pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Bo
     }
     scene.apply_overrides(&lab6.sets)?;
     scene.camera_mode = lab6.camera.unwrap_or_default();
+    scene.stars = StarField::generate_with(
+        lab6.star_seed.unwrap_or(DEFAULT_SEED),
+        lab6.stars.unwrap_or(DEFAULT_STARS),
+        lab6.star_density.unwrap_or_default(),
+    );
     scene.update();
     Ok(scene)
 }

@@ -156,3 +156,29 @@ fn solar_camera_option_defaults_to_perspective_and_is_solar_only() {
     );
     assert!(USAGE.contains("--camera"));
 }
+
+#[test]
+fn star_options_are_solar_only_and_shape_the_scene_sky() {
+    let (cli, lab6) = parse("--scene solar --stars 0").unwrap();
+    assert!(build_scene(&cli, &lab6).unwrap().stars.stars.is_empty());
+    let (cli, lab6) = parse("--scene solar --stars 500 --star-seed 7").unwrap();
+    let a = build_scene(&cli, &lab6).unwrap().stars;
+    assert_eq!((a.seed, a.stars.len()), (7, 500));
+    let (cli, lab6) = parse("--scene solar --stars 3000 --star-density clustered").unwrap();
+    assert!(build_scene(&cli, &lab6).unwrap().stars.stars.len() < 3000);
+    let (cli, lab6) = parse("--scene solar").unwrap();
+    assert_eq!(build_scene(&cli, &lab6).unwrap().stars.stars.len(), 2000);
+    assert!(parse("--scene solar --stars -1").is_err());
+    assert!(
+        parse("--scene solar --stars 999999")
+            .unwrap_err()
+            .contains("at most")
+    );
+    assert!(parse("--scene solar --star-seed x").is_err());
+    assert!(
+        parse("--scene crown --stars 10")
+            .unwrap_err()
+            .contains("--scene solar")
+    );
+    assert!(USAGE.contains("--stars"));
+}

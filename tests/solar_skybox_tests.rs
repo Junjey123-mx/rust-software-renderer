@@ -183,3 +183,91 @@ fn bodies_hide_the_stars_behind_them() {
     }
     assert!(covered > 0, "some stars lay behind the body");
 }
+
+// ---------------------------------------------------------------------------
+// Density by noise
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::solar::skybox::{MIN_DENSITY, StarDensity, density_at};
+
+#[test]
+fn clustered_fields_are_reproducible_and_keep_fewer_stars_than_attempts() {
+    let a = StarField::generate_with(42, 8000, StarDensity::Clustered);
+    assert_eq!(
+        a,
+        StarField::generate_with(42, 8000, StarDensity::Clustered)
+    );
+    assert!(a.stars.len() < 8000);
+    assert!(
+        a.stars.len() as f32 > 8000.0 * MIN_DENSITY,
+        "{}",
+        a.stars.len()
+    );
+    assert_ne!(
+        a,
+        StarField::generate_with(43, 8000, StarDensity::Clustered)
+    );
+    assert_eq!(
+        StarField::generate_with(42, 2000, StarDensity::Uniform),
+        StarField::generate(42, 2000)
+    );
+    assert!(
+        StarField::generate_with(42, 0, StarDensity::Clustered)
+            .stars
+            .is_empty()
+    );
+}
+
+#[test]
+fn noise_density_creates_denser_and_sparser_regions_than_uniform() {
+    // The kept stars must sit where the density field is high: their mean
+    // keep probability is clearly above the mean over uniform candidates.
+    let noise_seed = 42u32 ^ 0x5bd1_e995;
+    let mean = |f: &StarField| {
+        f.stars
+            .iter()
+            .map(|s| density_at(s.direction, noise_seed))
+            .sum::<f32>()
+            / f.stars.len() as f32
+    };
+    let uniform = mean(&StarField::generate_with(42, 20_000, StarDensity::Uniform));
+    let clustered = mean(&StarField::generate_with(
+        42,
+        20_000,
+        StarDensity::Clustered,
+    ));
+    assert!(
+        clustered > uniform + 0.03,
+        "clustered {clustered} vs uniform {uniform}"
+    );
+    // And the field really varies: some candidates are near the floor, some
+    // well above it.
+    let mut state = 5u32;
+    let (mut lo, mut hi) = (1.0f32, 0.0f32);
+    for _ in 0..5000 {
+        let d = density_at(
+            rust_software_renderer::solar::skybox::random_direction(&mut state),
+            noise_seed,
+        );
+        lo = lo.min(d);
+        hi = hi.max(d);
+    }
+    assert!(hi - lo > 0.4, "density range {lo}..{hi}");
+}
+
+#[test]
+fn density_stays_within_its_bounds() {
+    let mut state = 9u32;
+    for _ in 0..2000 {
+        let d = rust_software_renderer::solar::skybox::random_direction(&mut state);
+        let p = density_at(d, 77);
+        assert!((MIN_DENSITY..=1.0).contains(&p), "{p}");
+    }
+    assert!("clustered".parse::<StarDensity>().is_ok());
+    assert!(
+        "nebula"
+            .parse::<StarDensity>()
+            .unwrap_err()
+            .contains("nebula")
+    );
+}

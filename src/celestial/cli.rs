@@ -5,6 +5,7 @@ use crate::app::{CliArgs, Scene};
 use crate::celestial::DebugView;
 use crate::celestial::timeline::Timeline;
 use crate::solar::CameraMode;
+use crate::solar::skybox::{MAX_STARS, StarDensity};
 
 /// Options that only apply to `--scene crown|entrance|house`.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -32,6 +33,12 @@ pub struct CelestialArgs {
     pub benchmark_shaders: bool,
     /// `--camera perspective|orbit` of the solar scene.
     pub camera: Option<CameraMode>,
+    /// `--stars <n>` of the solar scene (0 disables the star field).
+    pub stars: Option<usize>,
+    /// `--star-seed <s>` of the solar scene.
+    pub star_seed: Option<u32>,
+    /// `--star-density uniform|clustered` of the solar scene.
+    pub star_density: Option<StarDensity>,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -139,6 +146,26 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
             "--camera" => {
                 out.camera = Some(value(&mut it, "--camera")?.parse()?);
             }
+            "--stars" => {
+                let text = value(&mut it, "--stars")?;
+                let n: usize = text
+                    .parse()
+                    .map_err(|_| format!("--stars: '{text}' is not a whole number"))?;
+                if n > MAX_STARS {
+                    return Err(format!("--stars must be at most {MAX_STARS} (got {n})"));
+                }
+                out.stars = Some(n);
+            }
+            "--star-seed" => {
+                let text = value(&mut it, "--star-seed")?;
+                out.star_seed = Some(
+                    text.parse()
+                        .map_err(|_| format!("--star-seed: '{text}' is not a whole number"))?,
+                );
+            }
+            "--star-density" => {
+                out.star_density = Some(value(&mut it, "--star-density")?.parse()?);
+            }
             other => {
                 if other == "--mode" {
                     out.mode_explicit = true;
@@ -166,6 +193,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if !solar && lab6.camera.is_some() {
         return Err("--camera requires --scene solar".into());
     }
+    if !solar && (lab6.stars.is_some() || lab6.star_seed.is_some() || lab6.star_density.is_some()) {
+        return Err("--stars, --star-seed and --star-density require --scene solar".into());
+    }
     if solar {
         for (name, _) in &lab6.sets {
             if !name.contains('.') {
@@ -184,6 +214,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         time: if solar { None } else { lab6.time },
         sets: if solar { Vec::new() } else { lab6.sets.clone() },
         camera: None,
+        stars: None,
+        star_seed: None,
+        star_density: None,
         ..lab6.clone()
     };
     if !celestial && !scene_options.is_empty() {
