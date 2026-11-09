@@ -130,3 +130,29 @@ fn default_layout_keeps_the_bodies_apart_at_time_zero() {
     );
     assert!(scene.extent() <= rust_software_renderer::solar::viewer::WORLD_RADIUS);
 }
+
+#[test]
+fn solar_camera_option_defaults_to_perspective_and_is_solar_only() {
+    use rust_software_renderer::solar::CameraMode;
+    let (cli, lab6) = parse("--scene solar").unwrap();
+    assert_eq!(
+        build_scene(&cli, &lab6).unwrap().camera_mode,
+        CameraMode::Perspective
+    );
+    let (cli, lab6) = parse("--scene solar --camera orbit").unwrap();
+    assert_eq!(
+        build_scene(&cli, &lab6).unwrap().camera_mode,
+        CameraMode::Orbit
+    );
+    assert!(
+        parse("--scene solar --camera fisheye")
+            .unwrap_err()
+            .contains("fisheye")
+    );
+    assert!(
+        parse("--scene entrance --camera orbit")
+            .unwrap_err()
+            .contains("--camera")
+    );
+    assert!(USAGE.contains("--camera"));
+}

@@ -299,4 +299,15 @@ impl PreparedShader {
             Self::House(f) => f.shade(sample),
         }
     }
+
+    /// `shade` with an explicit unit direction towards the eye in object
+    /// space (perspective cameras); equal to `shade` when it matches the
+    /// prepared `eye_direction`.
+    pub fn shade_with_eye(&self, sample: &SurfaceSample, eye: Vector3) -> Vector3 {
+        match self {
+            Self::Crown(f) => f.shade_with_eye(sample, eye),
+            Self::Entrance(f) => f.shade_with_eye(sample, eye),
+            Self::House(f) => f.shade_with_eye(sample, eye),
+        }
+    }
 }

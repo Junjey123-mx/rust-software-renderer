@@ -9,7 +9,7 @@ pub mod scene;
 pub mod viewer;
 
 pub use clock::{MAX_STEP, SimulationClock};
-pub use instance::{BodyInstance, FrameContext, instance_uniforms, render_instance};
+pub use instance::{BodyInstance, FrameContext, eye_towards, instance_uniforms, render_instance};
 pub use orbit::Orbit;
 pub use resources::{SPHERE_RADIUS, SolarMeshes};
-pub use scene::SolarScene;
+pub use scene::{CameraMode, FOV_Y, NEAR, SolarScene};

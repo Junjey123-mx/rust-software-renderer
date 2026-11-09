@@ -72,7 +72,7 @@ Usage: rust-software-renderer [options]
   --set <param>=<value>   --debug-view <view>   --threads <n>
   --record <s> [--fps n] [--timeline material|orbit|light|showcase]   raw rgb24 frames on stdout
   --benchmark-shaders [--benchmark-output <dir>]   headless shader timing (default docs/results/lab6)
-  --scene solar                  Camino al Proyecto 3: the three bodies in one scene (orbit camera, --threads)
+  --scene solar [--camera perspective|orbit]   Camino al Proyecto 3: the three bodies in one scene (--time, --threads, --set body.param=v)
 Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit
 Celestial keys: TAB body, SPACE pause, J/L I/K light, N debug view, [ ] main parameter, C/H/B/P toggle clouds, shadows, bump and parallax when the body provides them";
 

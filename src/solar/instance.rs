@@ -3,8 +3,8 @@
 use crate::celestial::{Body, CelestialMaterial, DebugView};
 use crate::geometry::Vertex;
 use crate::pipeline::{
-    OrbitView, RenderError, ShadedOptions, ShadedStats, ShaderUniforms, Transform, Uniforms,
-    render_shaded,
+    RenderError, ShadedOptions, ShadedStats, ShaderUniforms, Transform, Uniforms, ViewProjection,
+    render_shaded_with,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
@@ -84,7 +84,7 @@ impl BodyInstance {
 /// Values shared by every instance drawn in one frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameContext {
-    pub view: OrbitView,
+    pub projection: ViewProjection,
     /// Simulated seconds.
     pub time: f32,
     /// Unit direction towards the light, world space.
@@ -93,33 +93,40 @@ pub struct FrameContext {
     pub options: ShadedOptions,
 }
 
+/// Unit direction from the instance center towards the eye, world space:
+/// the per-frame `eye_direction` of the shader uniforms. Fragments refine it
+/// through `FragmentView` under the perspective camera.
+pub fn eye_towards(projection: &ViewProjection, world_point: Vector3) -> Vector3 {
+    match projection {
+        ViewProjection::Orbit(view) => view.camera.eye_direction(),
+        ViewProjection::Perspective(camera) => camera.view_direction(world_point),
+    }
+}
+
 /// Draws one instance into `framebuffer` (never cleared here) through the
-/// shaded stage with the orbit view: the model matrix comes from the
-/// transform and the light and eye directions are given in world space.
+/// shaded stage: the model matrix comes from the transform, the light and
+/// eye directions are given in world space and every fragment shades with
+/// its own direction towards the eye, rotated into object space.
 pub fn render_instance(
     framebuffer: &mut Framebuffer,
     mesh: &[Vertex],
     instance: &BodyInstance,
     frame: &FrameContext,
 ) -> Result<ShadedStats, RenderError> {
-    let eye_world = frame.view.camera.eye_direction();
-    let uniforms = instance_uniforms(
-        &instance.transform,
-        frame.time,
-        frame.light_world,
-        eye_world,
-    );
+    let transform = instance.transform;
+    let eye_world = eye_towards(&frame.projection, transform.position);
+    let uniforms = instance_uniforms(&transform, frame.time, frame.light_world, eye_world);
     let prepared = instance.material.prepare(&uniforms, instance.debug);
     let model = Uniforms {
-        model_matrix: instance.transform.matrix(),
+        model_matrix: transform.matrix(),
     };
-    render_shaded(
+    render_shaded_with(
         framebuffer,
         &model,
         mesh,
-        frame.view,
+        &frame.projection,
         frame.mode,
         frame.options,
-        &|s| prepared.shade(s),
+        &|s, v| prepared.shade_with_eye(s, unit(transform.to_object_dir(v.view_direction))),
     )
 }

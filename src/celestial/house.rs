@@ -570,6 +570,12 @@ impl Frame {
     }
 
     pub fn shade(&self, s: &SurfaceSample) -> Vector3 {
+        self.shade_with_eye(s, self.uniforms.eye_direction)
+    }
+
+    /// `shade` with an explicit unit direction towards the eye (object
+    /// space), for cameras whose view direction changes per fragment.
+    pub fn shade_with_eye(&self, s: &SurfaceSample, eye: Vector3) -> Vector3 {
         let n = s.normal;
         match self.debug {
             DebugView::Height => return Vector3::one() * self.band_value(self.vortex_warp(n)),
@@ -586,7 +592,7 @@ impl Frame {
         let u = &self.uniforms;
         let lit = (self.albedo(n) + self.core_glow(n))
             * (0.18 + 0.82 * wrap_lambert(n, u.light_direction, p.wrap));
-        let rim = fresnel(n, u.eye_direction, 3.0);
+        let rim = fresnel(n, eye, 3.0);
         lit + mix3(hex(0xC13CFF), hex(0xF0408A), rim) * (p.rim_strength * rim) + self.lightning(n)
     }
 }

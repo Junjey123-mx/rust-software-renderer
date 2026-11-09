@@ -108,14 +108,20 @@ pub fn prepare(params: &EntranceParams, uniforms: &ShaderUniforms, debug: DebugV
 
 impl Frame {
     pub fn shade(&self, s: &SurfaceSample) -> Vector3 {
+        self.shade_with_eye(s, self.uniforms.eye_direction)
+    }
+
+    /// `shade` with an explicit unit direction towards the eye (object
+    /// space), for cameras whose view direction changes per fragment.
+    pub fn shade_with_eye(&self, s: &SurfaceSample, eye: Vector3) -> Vector3 {
         let n = s.normal;
         match self.debug {
             DebugView::Clouds => return Vector3::one() * self.clouds.mask(n),
             DebugView::None => {}
             // Ground debug views are shown without clouds.
-            _ => return self.surface_color(n),
+            _ => return self.surface_color_seen(n, eye),
         }
-        let (surface, lava) = self.surface_parts(n);
+        let (surface, lava) = self.surface_parts(n, eye);
         // Clouds over the ground, with their own soft lighting and the
         // geometric normal (they float above the relief). A molten floor
         // still glows red through them.
@@ -155,11 +161,15 @@ impl Frame {
     /// `parallax_steps` is the count at grazing views; steep views, whose
     /// search covers a shorter stretch of ground, use down to a third.
     pub fn parallax_direction(&self, n: Vector3) -> Vector3 {
+        self.parallax_direction_seen(n, self.uniforms.eye_direction)
+    }
+
+    /// `parallax_direction` along an explicit unit view direction `v`.
+    pub fn parallax_direction_seen(&self, n: Vector3, v: Vector3) -> Vector3 {
         let p = &self.params;
         if p.parallax < 0.5 {
             return n;
         }
-        let v = self.uniforms.eye_direction;
         let vn = n.dot(v).clamp(0.0, 1.0);
         let steps = (p.parallax_steps * (1.0 - 0.65 * vn * vn)).round().max(2.0);
         parallax_shift(
@@ -246,11 +256,17 @@ impl Frame {
 
     /// Lit ground color without clouds.
     pub fn surface_color(&self, n: Vector3) -> Vector3 {
-        self.surface_parts(n).0
+        self.surface_color_seen(n, self.uniforms.eye_direction)
     }
 
-    /// Lit ground color without clouds, and the lava emission it contains.
-    fn surface_parts(&self, n: Vector3) -> (Vector3, Vector3) {
+    /// `surface_color` along an explicit unit view direction.
+    pub fn surface_color_seen(&self, n: Vector3, eye: Vector3) -> Vector3 {
+        self.surface_parts(n, eye).0
+    }
+
+    /// Lit ground color without clouds, and the lava emission it contains,
+    /// seen along the unit direction `v` towards the eye.
+    fn surface_parts(&self, n: Vector3, v: Vector3) -> (Vector3, Vector3) {
         let l = self.uniforms.light_direction;
         // Cloud shadows attenuate direct light only; emission is untouched.
         let shadow = self.clouds.shadow(n, l);
@@ -262,7 +278,7 @@ impl Frame {
         }
         // Every ground lookup uses the parallax-shifted direction; night,
         // clouds and shadows keep the geometric one.
-        let np = self.parallax_direction(n);
+        let np = self.parallax_direction_seen(n, v);
         if self.debug == DebugView::Parallax {
             return gray((angular_distance(n, np) * 40.0).min(1.0));
         }
@@ -291,7 +307,6 @@ impl Frame {
             hex(0x151515) * 0.5,
             ground.char * self.params.char_strength,
         );
-        let v = self.uniforms.eye_direction;
         let color = self.reflect_light(ground.material, albedo, lit_normal, l, v, shadow);
         // Crater fractures glow on their own, ahead of the molten floor.
         let lava = self.lava_emission(ground.lava, ground.core)

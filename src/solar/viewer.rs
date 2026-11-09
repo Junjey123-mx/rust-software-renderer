@@ -32,6 +32,7 @@ pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Bo
         scene.clock.time = t;
     }
     scene.apply_overrides(&lab6.sets)?;
+    scene.camera_mode = lab6.camera.unwrap_or_default();
     scene.update();
     Ok(scene)
 }
@@ -65,8 +66,9 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies, mode {mode}. Controls: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
-        scene.bodies.len()
+        "Solar scene: {} bodies, mode {mode}, camera {}. Controls: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
+        scene.bodies.len(),
+        scene.camera_mode.name()
     );
     let (mut rl, thread) = raylib::init()
         .size(WIDTH as i32, HEIGHT as i32)

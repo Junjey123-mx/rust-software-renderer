@@ -7,7 +7,10 @@
 //! draw order.
 
 use crate::celestial::Body;
-use crate::pipeline::{OrbitView, RenderError, ShadedOptions, ShadedStats, Transform};
+use crate::pipeline::{
+    OrbitView, PerspectiveCamera, RenderError, ShadedOptions, ShadedStats, Transform,
+    ViewProjection,
+};
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::{
@@ -15,11 +18,51 @@ use crate::solar::{
 };
 use raylib::math::Vector3;
 
+/// Which projection the solar scene renders through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CameraMode {
+    /// The orthographic orbit camera of the earlier scenes.
+    Orbit,
+    /// A perspective camera placed on the orbit camera's eye direction.
+    #[default]
+    Perspective,
+}
+
+impl CameraMode {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Orbit => "orbit",
+            Self::Perspective => "perspective",
+        }
+    }
+}
+
+impl std::str::FromStr for CameraMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "orbit" => Ok(Self::Orbit),
+            "perspective" => Ok(Self::Perspective),
+            other => Err(format!(
+                "unknown camera '{other}' (expected perspective or orbit)"
+            )),
+        }
+    }
+}
+
+/// Vertical field of view of the perspective camera, radians (60 degrees).
+pub const FOV_Y: f32 = std::f32::consts::FRAC_PI_3;
+/// Near plane of the perspective camera.
+pub const NEAR: f32 = 0.05;
+
 #[derive(Debug, Clone)]
 pub struct SolarScene {
     pub meshes: SolarMeshes,
     pub bodies: Vec<BodyInstance>,
+    /// Orbit camera rig: target, azimuth, elevation and zoom.
     pub view: OrbitView,
+    pub camera_mode: CameraMode,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
     /// Center of the orbits (the star).
@@ -34,6 +77,7 @@ impl SolarScene {
             meshes,
             bodies: Vec::new(),
             view,
+            camera_mode: CameraMode::default(),
             clock: SimulationClock::default(),
             center: Vector3::zero(),
             light_world,
@@ -122,9 +166,32 @@ impl SolarScene {
         }
     }
 
+    /// Perspective camera on the orbit rig: the eye sits along the orbit
+    /// eye direction at a distance that frames the system at zoom 1 and
+    /// approaches with the zoom.
+    pub fn perspective_camera(&self) -> PerspectiveCamera {
+        let cam = &self.view.camera;
+        let distance = (self.extent().max(1.0) * 2.2) / cam.zoom;
+        PerspectiveCamera::new(
+            cam.target + cam.eye_direction() * distance,
+            cam.target,
+            Vector3::new(0.0, 1.0, 0.0),
+            FOV_Y,
+            NEAR,
+        )
+        .expect("orbit rig gives a valid perspective camera")
+    }
+
+    pub fn projection(&self) -> ViewProjection {
+        match self.camera_mode {
+            CameraMode::Orbit => ViewProjection::Orbit(self.view),
+            CameraMode::Perspective => ViewProjection::Perspective(self.perspective_camera()),
+        }
+    }
+
     pub fn frame_context(&self, mode: TriangleMode, options: ShadedOptions) -> FrameContext {
         FrameContext {
-            view: self.view,
+            projection: self.projection(),
             time: self.clock.time,
             light_world: self.light_world,
             mode,

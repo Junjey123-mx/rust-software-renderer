@@ -62,7 +62,8 @@ fn zero_direction_stays_zero_instead_of_nan() {
 
 use rust_software_renderer::celestial::Body;
 use rust_software_renderer::pipeline::{
-    ModelBounds, OrbitCamera, OrbitView, ShadedOptions, ViewPreset, Viewport, direction_from_angles,
+    ModelBounds, OrbitCamera, OrbitView, ShadedOptions, ViewPreset, ViewProjection, Viewport,
+    direction_from_angles,
 };
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
@@ -90,7 +91,7 @@ fn draw(inst: &BodyInstance, view: OrbitView, light_world: Vector3) -> (Framebuf
     let mut fb = Framebuffer::new(W, H);
     fb.clear();
     let frame = FrameContext {
-        view,
+        projection: ViewProjection::Orbit(view),
         time: 6.0,
         light_world,
         mode: TriangleMode::FilledScanline,
@@ -194,7 +195,7 @@ fn render_instance_does_not_clear_the_framebuffer() {
     fb.point(3, 3, marker);
     let inst = BodyInstance::new(Body::KingsCrown, Transform::new(Vector3::zero(), 1.0), 0.0);
     let frame = FrameContext {
-        view: world_view(0.0),
+        projection: ViewProjection::Orbit(world_view(0.0)),
         time: 0.0,
         light_world: light(),
         mode: TriangleMode::FilledScanline,

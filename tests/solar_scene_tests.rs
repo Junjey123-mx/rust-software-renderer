@@ -8,7 +8,7 @@ use rust_software_renderer::pipeline::{
 };
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
-use rust_software_renderer::solar::{BodyInstance, Orbit, SolarMeshes, SolarScene};
+use rust_software_renderer::solar::{BodyInstance, CameraMode, Orbit, SolarMeshes, SolarScene};
 
 const W: u32 = 320;
 const H: u32 = 240;
@@ -29,7 +29,9 @@ fn scene() -> SolarScene {
     let cam = OrbitCamera::new(Vector3::zero(), ViewPreset::Front);
     let view = OrbitView::for_world(cam, 4.0, Viewport::new(W, H, 0.1)).unwrap();
     let light = direction_from_angles((-75.0f32).to_radians(), 20.0f32.to_radians());
-    SolarScene::new(SolarMeshes::load().unwrap(), view, light)
+    let mut s = SolarScene::new(SolarMeshes::load().unwrap(), view, light);
+    s.camera_mode = CameraMode::Orbit;
+    s
 }
 
 fn options() -> ShadedOptions {
@@ -310,4 +312,43 @@ fn the_hemisphere_facing_the_star_is_brighter() {
     let towards2: f32 = (6..18).map(|d| lum2(cx + d)).sum();
     let away2: f32 = (6..18).map(|d| lum2(cx - d)).sum();
     assert!(towards2 > away2 * 1.5, "{towards2} vs {away2}");
+}
+
+#[test]
+fn perspective_mode_grows_the_nearer_body_and_orbit_mode_does_not() {
+    // Front rig: the eye sits on -Z, so z = -2 is nearer than z = +2.
+    let fragments = |mode: CameraMode| {
+        let mut s = scene();
+        s.camera_mode = mode;
+        s.bodies = vec![
+            body(Body::CrimsonEntrance, 1.5, -2.0, 0.6),
+            body(Body::HouseOfCards, -1.5, 2.0, 0.6),
+        ];
+        let mut fb = Framebuffer::new(W, H);
+        fb.clear();
+        let st = s
+            .render_objects_without_clear(&mut fb, TriangleMode::FilledScanline, options())
+            .unwrap();
+        (st[0].fragments_shaded as f32, st[1].fragments_shaded as f32)
+    };
+    let (near, far) = fragments(CameraMode::Perspective);
+    assert!(near > far * 1.3, "perspective: {near} vs {far}");
+    let (a, b) = fragments(CameraMode::Orbit);
+    assert!((a - b).abs() < a * 0.05, "orbit: {a} vs {b}");
+}
+
+#[test]
+fn perspective_camera_follows_the_orbit_rig_and_zoom_approaches() {
+    let mut s = orbiting_system();
+    s.camera_mode = CameraMode::Perspective;
+    let far = s.perspective_camera();
+    assert_eq!(far.target, Vector3::zero());
+    assert!((far.eye.normalized() - s.view.camera.eye_direction()).length() < 1e-5);
+    s.view.camera.zoom_by(2.0);
+    let near = s.perspective_camera();
+    assert!((near.eye.length() - far.eye.length() / 2.0).abs() < 1e-4);
+    s.view.camera.orbit(0.7);
+    assert!(
+        (s.perspective_camera().eye.normalized() - s.view.camera.eye_direction()).length() < 1e-5
+    );
 }

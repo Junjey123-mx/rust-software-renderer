@@ -4,6 +4,7 @@
 use crate::app::{CliArgs, Scene};
 use crate::celestial::DebugView;
 use crate::celestial::timeline::Timeline;
+use crate::solar::CameraMode;
 
 /// Options that only apply to `--scene crown|entrance|house`.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -29,6 +30,8 @@ pub struct CelestialArgs {
     pub timeline: Option<Timeline>,
     /// `--benchmark-shaders`: headless timing of the three shaders.
     pub benchmark_shaders: bool,
+    /// `--camera perspective|orbit` of the solar scene.
+    pub camera: Option<CameraMode>,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -133,6 +136,9 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
             "--timeline" => {
                 out.timeline = Some(value(&mut it, "--timeline")?.parse()?);
             }
+            "--camera" => {
+                out.camera = Some(value(&mut it, "--camera")?.parse()?);
+            }
             other => {
                 if other == "--mode" {
                     out.mode_explicit = true;
@@ -157,6 +163,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if solar && cli.obj.is_some() {
         return Err("--obj cannot be combined with --scene solar".into());
     }
+    if !solar && lab6.camera.is_some() {
+        return Err("--camera requires --scene solar".into());
+    }
     if solar {
         for (name, _) in &lab6.sets {
             if !name.contains('.') {
@@ -174,6 +183,7 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         threads: if solar { None } else { lab6.threads },
         time: if solar { None } else { lab6.time },
         sets: if solar { Vec::new() } else { lab6.sets.clone() },
+        camera: None,
         ..lab6.clone()
     };
     if !celestial && !scene_options.is_empty() {

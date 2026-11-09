@@ -359,8 +359,13 @@ impl Frame {
 
     /// Limb corona band in `[0, 1]`; its width breathes with the pulse.
     pub fn corona(&self, n: Vector3) -> f32 {
+        self.corona_seen(n, self.uniforms.eye_direction)
+    }
+
+    /// `corona` along an explicit unit direction towards the eye.
+    pub fn corona_seen(&self, n: Vector3, eye: Vector3) -> f32 {
         let p = &self.params;
-        let rim = 1.0 - saturate(n.dot(self.uniforms.eye_direction));
+        let rim = 1.0 - saturate(n.dot(eye));
         let width = p.corona_width * (1.0 + p.corona_pulse_amount * (2.0 * self.pulse - 1.0));
         let flicker = 0.6
             + 0.4
@@ -386,6 +391,12 @@ impl Frame {
     }
 
     pub fn shade(&self, s: &SurfaceSample) -> Vector3 {
+        self.shade_with_eye(s, self.uniforms.eye_direction)
+    }
+
+    /// `shade` with an explicit unit direction towards the eye (object
+    /// space), for cameras whose view direction changes per fragment.
+    pub fn shade_with_eye(&self, s: &SurfaceSample, eye: Vector3) -> Vector3 {
         let n = s.normal;
         let p = &self.params;
         let mut temperature = self.temperature(n);
@@ -395,7 +406,7 @@ impl Frame {
         // The plasma heats up around the loops and their feet.
         let loops = self.loop_glow(n);
         temperature = saturate(temperature + 0.3 * (loops.halo + loops.foot));
-        let corona = self.corona(n);
+        let corona = self.corona_seen(n, eye);
         match self.debug {
             DebugView::Height => return Vector3::one() * temperature,
             DebugView::Materials => {
@@ -416,7 +427,7 @@ impl Frame {
             + hex(0xFFF2C4) * loops.heat
             + mix3(hex(0xFF7A00), hex(0xFFF2C4), loops.foot) * loops.foot)
             * p.loop_brightness;
-        let rim = 1.0 - saturate(n.dot(self.uniforms.eye_direction));
+        let rim = 1.0 - saturate(n.dot(eye));
         color *= 1.0 - p.eclipse_depth * self.eclipse * (1.0 - rim).powi(2);
         color += mix3(hex(0xFFC63A), hex(0xFFF2C4), corona) * (0.9 * corona);
         clamp_color(color * p.brightness, 2.0)
