@@ -14,4 +14,4 @@ pub use instance::{BodyInstance, FrameContext, eye_towards, instance_uniforms, r
 pub use orbit::Orbit;
 pub use resources::{SPHERE_RADIUS, SolarMeshes};
 pub use scene::{CameraMode, FOV_Y, NEAR, SolarScene};
-pub use ship::ShipState;
+pub use ship::{ShipState, render_ship};

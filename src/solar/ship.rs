@@ -5,6 +5,13 @@
 //! narrows towards `-Z` (nose), is widest along `X` (wings) and its top is
 //! `+Y`; the bounding box is centered at `MESH_CENTER`, not at the origin.
 
+use crate::geometry::Vertex;
+use crate::pipeline::{
+    DirectionalLight, NormalSource, RenderError, ShadedOptions, ShadedStats, Uniforms,
+    ViewProjection, intensity, render_shaded_with,
+};
+use crate::rasterization::TriangleMode;
+use crate::rendering::Framebuffer;
 use crate::shading::sphere::rotate_axis;
 use raylib::math::{Matrix, Vector3};
 
@@ -127,4 +134,40 @@ impl ShipState {
     pub fn radius(&self) -> f32 {
         MESH_RADIUS * self.scale
     }
+}
+
+/// Draws the spacecraft into `framebuffer` (never cleared here) through the
+/// shaded stage with flat per-face shading: the light is rotated into the
+/// spacecraft's object space, so a turned ship is lit consistently with
+/// the planets. Two-sided like the laboratory five interactive view.
+pub fn render_ship(
+    framebuffer: &mut Framebuffer,
+    mesh: &[Vertex],
+    ship: &ShipState,
+    projection: &ViewProjection,
+    light_world: Vector3,
+    mode: TriangleMode,
+    threads: usize,
+) -> Result<ShadedStats, RenderError> {
+    let light = DirectionalLight {
+        direction: ship.to_object_dir(light_world),
+        ..DirectionalLight::default()
+    };
+    let uniforms = Uniforms {
+        model_matrix: ship.model_matrix(),
+    };
+    let options = ShadedOptions {
+        cull_back_faces: false,
+        normal_source: NormalSource::Face,
+        threads,
+    };
+    render_shaded_with(
+        framebuffer,
+        &uniforms,
+        mesh,
+        projection,
+        mode,
+        options,
+        &|s, _| light.base_color * intensity(s.face_normal, &light),
+    )
 }
