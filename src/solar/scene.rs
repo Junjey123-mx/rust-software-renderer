@@ -14,7 +14,7 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::{CameraRig, FollowRig};
-use crate::solar::flight::{FlightMode, LocalTarget, toggle_local};
+use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes, render_instance,
     render_ship,
@@ -167,6 +167,26 @@ impl SolarScene {
                 radius: self.radius_of(index),
             })
             .collect()
+    }
+
+    /// Runs the local controller around the body local flight follows, at
+    /// its current (already updated) position.
+    pub fn local_step(&mut self, input: &FlightInput, dt: f32) {
+        let FlightMode::Local { planet, .. } = self.flight else {
+            return;
+        };
+        let (position, radius) = (
+            self.bodies[planet].transform.position,
+            self.radius_of(planet),
+        );
+        local_step(
+            &mut self.ship,
+            &mut self.flight,
+            position,
+            radius,
+            input,
+            dt,
+        );
     }
 
     /// `L`: toggles local flight; the ship is never moved by the toggle.

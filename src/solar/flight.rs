@@ -2,6 +2,7 @@
 //! input of one frame and the real frame delta (flight keeps working while
 //! the simulation is paused).
 
+use crate::shading::sphere::rotate_axis;
 use crate::solar::ShipState;
 use crate::solar::clock::MAX_STEP;
 use crate::solar::input::SolarAction;
@@ -16,6 +17,8 @@ pub struct FlightInput {
     pub yaw: f32,
     /// Up arrow = +1 (lift the nose), down arrow = -1.
     pub pitch: f32,
+    /// Local flight only: `E` = +1 (away from the planet), `Q` = -1.
+    pub radial: f32,
 }
 
 impl FlightInput {
@@ -28,6 +31,7 @@ impl FlightInput {
             throttle: axis(SolarAction::Forward, SolarAction::Backward),
             yaw: axis(SolarAction::YawLeft, SolarAction::YawRight),
             pitch: axis(SolarAction::PitchUp, SolarAction::PitchDown),
+            radial: axis(SolarAction::Ascend, SolarAction::Descend),
         }
     }
 }
@@ -170,4 +174,64 @@ pub fn toggle_local(
         planet: nearest.index,
         previous_planet_position: nearest.position,
     })
+}
+
+/// Tangential speed of local flight, world units per second.
+pub const LOCAL_SPEED: f32 = 0.5;
+/// Radial speed of local flight (`E`/`Q`), world units per second.
+pub const RADIAL_SPEED: f32 = 0.4;
+
+/// Local flight around a planet now at `planet` with `radius`:
+///
+/// 1. follow the planet's displacement since the last frame (a position
+///    difference, never scaled by `dt`);
+/// 2. turn around the radial up (left/right) and the ship's right (up/down)
+///    without changing the altitude;
+/// 3. move along a great-circle arc of the current distance, rotating the
+///    ship basis by the same rotation so its tilt to the local up is kept;
+/// 4. change the distance with `E`/`Q`, never below `radius + CLEARANCE`.
+///
+/// Does nothing in space flight. No gravity, no collisions.
+pub fn local_step(
+    ship: &mut ShipState,
+    mode: &mut FlightMode,
+    planet: Vector3,
+    radius: f32,
+    input: &FlightInput,
+    dt: f32,
+) {
+    let FlightMode::Local {
+        previous_planet_position,
+        ..
+    } = mode
+    else {
+        return;
+    };
+    ship.position += planet - *previous_planet_position;
+    *previous_planet_position = planet;
+    let dt = clamp_dt(dt);
+
+    let Some(frame) = local_frame(ship, planet, radius) else {
+        return;
+    };
+    if input.yaw != 0.0 {
+        ship.rotate(frame.normal, input.yaw * ship.turn_speed * dt);
+    }
+    if input.pitch != 0.0 {
+        ship.pitch(input.pitch * ship.turn_speed * dt);
+    }
+    let Some(frame) = local_frame(ship, planet, radius) else {
+        return;
+    };
+    let mut normal = frame.normal;
+    let arc = input.throttle * LOCAL_SPEED * dt;
+    if arc != 0.0
+        && let Some(axis) = unit_or_none(frame.normal.cross(frame.tangent))
+    {
+        let angle = arc / frame.distance;
+        normal = rotate_axis(frame.normal, axis, angle).normalized();
+        ship.rotate(axis, angle);
+    }
+    let distance = (frame.distance + input.radial * RADIAL_SPEED * dt).max(radius + CLEARANCE);
+    ship.position = planet + normal * distance;
 }

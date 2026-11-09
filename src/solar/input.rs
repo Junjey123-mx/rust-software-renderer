@@ -14,19 +14,25 @@ pub enum SolarAction {
     YawRight,
     PitchUp,
     PitchDown,
+    /// Local flight: away from the planet.
+    Ascend,
+    /// Local flight: towards the planet.
+    Descend,
     TogglePause,
     ToggleCamera,
     ToggleLocal,
 }
 
 /// Held keys and the action they produce.
-pub const HELD: [(KeyboardKey, SolarAction); 6] = [
+pub const HELD: [(KeyboardKey, SolarAction); 8] = [
     (KeyboardKey::KEY_W, SolarAction::Forward),
     (KeyboardKey::KEY_S, SolarAction::Backward),
     (KeyboardKey::KEY_LEFT, SolarAction::YawLeft),
     (KeyboardKey::KEY_RIGHT, SolarAction::YawRight),
     (KeyboardKey::KEY_UP, SolarAction::PitchUp),
     (KeyboardKey::KEY_DOWN, SolarAction::PitchDown),
+    (KeyboardKey::KEY_E, SolarAction::Ascend),
+    (KeyboardKey::KEY_Q, SolarAction::Descend),
 ];
 
 /// Keys that fire once per press.

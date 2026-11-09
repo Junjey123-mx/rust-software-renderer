@@ -92,13 +92,13 @@ pub fn step(
     scene.advance(real_dt);
     let dt = scene.clock.real_delta;
     match scene.rig {
-        CameraRig::Follow => match scene.flight {
-            FlightMode::Space => {
-                space_step(&mut scene.ship, &FlightInput::from_actions(actions), dt)
+        CameraRig::Follow => {
+            let input = FlightInput::from_actions(actions);
+            match scene.flight {
+                FlightMode::Space => space_step(&mut scene.ship, &input, dt),
+                FlightMode::Local { .. } => scene.local_step(&input, dt),
             }
-            // The local controller holds the ship until it is implemented.
-            FlightMode::Local { .. } => {}
-        },
+        }
         CameraRig::Orbit => {
             for &action in camera_actions {
                 apply_input(&mut scene.view.camera, action, dt);
@@ -115,7 +115,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, arrows turn (follow) or orbit (orbit rig), L local flight, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, arrows turn (follow) or orbit (orbit rig), L local flight, E/Q altitude (local), V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()

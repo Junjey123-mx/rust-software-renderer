@@ -279,3 +279,111 @@ fn the_scene_never_offers_the_star_and_toggling_keeps_the_ship_in_place() {
     assert!(scene.toggle_local().is_err());
     assert_eq!(scene.flight, FlightMode::Space);
 }
+
+// ---------------------------------------------------------------------------
+// Local controller
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::solar::flight::{LOCAL_SPEED, local_step};
+
+fn local_at(planet: Vector3) -> FlightMode {
+    FlightMode::Local {
+        planet: 1,
+        previous_planet_position: planet,
+    }
+}
+
+#[test]
+fn half_a_turn_around_the_planet_keeps_the_distance() {
+    let planet = Vector3::new(3.0, 0.0, 0.0);
+    let mut s = ShipState::new(planet + Vector3::new(0.0, 2.0, 0.0), 0.1);
+    let mut mode = local_at(planet);
+    let fwd = FlightInput::from_actions(&[SolarAction::Forward]);
+    // pi * 2 / 0.5 = 12.57 s for half a turn at radius 2.
+    let steps = (std::f32::consts::PI * 2.0 / LOCAL_SPEED / 0.01).round() as usize;
+    for _ in 0..steps {
+        local_step(&mut s, &mut mode, planet, 1.0, &fwd, 0.01);
+        assert!(((s.position - planet).length() - 2.0).abs() < 1e-3);
+    }
+    // Ended on the opposite side (below), with the nose still tangent and the
+    // top still pointing away from the planet.
+    let n = (s.position - planet).normalized();
+    assert!(n.y < -0.99, "{n:?}");
+    assert!(s.forward.dot(n).abs() < 1e-3);
+    assert!(s.up.dot(n) > 0.999);
+}
+
+#[test]
+fn without_input_the_ship_follows_the_orbiting_planet_at_a_constant_distance() {
+    let mut planet = Vector3::new(3.0, 0.0, 0.0);
+    let mut s = ShipState::new(planet + Vector3::new(0.0, 0.0, 1.5), 0.1);
+    let mut mode = local_at(planet);
+    let none = FlightInput::default();
+    local_step(&mut s, &mut mode, planet, 0.5, &none, 0.05);
+    assert_eq!(
+        s.position,
+        planet + Vector3::new(0.0, 0.0, 1.5),
+        "first delta is zero"
+    );
+    for i in 0..200 {
+        let a = i as f32 * 0.02;
+        planet = Vector3::new(3.0 * a.cos(), 0.0, 3.0 * a.sin());
+        local_step(&mut s, &mut mode, planet, 0.5, &none, 0.05);
+        assert!(((s.position - planet).length() - 1.5).abs() < 1e-4);
+    }
+    let FlightMode::Local {
+        previous_planet_position,
+        ..
+    } = mode
+    else {
+        unreachable!()
+    };
+    assert_eq!(previous_planet_position, planet);
+}
+
+#[test]
+fn descending_stops_at_the_clearance_and_ascending_rises() {
+    let planet = Vector3::zero();
+    let mut s = ShipState::new(Vector3::new(0.0, 2.0, 0.0), 0.1);
+    let mut mode = local_at(planet);
+    let down = FlightInput::from_actions(&[SolarAction::Descend]);
+    for _ in 0..200 {
+        local_step(&mut s, &mut mode, planet, 1.0, &down, 0.05);
+    }
+    assert!((s.position.length() - (1.0 + CLEARANCE)).abs() < 1e-5);
+    let up = FlightInput::from_actions(&[SolarAction::Ascend]);
+    local_step(&mut s, &mut mode, planet, 1.0, &up, 0.05);
+    assert!((s.position.length() - (1.0 + CLEARANCE + 0.02)).abs() < 1e-5);
+}
+
+#[test]
+fn turning_and_pitching_never_change_the_altitude() {
+    let planet = Vector3::zero();
+    let mut s = ShipState::new(Vector3::new(0.0, 0.0, 2.5), 0.1);
+    s.pitch(-std::f32::consts::FRAC_PI_2); // level: nose along the surface
+    let mut mode = local_at(planet);
+    let turn = FlightInput::from_actions(&[SolarAction::YawLeft, SolarAction::PitchUp]);
+    for _ in 0..100 {
+        local_step(&mut s, &mut mode, planet, 1.0, &turn, 0.05);
+        assert!((s.position.length() - 2.5).abs() < 1e-5);
+    }
+}
+
+#[test]
+fn flying_over_the_poles_and_in_space_mode_is_stable() {
+    let planet = Vector3::zero();
+    let mut s = ShipState::new(Vector3::new(0.0, 0.0, 2.0), 0.1);
+    s.pitch(-std::f32::consts::FRAC_PI_2);
+    let mut mode = local_at(planet);
+    let fly = FlightInput::from_actions(&[SolarAction::Forward, SolarAction::YawLeft]);
+    for _ in 0..2000 {
+        local_step(&mut s, &mut mode, planet, 1.0, &fly, 0.02);
+        assert!(s.position.x.is_finite() && (s.position.length() - 2.0).abs() < 2e-3);
+        assert!(s.forward.dot(s.up).abs() < 1e-4);
+    }
+    // Space mode: the local controller does nothing.
+    let before = s;
+    let mut space = FlightMode::Space;
+    local_step(&mut s, &mut space, planet, 1.0, &fly, 0.05);
+    assert_eq!(s, before);
+}
