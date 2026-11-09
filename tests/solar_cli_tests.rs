@@ -182,3 +182,14 @@ fn star_options_are_solar_only_and_shape_the_scene_sky() {
     );
     assert!(USAGE.contains("--stars"));
 }
+
+#[test]
+fn solar_quality_defaults_to_full_and_is_solar_only() {
+    use rust_software_renderer::solar::Quality;
+    let (cli, lab6) = parse("--scene solar").unwrap();
+    assert_eq!(build_scene(&cli, &lab6).unwrap().quality, Quality::Full);
+    let (cli, lab6) = parse("--scene solar --solar-quality adaptive").unwrap();
+    assert_eq!(build_scene(&cli, &lab6).unwrap().quality, Quality::Adaptive);
+    assert!(parse("--scene house --solar-quality adaptive").is_err());
+    assert!(parse("--scene solar --solar-quality max").is_err());
+}

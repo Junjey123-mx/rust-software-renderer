@@ -37,6 +37,7 @@ pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Bo
     }
     scene.apply_overrides(&lab6.sets)?;
     scene.camera_mode = lab6.camera.unwrap_or_default();
+    scene.quality = lab6.solar_quality.unwrap_or_default();
     scene.stars = StarField::generate_with(
         lab6.star_seed.unwrap_or(DEFAULT_SEED),
         lab6.stars.unwrap_or(DEFAULT_STARS),

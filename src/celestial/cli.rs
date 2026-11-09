@@ -4,8 +4,8 @@
 use crate::app::{CliArgs, Scene};
 use crate::celestial::DebugView;
 use crate::celestial::timeline::Timeline;
-use crate::solar::CameraMode;
 use crate::solar::skybox::{MAX_STARS, StarDensity};
+use crate::solar::{CameraMode, Quality};
 
 /// Options that only apply to `--scene crown|entrance|house`.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -41,6 +41,8 @@ pub struct CelestialArgs {
     pub star_seed: Option<u32>,
     /// `--star-density uniform|clustered` of the solar scene.
     pub star_density: Option<StarDensity>,
+    /// `--solar-quality full|adaptive` of the solar scene.
+    pub solar_quality: Option<Quality>,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -169,6 +171,9 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
             "--star-density" => {
                 out.star_density = Some(value(&mut it, "--star-density")?.parse()?);
             }
+            "--solar-quality" => {
+                out.solar_quality = Some(value(&mut it, "--solar-quality")?.parse()?);
+            }
             other => {
                 if other == "--mode" {
                     out.mode_explicit = true;
@@ -199,6 +204,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if !solar && lab6.camera.is_some() {
         return Err("--camera requires --scene solar".into());
     }
+    if !solar && lab6.solar_quality.is_some() {
+        return Err("--solar-quality requires --scene solar".into());
+    }
     if !solar && (lab6.stars.is_some() || lab6.star_seed.is_some() || lab6.star_density.is_some()) {
         return Err("--stars, --star-seed and --star-density require --scene solar".into());
     }
@@ -224,6 +232,7 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         stars: None,
         star_seed: None,
         star_density: None,
+        solar_quality: None,
         ..lab6.clone()
     };
     if !celestial && !scene_options.is_empty() {

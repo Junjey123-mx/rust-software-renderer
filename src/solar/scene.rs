@@ -15,7 +15,9 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
-use crate::solar::instance::render_instance_scratch;
+use crate::solar::instance::{
+    Quality, adapted_material, projected_radius_px, render_instance_scratch,
+};
 use crate::solar::ship::render_ship_scratch;
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField, draw_stars};
 use crate::solar::{BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes};
@@ -85,6 +87,8 @@ pub struct SolarScene {
     pub flight: FlightMode,
     /// Background stars, generated once.
     pub stars: StarField,
+    /// Shader quality policy (full by default).
+    pub quality: Quality,
     /// Shaded-stage buffers reused by every draw of this scene.
     scratch: RefCell<RenderScratch>,
     /// Simulated time shared by orbits, spins and material animation.
@@ -108,6 +112,7 @@ impl SolarScene {
             flight: FlightMode::Space,
             stars: StarField::generate(DEFAULT_SEED, DEFAULT_STARS),
             scratch: RefCell::new(RenderScratch::new()),
+            quality: Quality::Full,
             clock: SimulationClock::default(),
             center: Vector3::zero(),
             light_world,
@@ -405,10 +410,20 @@ impl SolarScene {
                     light_world: self.light_for(body),
                     ..shared
                 };
+                let radius_px = projected_radius_px(
+                    &shared.projection,
+                    body.transform.position,
+                    self.radius_of(i),
+                    h,
+                );
+                let drawn = BodyInstance {
+                    material: adapted_material(&body.material, self.quality, radius_px),
+                    ..*body
+                };
                 render_instance_scratch(
                     framebuffer,
                     &self.meshes.sphere,
-                    body,
+                    &drawn,
                     &frame,
                     &mut scratch,
                 )

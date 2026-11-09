@@ -56,3 +56,15 @@ Misma metodología A/B intercalada (120 cuadros): el cuadro completo con descart
 | D (sistema a la vista) | 0 de 3 | 25.83 | 25.38 | −1.7 % (ruido) |
 
 Ahorra la transformación, el recorte y el arranque de hilos de los cuerpos que no pueden aportar píxeles; cuando todo está a la vista no cambia nada. Una prueba de solidez barre 300 posiciones al azar y exige que todo cuerpo descartado produzca cero fragmentos al dibujarlo de verdad.
+
+## Calidad adaptativa opcional (`--solar-quality adaptive`)
+
+Desactivada por defecto (`full` no toca ningún parámetro). En `adaptive`, los cuerpos con radio proyectado menor de 120 px bajan de forma continua los pasos de parallax (8 → 2) y las octavas de ruido (5 → 3) de Crimson Entrance y The King's Crown hasta 20 px; House of Cards no cambia. No hay histéresis a propósito: una histéresis guardaría estado entre cuadros y el mismo instante podría verse distinto según la historia, lo que rompería grabaciones y benchmarks deterministas. A/B intercalado (80 cuadros):
+
+| Escenario | Radios proyectados (px) | Full (ms) | Adaptive (ms) | Cambio | Píxeles cubiertos que cambian |
+|---|---|---:|---:|---:|---:|
+| C | 51, 26, 51 | 14.23 | 13.47 | −5.3 % | 1.5 % |
+| D | 70, 34, 32 | 23.30 | 22.52 | −3.3 % | 1.5 % |
+| E | 176, 159, ∞ | 38.28 | 39.00 | +1.9 % (ruido) | 0 % |
+
+Ganancia modesta en vistas lejanas e imagen idéntica en los acercamientos, que son el caso caro (J).

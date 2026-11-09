@@ -207,3 +207,83 @@ fn render_instance_does_not_clear_the_framebuffer() {
     render_instance(&mut fb, &meshes.sphere, &inst, &frame).unwrap();
     assert_eq!(fb.get_pixel(3, 3), Some(marker));
 }
+
+// ---------------------------------------------------------------------------
+// Opt-in adaptive quality
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::celestial::CelestialMaterial;
+use rust_software_renderer::solar::instance::{FULL_DETAIL_PX, LOW_DETAIL_PX};
+use rust_software_renderer::solar::{Quality, adapted_material};
+
+#[test]
+fn full_quality_and_large_bodies_keep_the_material_unchanged() {
+    for body in Body::ALL {
+        let m = CelestialMaterial::for_body(body);
+        for px in [0.0, 5.0, 50.0, 500.0, f32::INFINITY] {
+            assert_eq!(adapted_material(&m, Quality::Full, px), m, "{body} {px}");
+        }
+        assert_eq!(adapted_material(&m, Quality::Adaptive, FULL_DETAIL_PX), m);
+        assert_eq!(adapted_material(&m, Quality::Adaptive, f32::INFINITY), m);
+    }
+}
+
+#[test]
+fn adaptive_quality_ramps_detail_down_on_small_bodies_only() {
+    let m = CelestialMaterial::for_body(Body::CrimsonEntrance);
+    let steps = |px: f32| {
+        adapted_material(&m, Quality::Adaptive, px)
+            .get("parallax_steps")
+            .unwrap()
+    };
+    let octaves = |px: f32| {
+        adapted_material(&m, Quality::Adaptive, px)
+            .get("terrain_octaves")
+            .unwrap()
+    };
+    assert_eq!(steps(LOW_DETAIL_PX), 2.0);
+    assert_eq!(octaves(1.0), 3.0);
+    assert_eq!(
+        steps(FULL_DETAIL_PX - 0.01),
+        8.0,
+        "a hair below full keeps the full count"
+    );
+    // Monotonic: a larger body never gets less detail.
+    let mut last = 0.0;
+    for px in (0..140).map(|i| i as f32) {
+        let s = steps(px);
+        assert!(s >= last, "{px}");
+        last = s;
+    }
+    let c = CelestialMaterial::for_body(Body::KingsCrown);
+    assert_eq!(
+        adapted_material(&c, Quality::Adaptive, 10.0).get("plasma_octaves"),
+        Some(3.0)
+    );
+    let h = CelestialMaterial::for_body(Body::HouseOfCards);
+    assert_eq!(
+        adapted_material(&h, Quality::Adaptive, 10.0),
+        h,
+        "house has no cost knob here"
+    );
+    assert!("adaptive".parse::<Quality>().is_ok() && "ultra".parse::<Quality>().is_err());
+}
+
+#[test]
+fn projected_radius_shrinks_with_distance() {
+    use rust_software_renderer::pipeline::PerspectiveCamera;
+    use rust_software_renderer::solar::projected_radius_px;
+    let cam = PerspectiveCamera::new(
+        Vector3::zero(),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        std::f32::consts::FRAC_PI_2,
+        0.05,
+    )
+    .unwrap();
+    let p = ViewProjection::Perspective(cam);
+    let near = projected_radius_px(&p, Vector3::new(0.0, 0.0, 5.0), 1.0, 600);
+    let far = projected_radius_px(&p, Vector3::new(0.0, 0.0, 10.0), 1.0, 600);
+    assert!((near - 60.0).abs() < 1e-3 && (far - 30.0).abs() < 1e-3);
+    assert!(projected_radius_px(&p, Vector3::new(0.0, 0.0, 0.5), 1.0, 600).is_infinite());
+}

@@ -148,3 +148,84 @@ pub fn render_instance_scratch(
         scratch,
     )
 }
+
+/// Shader quality of the solar scene.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Quality {
+    /// Every body with its full laboratory six parameters (default).
+    #[default]
+    Full,
+    /// Opt-in: small bodies on screen use fewer parallax steps and noise
+    /// octaves. Near bodies keep full quality.
+    Adaptive,
+}
+
+impl std::str::FromStr for Quality {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "full" => Ok(Self::Full),
+            "adaptive" => Ok(Self::Adaptive),
+            other => Err(format!(
+                "unknown solar quality '{other}' (expected full or adaptive)"
+            )),
+        }
+    }
+}
+
+/// Projected radius (pixels) from which a body keeps full quality.
+pub const FULL_DETAIL_PX: f32 = 120.0;
+/// Projected radius (pixels) at and below which the lowest detail applies.
+pub const LOW_DETAIL_PX: f32 = 20.0;
+
+/// Material used to draw a body whose projected radius is `radius_px`
+/// under `quality`. `Full`, or any body at least `FULL_DETAIL_PX` across,
+/// returns the material unchanged; otherwise the parallax steps and the
+/// noise octaves ramp down continuously (no state between frames, so the
+/// same instant always renders the same image). The stored material is
+/// never modified.
+pub fn adapted_material(
+    material: &CelestialMaterial,
+    quality: Quality,
+    radius_px: f32,
+) -> CelestialMaterial {
+    if quality == Quality::Full || radius_px.is_nan() || radius_px >= FULL_DETAIL_PX {
+        return *material;
+    }
+    let t = ((radius_px - LOW_DETAIL_PX) / (FULL_DETAIL_PX - LOW_DETAIL_PX)).clamp(0.0, 1.0);
+    let lerp = |low: f32, full: f32| (low + (full - low) * t).round().min(full);
+    let mut m = *material;
+    match &mut m {
+        CelestialMaterial::Entrance(p) => {
+            p.parallax_steps = lerp(2.0, p.parallax_steps);
+            p.terrain_octaves = lerp(3.0_f32.min(p.terrain_octaves), p.terrain_octaves);
+        }
+        CelestialMaterial::Crown(p) => {
+            p.plasma_octaves = lerp(3.0_f32.min(p.plasma_octaves), p.plasma_octaves);
+        }
+        CelestialMaterial::House(_) => {}
+    }
+    m
+}
+
+/// Radius in pixels of a world sphere seen through `projection` on a
+/// framebuffer `height` pixels tall (infinite when the eye is inside it).
+pub fn projected_radius_px(
+    projection: &ViewProjection,
+    center: Vector3,
+    radius: f32,
+    height: u32,
+) -> f32 {
+    match projection {
+        ViewProjection::Orbit(view) => radius * view.scale(),
+        ViewProjection::Perspective(camera) => {
+            let z = camera.world_to_view(center).z;
+            if z <= radius {
+                f32::INFINITY
+            } else {
+                camera.focal_px(height) * radius / z
+            }
+        }
+    }
+}
