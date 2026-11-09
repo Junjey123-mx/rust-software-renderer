@@ -25,7 +25,7 @@ use std::path::PathBuf;
 ///   window to `file` and exit.
 /// * `--mode wireframe|barycentric|scanline`: triangle rasterization mode
 ///   (default: wireframe, the laboratory 4 behaviour).
-/// * `--scene ship|triangles|crown|entrance|house`: the OBJ model (default), the controlled
+/// * `--scene ship|triangles|crown|entrance|house|solar`: the OBJ model (default), the controlled
 ///   triangle scene used to compare the modes, or a laboratory 6 celestial
 ///   body (its own options are extracted first by `celestial::cli::extract`).
 /// * `--benchmark-triangles`: headless timing of both fill algorithms; no
@@ -72,6 +72,7 @@ Usage: rust-software-renderer [options]
   --set <param>=<value>   --debug-view <view>   --threads <n>
   --record <s> [--fps n] [--timeline material|orbit|light|showcase]   raw rgb24 frames on stdout
   --benchmark-shaders [--benchmark-output <dir>]   headless shader timing (default docs/results/lab6)
+  --scene solar                  Camino al Proyecto 3: the three bodies in one scene (orbit camera, --threads)
 Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit
 Celestial keys: TAB body, SPACE pause, J/L I/K light, N debug view, [ ] main parameter, C/H/B/P toggle clouds, shadows, bump and parallax when the body provides them";
 
@@ -82,6 +83,8 @@ pub enum Scene {
     Triangles,
     /// Laboratory 6: a celestial body on the course sphere.
     Celestial(crate::celestial::Body),
+    /// Camino al Proyecto 3: the three bodies composed in one scene.
+    Solar,
 }
 
 impl std::str::FromStr for Scene {
@@ -91,9 +94,10 @@ impl std::str::FromStr for Scene {
         match s {
             "ship" => Ok(Self::Ship),
             "triangles" => Ok(Self::Triangles),
+            "solar" => Ok(Self::Solar),
             other => other.parse().map(Self::Celestial).map_err(|_| {
                 format!(
-                    "unknown scene '{other}' (expected ship, triangles, crown, entrance or house)"
+                    "unknown scene '{other}' (expected ship, triangles, crown, entrance, house or solar)"
                 )
             }),
         }
@@ -396,6 +400,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         return crate::celestial::viewer::run(body, &args, &lab6);
     }
+    if args.scene == Scene::Solar {
+        return crate::solar::viewer::run(&args, &lab6);
+    }
     let config = AppConfig::default();
     let mode = args.mode;
     let (vertex_array, projection, width, height) = match args.scene {
@@ -439,7 +446,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             // Already in pixels: no viewport fit, no double transform.
             (scene, Projection::Screen, SCENE_WIDTH, SCENE_HEIGHT)
         }
-        Scene::Celestial(_) => unreachable!("celestial scenes return early"),
+        Scene::Celestial(_) | Scene::Solar => unreachable!("celestial scenes return early"),
     };
     let uniforms = Uniforms::default();
 

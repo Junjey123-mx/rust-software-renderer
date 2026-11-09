@@ -147,12 +147,21 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
 /// Cross-checks the laboratory 6 options against the parsed scene.
 pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     let celestial = matches!(cli.scene, Scene::Celestial(_));
+    let solar = cli.scene == Scene::Solar;
     if lab6.benchmark_shaders && cli.benchmark {
         return Err("--benchmark-shaders cannot be combined with --benchmark-triangles".into());
     }
-    // The shader benchmark renders every body itself, so it needs no scene.
+    if solar && lab6.record.is_some() {
+        return Err("--record is not available for --scene solar yet".into());
+    }
+    if solar && cli.obj.is_some() {
+        return Err("--obj cannot be combined with --scene solar".into());
+    }
+    // The shader benchmark renders every body itself, so it needs no scene;
+    // the solar scene shares only `--threads` with the single-body scenes.
     let scene_options = CelestialArgs {
         benchmark_shaders: false,
+        threads: if solar { None } else { lab6.threads },
         ..lab6.clone()
     };
     if !celestial && !scene_options.is_empty() {
