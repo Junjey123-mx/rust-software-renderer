@@ -5,6 +5,7 @@ Proyecto del curso **Gráficas por Computadora** — **Universidad del Valle de 
 Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado), una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado y, sobre todo ello, el **Laboratorio 6: planetas y estrellas con shaders**: tres cuerpos celestes con fragment shaders procedurales sobre la misma esfera.
 
 - [Laboratorio 6 — Planetas y estrellas con shaders](#laboratorio-6--planetas-y-estrellas-con-shaders)
+- [Camino al Proyecto 3 — Sistema solar navegable](#camino-al-proyecto-3--sistema-solar-navegable)
 - [Vista interactiva (opcional)](#vista-interactiva-de-la-nave-mejora-opcional)
 - [Demostración en video: tres modos](#demostración-interactiva--tres-modos-de-rasterización)
 - [Laboratorio 5 — Filling triangles](#laboratorio-5--filling-triangles)
@@ -224,6 +225,50 @@ Los ocho efectos están implementados y cada uno tiene pruebas automáticas y ev
 
 - **Videos:** H.264 con `h264_nvenc`, el primer codificador que pasó la prueba funcional en esta máquina (`libx264` no está instalado). Los MP4 van a 30 fps; los GIF se generan desde el mismo intermedio FFV1 sin pérdida, a 8 fps (5 fps el de los dos hemisferios). Antes de reemplazar un archivo, `encode.sh` comprueba su códec, tamaño y fotogramas y lo decodifica completo.
 - **Pruebas:** `cargo test` ejecuta **402 pruebas**: las 207 de los laboratorios 4 y 5 y de la vista interactiva, más 195 del Laboratorio 6, entre ellas el oráculo de 21 *hashes* que congela la nave y sus tres modos.
+
+---
+
+## Camino al Proyecto 3 — Sistema solar navegable
+
+Etapa preparatoria del proyecto final, **no la entrega del Proyecto 3** (su rúbrica aún no existe). La escena nueva `--scene solar` reúne The King's Crown, Crimson Entrance y House of Cards del Laboratorio 6 con la nave del Laboratorio 4: órbitas, cámara en perspectiva, pilotaje, vuelo local alrededor de los planetas, fondo estelar y viaje rápido, todo con el mismo rasterizador en CPU. Las escenas anteriores no cambian y sus imágenes siguen congeladas por oráculos. La guía completa (arquitectura, convenciones, las siete guías del curso frente a lo implementado, mediciones y límites) está en [docs/preproyecto3.md](docs/preproyecto3.md).
+
+![Vuelo por el sistema solar](docs/videos/preproject3/01-solar-flight.gif)
+
+▶ [Video completo](docs/videos/preproject3/01-solar-flight.mp4) · 22 s, 800×600, 30 fps: aproximación, vuelo local sobre Crimson Entrance, warp y vuelo sobre House of Cards, y el sistema completo desde la cámara orbital.
+
+| Sistema en órbita | Cámara Follow | Vuelo local | Fondo estelar | Viaje rápido |
+|---|---|---|---|---|
+| ![Sistema](docs/screenshots/preproject3/01-system-orbit.png) | ![Follow](docs/screenshots/preproject3/02-ship-follow.png) | ![Local](docs/screenshots/preproject3/03-local-flight.png) | ![Estrellas](docs/screenshots/preproject3/04-skybox.png) | ![Warp](docs/screenshots/preproject3/05-quick-travel.png) |
+
+```bash
+cargo run --release -- --scene solar                       # cámara detrás de la nave
+cargo run --release -- --scene solar --camera orbit        # cámara orbital ortográfica
+cargo run --release -- --scene solar --set entrance.cloud_coverage=0.7 --stars 6000 --star-density clustered
+cargo run --release -- --scene solar --record 22 --fps 30 --timeline flight | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - vuelo.mp4
+cargo run --release -- --benchmark-solar                   # escenarios A-J -> docs/results/preproject3
+```
+
+| Tecla | Acción |
+|---|---|
+| `W` / `S`, `LEFT SHIFT` | Avanzar / retroceder; velocidad de la luz ×8 |
+| Flechas | Girar y levantar la nariz (con el rig Orbit, orbitar la cámara) |
+| `L` | Vuelo local sobre el planeta más cercano: arcos a distancia constante que siguen su órbita |
+| `E` / `Q` | Alejarse / acercarse al planeta en vuelo local (zoom en el rig Orbit) |
+| `F1` `F2` `F3` | Warp junto a la posición actual de cada cuerpo |
+| `V` | Cámara Follow ↔ cámara Orbit |
+| `SPACE`, `1` `2` `3` | Pausa de órbitas y materiales; modo de rasterización |
+
+**Cómo funciona.**
+- **Escena:** una esfera cargada una vez se dibuja como varias instancias con su transformación y su material. La luz y el ojo se giran al espacio de cada objeto, así que los patrones procedurales quedan pegados al cuerpo cuando gira.
+- **Cuadro:** se limpia una sola vez, las estrellas escriben solo color y todos los objetos comparten la profundidad.
+- **Perspectiva:** recorta contra el plano cercano antes de dividir, interpola de forma correcta en perspectiva y da a Fresnel, especular y parallax la dirección al ojo de cada fragmento.
+- **Nave:** usa una base `forward/up` girada con Rodrigues. El vuelo local recorre círculos máximos y acompaña el desplazamiento orbital, sin gravedad ni colisiones.
+
+**Rendimiento** (CPU, 800×600, 20 hilos; [método y A/B](docs/results/preproject3/README.md)): unos 16 ms con el sistema y la nave a la vista, 20 ms cerca de Crimson Entrance y 52 ms en el vuelo más bajo sobre ella, que es el peor caso. Dos optimizaciones medidas se adoptaron:
+- sombrear todo el cuadro con un solo grupo de hilos, que da un −26 % en la vista del sistema con imágenes idénticas ([estudio](docs/results/preproject3/thread_scheduler_study.md));
+- descartar los cuerpos fuera de cámara.
+
+La calidad adaptativa es opcional (`--solar-quality adaptive`). `cargo test` suma 149 pruebas nuevas, entre ellas los oráculos de los cuerpos del Laboratorio 6, y los medios se regeneran con [`docs/videos/preproject3/encode.sh`](docs/videos/preproject3/encode.sh).
 
 ---
 
@@ -557,7 +602,7 @@ Una ruta inexistente, un OBJ inválido o un argumento desconocido terminan con m
 ### Pruebas y validación
 
 ```bash
-cargo test                                   # 402 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 195 del Lab 6)
+cargo test                                   # 551 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 195 del Lab 6 + 149 del Camino al Proyecto 3)
 cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings
