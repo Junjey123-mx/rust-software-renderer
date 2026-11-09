@@ -170,16 +170,7 @@ impl SolarScene {
     /// eye direction at a distance that frames the system at zoom 1 and
     /// approaches with the zoom.
     pub fn perspective_camera(&self) -> PerspectiveCamera {
-        let cam = &self.view.camera;
-        let distance = (self.extent().max(1.0) * 2.2) / cam.zoom;
-        PerspectiveCamera::new(
-            cam.target + cam.eye_direction() * distance,
-            cam.target,
-            Vector3::new(0.0, 1.0, 0.0),
-            FOV_Y,
-            NEAR,
-        )
-        .expect("orbit rig gives a valid perspective camera")
+        crate::solar::camera::orbit_perspective(&self.view.camera, self.extent().max(1.0) * 2.2)
     }
 
     pub fn projection(&self) -> ViewProjection {
