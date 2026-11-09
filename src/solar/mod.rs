@@ -11,6 +11,7 @@ pub mod resources;
 pub mod scene;
 pub mod ship;
 pub mod skybox;
+pub mod travel;
 pub mod viewer;
 
 pub use clock::{MAX_STEP, SimulationClock};

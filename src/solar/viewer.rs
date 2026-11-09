@@ -12,6 +12,7 @@ use crate::solar::camera::CameraRig;
 use crate::solar::flight::{FlightInput, FlightMode, space_step};
 use crate::solar::input::{SolarAction, poll_solar};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField};
+use crate::solar::travel::warp_to;
 use crate::solar::{SolarMeshes, SolarScene};
 use raylib::math::Vector3;
 use std::error::Error;
@@ -126,6 +127,9 @@ pub fn step(
                 Ok(mode) => println!("Flight mode: {}", mode.name()),
                 Err(reason) => println!("Local flight unavailable: {reason}"),
             },
+            &SolarAction::Warp(index) if warp_to(scene, index) => {
+                println!("Warped to {}", scene.bodies[index].body().display_name());
+            }
             _ => {}
         }
     }
@@ -155,7 +159,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, arrows turn (follow) or orbit (orbit rig), L local flight, E/Q altitude (local), V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, arrows turn (follow) or orbit (orbit rig), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
