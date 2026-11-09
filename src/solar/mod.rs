@@ -4,5 +4,5 @@
 pub mod instance;
 pub mod resources;
 
-pub use instance::instance_uniforms;
+pub use instance::{BodyInstance, FrameContext, instance_uniforms, render_instance};
 pub use resources::{SPHERE_RADIUS, SolarMeshes};

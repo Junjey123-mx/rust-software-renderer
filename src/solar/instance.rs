@@ -1,6 +1,13 @@
 //! One transformed celestial body and the shader inputs it needs.
 
-use crate::pipeline::{ShaderUniforms, Transform};
+use crate::celestial::{Body, CelestialMaterial, DebugView};
+use crate::geometry::Vertex;
+use crate::pipeline::{
+    OrbitView, RenderError, ShadedOptions, ShadedStats, ShaderUniforms, Transform, Uniforms,
+    render_shaded,
+};
+use crate::rasterization::TriangleMode;
+use crate::rendering::Framebuffer;
 use raylib::math::Vector3;
 
 /// Shader uniforms of one instance: the laboratory six shaders expect the
@@ -27,4 +34,73 @@ fn unit(v: Vector3) -> Vector3 {
     } else {
         Vector3::zero()
     }
+}
+
+/// A celestial body placed in the world: its own material parameters and
+/// transform over the shared sphere mesh.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BodyInstance {
+    pub material: CelestialMaterial,
+    pub transform: Transform,
+    /// Self-rotation, radians per simulated second (applied to `yaw`).
+    pub spin_speed: f32,
+    pub debug: DebugView,
+}
+
+impl BodyInstance {
+    pub fn new(body: Body, transform: Transform, spin_speed: f32) -> Self {
+        Self {
+            material: CelestialMaterial::for_body(body),
+            transform,
+            spin_speed,
+            debug: DebugView::None,
+        }
+    }
+
+    pub fn body(&self) -> Body {
+        self.material.body()
+    }
+}
+
+/// Values shared by every instance drawn in one frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameContext {
+    pub view: OrbitView,
+    /// Simulated seconds.
+    pub time: f32,
+    /// Unit direction towards the light, world space.
+    pub light_world: Vector3,
+    pub mode: TriangleMode,
+    pub options: ShadedOptions,
+}
+
+/// Draws one instance into `framebuffer` (never cleared here) through the
+/// shaded stage with the orbit view: the model matrix comes from the
+/// transform and the light and eye directions are given in world space.
+pub fn render_instance(
+    framebuffer: &mut Framebuffer,
+    mesh: &[Vertex],
+    instance: &BodyInstance,
+    frame: &FrameContext,
+) -> Result<ShadedStats, RenderError> {
+    let eye_world = frame.view.camera.eye_direction();
+    let uniforms = instance_uniforms(
+        &instance.transform,
+        frame.time,
+        frame.light_world,
+        eye_world,
+    );
+    let prepared = instance.material.prepare(&uniforms, instance.debug);
+    let model = Uniforms {
+        model_matrix: instance.transform.matrix(),
+    };
+    render_shaded(
+        framebuffer,
+        &model,
+        mesh,
+        frame.view,
+        frame.mode,
+        frame.options,
+        &|s| prepared.shade(s),
+    )
 }
