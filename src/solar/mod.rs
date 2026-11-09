@@ -3,6 +3,8 @@
 
 pub mod instance;
 pub mod resources;
+pub mod scene;
 
 pub use instance::{BodyInstance, FrameContext, instance_uniforms, render_instance};
 pub use resources::{SPHERE_RADIUS, SolarMeshes};
+pub use scene::SolarScene;
