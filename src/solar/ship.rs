@@ -8,7 +8,7 @@
 use crate::geometry::Vertex;
 use crate::pipeline::{
     DirectionalLight, NormalSource, RenderError, RenderScratch, ShadedOptions, ShadedStats,
-    Uniforms, ViewProjection, intensity, render_shaded_with_scratch,
+    SurfaceSample, Uniforms, ViewProjection, intensity, render_shaded_with_scratch,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
@@ -173,17 +173,9 @@ pub fn render_ship_scratch(
     threads: usize,
     scratch: &mut RenderScratch,
 ) -> Result<ShadedStats, RenderError> {
-    let light = DirectionalLight {
-        direction: ship.to_object_dir(light_world),
-        ..DirectionalLight::default()
-    };
+    let light = ship_light(ship, light_world);
     let uniforms = Uniforms {
         model_matrix: ship.model_matrix(),
-    };
-    let options = ShadedOptions {
-        cull_back_faces: false,
-        normal_source: NormalSource::Face,
-        threads,
     };
     render_shaded_with_scratch(
         framebuffer,
@@ -191,8 +183,30 @@ pub fn render_ship_scratch(
         mesh,
         projection,
         mode,
-        options,
-        &|s, _| light.base_color * intensity(s.face_normal, &light),
+        ship_options(threads),
+        &|s, _| ship_color(&light, s),
         scratch,
     )
+}
+
+/// The world light rotated into the spacecraft's object space.
+pub fn ship_light(ship: &ShipState, light_world: Vector3) -> DirectionalLight {
+    DirectionalLight {
+        direction: ship.to_object_dir(light_world),
+        ..DirectionalLight::default()
+    }
+}
+
+/// Shaded-stage options of the spacecraft: two-sided flat faces.
+pub fn ship_options(threads: usize) -> ShadedOptions {
+    ShadedOptions {
+        cull_back_faces: false,
+        normal_source: NormalSource::Face,
+        threads,
+    }
+}
+
+/// Flat color of one spacecraft fragment.
+pub fn ship_color(light: &DirectionalLight, sample: &SurfaceSample) -> Vector3 {
+    light.base_color * intensity(sample.face_normal, light)
 }

@@ -1,10 +1,10 @@
 //! One transformed celestial body and the shader inputs it needs.
 
-use crate::celestial::{Body, CelestialMaterial, DebugView};
+use crate::celestial::{Body, CelestialMaterial, DebugView, PreparedShader};
 use crate::geometry::Vertex;
 use crate::pipeline::{
-    RenderError, RenderScratch, ShadedOptions, ShadedStats, ShaderUniforms, Transform, Uniforms,
-    ViewProjection, render_shaded_with_scratch,
+    FragmentView, RenderError, RenderScratch, ShadedOptions, ShadedStats, ShaderUniforms,
+    SurfaceSample, Transform, Uniforms, ViewProjection, render_shaded_with_scratch,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
@@ -122,6 +122,25 @@ pub fn render_instance(
     )
 }
 
+/// The instance's shader with its per-frame values computed for `frame`.
+pub fn prepare_instance(instance: &BodyInstance, frame: &FrameContext) -> PreparedShader {
+    let transform = instance.transform;
+    let eye_world = eye_towards(&frame.projection, transform.position);
+    let uniforms = instance_uniforms(&transform, frame.time, frame.light_world, eye_world);
+    instance.material.prepare(&uniforms, instance.debug)
+}
+
+/// Color of one fragment of an instance: the shader sees the fragment's
+/// own direction towards the eye, rotated into the instance's object space.
+pub fn shade_instance(
+    prepared: &PreparedShader,
+    transform: &Transform,
+    sample: &SurfaceSample,
+    view: &FragmentView,
+) -> Vector3 {
+    prepared.shade_with_eye(sample, unit(transform.to_object_dir(view.view_direction)))
+}
+
 /// `render_instance` reusing the caller's buffers.
 pub fn render_instance_scratch(
     framebuffer: &mut Framebuffer,
@@ -131,9 +150,7 @@ pub fn render_instance_scratch(
     scratch: &mut RenderScratch,
 ) -> Result<ShadedStats, RenderError> {
     let transform = instance.transform;
-    let eye_world = eye_towards(&frame.projection, transform.position);
-    let uniforms = instance_uniforms(&transform, frame.time, frame.light_world, eye_world);
-    let prepared = instance.material.prepare(&uniforms, instance.debug);
+    let prepared = prepare_instance(instance, frame);
     let model = Uniforms {
         model_matrix: transform.matrix(),
     };
@@ -144,7 +161,7 @@ pub fn render_instance_scratch(
         &frame.projection,
         frame.mode,
         frame.options,
-        &|s, v| prepared.shade_with_eye(s, unit(transform.to_object_dir(v.view_direction))),
+        &|s, v| shade_instance(&prepared, &transform, s, v),
         scratch,
     )
 }

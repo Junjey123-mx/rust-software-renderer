@@ -624,3 +624,83 @@ fn facing_empty_space_skips_every_body_and_the_image_is_unchanged() {
     ];
     assert!(!o.body_in_view(0, W, H) && o.body_in_view(1, W, H));
 }
+
+// ---------------------------------------------------------------------------
+// Frame batch (one shading pool per frame)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_frame_batch_matches_drawing_the_instances_one_by_one() {
+    use rust_software_renderer::benchmark::SolarBenchConfig;
+    use rust_software_renderer::benchmark::solar::scenario_scene;
+    let config = SolarBenchConfig {
+        width: W,
+        height: H,
+        ..SolarBenchConfig::default()
+    };
+    let one_by_one = |s: &SolarScene, mode: TriangleMode, opts: ShadedOptions| {
+        let mut fb = Framebuffer::new(W, H);
+        fb.clear();
+        rust_software_renderer::solar::skybox::draw_stars(&mut fb, &s.stars, &s.sky_camera());
+        s.render_objects_without_clear(&mut fb, mode, opts).unwrap();
+        s.render_ship_without_clear(&mut fb, mode, opts).unwrap();
+        fnv(&fb)
+    };
+    let mut checked = 0;
+    for id in ["C", "D", "E", "F", "G", "J"] {
+        for camera in [CameraMode::Perspective, CameraMode::Orbit] {
+            let mut s = scenario_scene(id, &config).unwrap();
+            s.camera_mode = camera;
+            for mode in [
+                TriangleMode::FilledScanline,
+                TriangleMode::FilledBarycentric,
+            ] {
+                for threads in [1, 0] {
+                    let opts = ShadedOptions {
+                        threads,
+                        ..ShadedOptions::default()
+                    };
+                    let mut fb = Framebuffer::new(W, H);
+                    s.render_frame(&mut fb, mode, opts).unwrap();
+                    assert_eq!(
+                        fnv(&fb),
+                        one_by_one(&s, mode, opts),
+                        "{id} {camera:?} {mode} {threads}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 48);
+}
+
+#[test]
+fn the_batch_shades_no_more_fragments_than_one_by_one_and_wireframe_still_draws() {
+    let s = flying_scene();
+    let mut fb = Framebuffer::new(W, H);
+    let batched = s
+        .render_frame(&mut fb, TriangleMode::FilledScanline, options())
+        .unwrap();
+    let mut one = Framebuffer::new(W, H);
+    one.clear();
+    let bodies = s
+        .render_objects_without_clear(&mut one, TriangleMode::FilledScanline, options())
+        .unwrap();
+    let ship = s
+        .render_ship_without_clear(&mut one, TriangleMode::FilledScanline, options())
+        .unwrap();
+    let separate: usize =
+        bodies.iter().map(|b| b.fragments_shaded).sum::<usize>() + ship.fragments_shaded;
+    assert!(
+        batched > 0 && batched <= separate,
+        "{batched} vs {separate}"
+    );
+    let mut wire = Framebuffer::new(W, H);
+    assert_eq!(
+        s.render_frame(&mut wire, TriangleMode::Wireframe, options())
+            .unwrap(),
+        0
+    );
+    assert!(wire.count_non_background() > 100);
+}

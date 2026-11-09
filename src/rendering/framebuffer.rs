@@ -82,6 +82,27 @@ impl Framebuffer {
         }
     }
 
+    /// Writes only the depth (frame batches reject later fragments early);
+    /// non-finite depths and out-of-range coordinates are ignored.
+    pub fn set_depth(&mut self, x: i32, y: i32, depth: f32) {
+        if depth.is_finite()
+            && let Some(i) = self.index(x, y)
+        {
+            self.depth[i] = depth;
+        }
+    }
+
+    /// Writes the color only where `depth` is finite and equal to the stored
+    /// depth: the fragment that won the depth test of a frame batch.
+    pub fn point_if_depth(&mut self, x: i32, y: i32, color: Vector3, depth: f32) {
+        if depth.is_finite()
+            && let Some(i) = self.index(x, y)
+            && self.depth[i] == depth
+        {
+            self.pixels[i] = color;
+        }
+    }
+
     pub fn get_depth(&self, x: i32, y: i32) -> Option<f32> {
         self.index(x, y).map(|i| self.depth[i])
     }

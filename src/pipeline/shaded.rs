@@ -79,10 +79,18 @@ pub struct FragmentView {
 /// Per-frame buffers of the shaded stage, owned by the caller so their
 /// capacity survives between draws instead of being reallocated for every
 /// instance. Contents never carry over: every draw clears them first.
+///
+/// The same buffers also serve a frame batch: every instance of a frame is
+/// rasterized first with its depth written at once (`rasterize`), all
+/// samples are shaded by one thread pool (`shade_batch`) and the colors are
+/// written where each sample won the depth test (`resolve`). The image is
+/// identical to drawing the instances one by one.
 #[derive(Debug, Clone, Default)]
 pub struct RenderScratch {
     samples: Vec<SurfaceSample>,
     views: Vec<FragmentView>,
+    /// Batch tag (instance index) of every sample.
+    tags: Vec<u32>,
     colors: Vec<Vector3>,
 }
 
@@ -95,6 +103,143 @@ impl RenderScratch {
     pub fn capacity(&self) -> usize {
         self.samples.capacity().min(self.colors.capacity())
     }
+
+    fn clear(&mut self) {
+        self.samples.clear();
+        self.views.clear();
+        self.tags.clear();
+    }
+
+    fn sink(&mut self, tag: u32, write_depth: bool) -> Sink<'_> {
+        Sink {
+            samples: &mut self.samples,
+            views: &mut self.views,
+            tags: &mut self.tags,
+            tag,
+            write_depth,
+        }
+    }
+
+    /// Starts a frame batch.
+    pub fn begin_batch(&mut self) {
+        self.clear();
+    }
+
+    /// Samples collected by the current batch.
+    pub fn batch_len(&self) -> usize {
+        self.samples.len()
+    }
+
+    /// Rasterizes one instance into the batch with `tag`, writing the depth
+    /// of every accepted sample at once. Filled modes collect samples; the
+    /// wireframe outline is drawn immediately and adds none.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rasterize(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        uniforms: &Uniforms,
+        vertex_array: &[Vertex],
+        projection: &ViewProjection,
+        mode: TriangleMode,
+        options: ShadedOptions,
+        tag: u32,
+    ) -> Result<ShadedStats, RenderError> {
+        match projection {
+            ViewProjection::Orbit(view) => {
+                if mode == TriangleMode::Wireframe {
+                    return orbit_wireframe(framebuffer, uniforms, vertex_array, *view);
+                }
+                let view_direction = view.camera.eye_direction();
+                let mut sink = self.sink(tag, true);
+                raster_orbit(
+                    framebuffer,
+                    uniforms,
+                    vertex_array,
+                    *view,
+                    mode,
+                    options,
+                    view_direction,
+                    &mut sink,
+                )
+            }
+            ViewProjection::Perspective(camera) => {
+                let mut sink = self.sink(tag, true);
+                raster_perspective(
+                    framebuffer,
+                    uniforms,
+                    vertex_array,
+                    camera,
+                    mode,
+                    options,
+                    &mut sink,
+                )
+            }
+        }
+    }
+
+    /// Shades every sample of the batch with one thread pool; `shader`
+    /// receives the sample's tag.
+    pub fn shade_batch<F>(&mut self, threads: usize, shader: F)
+    where
+        F: Fn(u32, &SurfaceSample, &FragmentView) -> Vector3 + Sync,
+    {
+        let (samples, views, tags) = (&self.samples, &self.views, &self.tags);
+        shade_indexed(&mut self.colors, samples.len(), threads, |i| {
+            shader(tags[i], &samples[i], &views[i])
+        });
+    }
+
+    /// Writes each shaded sample where it won the depth test of the batch.
+    pub fn resolve(&self, framebuffer: &mut Framebuffer) {
+        for (s, &color) in self.samples.iter().zip(&self.colors) {
+            framebuffer.point_if_depth(s.x, s.y, color, s.depth);
+        }
+    }
+}
+
+/// Destination of rasterized samples.
+struct Sink<'a> {
+    samples: &'a mut Vec<SurfaceSample>,
+    views: &'a mut Vec<FragmentView>,
+    tags: &'a mut Vec<u32>,
+    tag: u32,
+    /// Frame batches write each accepted depth at once so later instances
+    /// are rejected early; single draws resolve depth when writing color.
+    write_depth: bool,
+}
+
+impl Sink<'_> {
+    fn push(&mut self, framebuffer: &mut Framebuffer, sample: SurfaceSample, view: FragmentView) {
+        if self.write_depth {
+            framebuffer.set_depth(sample.x, sample.y, sample.depth);
+        }
+        self.samples.push(sample);
+        self.views.push(view);
+        self.tags.push(self.tag);
+    }
+}
+
+/// Laboratory 4/5 outline of the orbit path (no shader evaluation).
+fn orbit_wireframe(
+    framebuffer: &mut Framebuffer,
+    uniforms: &Uniforms,
+    vertex_array: &[Vertex],
+    view: OrbitView,
+) -> Result<ShadedStats, RenderError> {
+    let s = render_with_settings(
+        framebuffer,
+        uniforms,
+        vertex_array,
+        Projection::Orbit(view),
+        TriangleMode::Wireframe,
+        RenderSettings::default(),
+    )?;
+    Ok(ShadedStats {
+        vertices_processed: s.vertices_processed,
+        triangles_processed: s.triangles_processed,
+        fragments_generated: s.fragments_generated,
+        ..ShadedStats::default()
+    })
 }
 
 /// Renders `vertex_array` with the orbit `view`, shading every visible
@@ -139,22 +284,49 @@ where
     S: Fn(&SurfaceSample) -> Vector3 + Sync,
 {
     if mode == TriangleMode::Wireframe {
-        let s = render_with_settings(
-            framebuffer,
-            uniforms,
-            vertex_array,
-            Projection::Orbit(view),
-            TriangleMode::Wireframe,
-            RenderSettings::default(),
-        )?;
-        return Ok(ShadedStats {
-            vertices_processed: s.vertices_processed,
-            triangles_processed: s.triangles_processed,
-            fragments_generated: s.fragments_generated,
-            ..ShadedStats::default()
-        });
+        return orbit_wireframe(framebuffer, uniforms, vertex_array, view);
     }
+    scratch.clear();
+    let view_direction = view.camera.eye_direction();
+    let mut stats = raster_orbit(
+        framebuffer,
+        uniforms,
+        vertex_array,
+        view,
+        mode,
+        options,
+        view_direction,
+        &mut scratch.sink(0, false),
+    )?;
 
+    let shade_start = Instant::now();
+    let samples = &scratch.samples;
+    shade_indexed(&mut scratch.colors, samples.len(), options.threads, |i| {
+        shader(&samples[i])
+    });
+    stats.shade_time = shade_start.elapsed();
+    stats.fragments_shaded = samples.len();
+
+    for (s, &color) in samples.iter().zip(&scratch.colors) {
+        framebuffer.point_depth(s.x, s.y, color, s.depth);
+    }
+    Ok(stats)
+}
+
+/// Filled orbit rasterization: vertex shader, orbit projection, assembly,
+/// back-face culling with the constant eye, coverage, early depth rejection
+/// and affine interpolation of the object position at pixel centers.
+#[allow(clippy::too_many_arguments)]
+fn raster_orbit(
+    framebuffer: &mut Framebuffer,
+    uniforms: &Uniforms,
+    vertex_array: &[Vertex],
+    view: OrbitView,
+    mode: TriangleMode,
+    options: ShadedOptions,
+    view_direction: Vector3,
+    sink: &mut Sink<'_>,
+) -> Result<ShadedStats, RenderError> {
     let raster_start = Instant::now();
     let mut transformed: Vec<Vertex> = vertex_array
         .iter()
@@ -171,14 +343,13 @@ where
     let triangles = primitive_assembly(&transformed).map_err(RenderError::Primitive)?;
     let bounds = RasterBounds::new(framebuffer.width(), framebuffer.height());
     let eye = view.camera.eye_direction();
+    let fragment_view = FragmentView { view_direction };
 
     let mut stats = ShadedStats {
         vertices_processed: transformed.len(),
         triangles_processed: triangles.len(),
         ..ShadedStats::default()
     };
-    let samples = &mut scratch.samples;
-    samples.clear();
     for (i, tri) in triangles.iter().enumerate() {
         let k = 3 * i;
         let Some(world_normal) = face_normal(world[k], world[k + 1], world[k + 2]) else {
@@ -229,29 +400,18 @@ where
                 }
                 NormalSource::Face => object_normal,
             };
-            samples.push(SurfaceSample {
+            let sample = SurfaceSample {
                 x,
                 y,
                 depth: fragment.depth,
                 object_position: p,
                 normal,
                 face_normal: object_normal,
-            });
+            };
+            sink.push(framebuffer, sample, fragment_view);
         }
     }
     stats.raster_time = raster_start.elapsed();
-
-    let shade_start = Instant::now();
-    let samples = &scratch.samples;
-    shade_indexed(&mut scratch.colors, samples.len(), options.threads, |i| {
-        shader(&samples[i])
-    });
-    stats.shade_time = shade_start.elapsed();
-    stats.fragments_shaded = samples.len();
-
-    for (s, &color) in samples.iter().zip(&scratch.colors) {
-        framebuffer.point_depth(s.x, s.y, color, s.depth);
-    }
     Ok(stats)
 }
 
@@ -341,6 +501,45 @@ fn render_perspective<S>(
 where
     S: Fn(&SurfaceSample, &FragmentView) -> Vector3 + Sync,
 {
+    scratch.clear();
+    let mut stats = raster_perspective(
+        framebuffer,
+        uniforms,
+        vertex_array,
+        camera,
+        mode,
+        options,
+        &mut scratch.sink(0, false),
+    )?;
+
+    let shade_start = Instant::now();
+    let (samples, views) = (&scratch.samples, &scratch.views);
+    shade_indexed(&mut scratch.colors, samples.len(), options.threads, |i| {
+        shader(&samples[i], &views[i])
+    });
+    stats.shade_time = shade_start.elapsed();
+    stats.fragments_shaded = samples.len();
+
+    for (s, &color) in samples.iter().zip(&scratch.colors) {
+        framebuffer.point_depth(s.x, s.y, color, s.depth);
+    }
+    Ok(stats)
+}
+
+/// Perspective rasterization: vertex shader, view transform, back-face
+/// culling with the per-triangle view vector, near-plane clipping with full
+/// attributes, coverage, perspective-correct weights and depth, early depth
+/// rejection and a per-fragment view direction. `Wireframe` draws the
+/// clipped outlines directly and collects no sample.
+fn raster_perspective(
+    framebuffer: &mut Framebuffer,
+    uniforms: &Uniforms,
+    vertex_array: &[Vertex],
+    camera: &PerspectiveCamera,
+    mode: TriangleMode,
+    options: ShadedOptions,
+    sink: &mut Sink<'_>,
+) -> Result<ShadedStats, RenderError> {
     let raster_start = Instant::now();
     let (width, height) = (framebuffer.width(), framebuffer.height());
     let corners: Vec<ClipVertex> = vertex_array
@@ -355,10 +554,6 @@ where
         triangles_processed: triangles.len(),
         ..ShadedStats::default()
     };
-    let samples = &mut scratch.samples;
-    let views = &mut scratch.views;
-    samples.clear();
-    views.clear();
     for i in 0..triangles.len() {
         let tri = [corners[3 * i], corners[3 * i + 1], corners[3 * i + 2]];
         let Some(world_normal) = face_normal(
@@ -465,33 +660,22 @@ where
                     }
                     NormalSource::Face => object_normal,
                 };
-                samples.push(SurfaceSample {
+                let sample = SurfaceSample {
                     x,
                     y,
                     depth,
                     object_position: p,
                     normal,
                     face_normal: object_normal,
-                });
-                views.push(FragmentView {
+                };
+                let view = FragmentView {
                     view_direction: camera.view_direction(world),
-                });
+                };
+                sink.push(framebuffer, sample, view);
             }
         }
     }
     stats.raster_time = raster_start.elapsed();
-
-    let shade_start = Instant::now();
-    let (samples, views) = (&scratch.samples, &scratch.views);
-    shade_indexed(&mut scratch.colors, samples.len(), options.threads, |i| {
-        shader(&samples[i], &views[i])
-    });
-    stats.shade_time = shade_start.elapsed();
-    stats.fragments_shaded = samples.len();
-
-    for (s, &color) in samples.iter().zip(&scratch.colors) {
-        framebuffer.point_depth(s.x, s.y, color, s.depth);
-    }
     Ok(stats)
 }
 

@@ -17,7 +17,8 @@ pub mod viewer;
 pub use clock::{MAX_STEP, SimulationClock};
 pub use instance::{
     BodyInstance, FrameContext, Quality, adapted_material, eye_towards, instance_uniforms,
-    projected_radius_px, render_instance, render_instance_scratch,
+    prepare_instance, projected_radius_px, render_instance, render_instance_scratch,
+    shade_instance,
 };
 pub use orbit::Orbit;
 pub use resources::{SPHERE_RADIUS, SolarMeshes};

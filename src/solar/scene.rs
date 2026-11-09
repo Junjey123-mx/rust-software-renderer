@@ -7,18 +7,20 @@
 //! draw order.
 
 use crate::celestial::Body;
+use crate::celestial::PreparedShader;
 use crate::pipeline::{
-    OrbitView, PerspectiveCamera, RenderError, RenderScratch, ShadedOptions, ShadedStats,
-    Transform, ViewProjection, sphere_visible,
+    DirectionalLight, OrbitView, PerspectiveCamera, RenderError, RenderScratch, ShadedOptions,
+    ShadedStats, Transform, Uniforms, ViewProjection, sphere_visible,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
 use crate::solar::instance::{
-    Quality, adapted_material, projected_radius_px, render_instance_scratch,
+    Quality, adapted_material, prepare_instance, projected_radius_px, render_instance_scratch,
+    shade_instance,
 };
-use crate::solar::ship::render_ship_scratch;
+use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField, draw_stars};
 use crate::solar::{BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes};
 use raylib::math::Vector3;
@@ -315,6 +317,14 @@ impl SolarScene {
     /// One frame: clear color and depth once, the star field (color only),
     /// then every body, then the spacecraft, all through the same camera and
     /// depth buffer. Returns the fragments shaded.
+    ///
+    /// Filled modes run as one frame batch: every visible instance is
+    /// rasterized first (depth written at once), all samples are shaded by a
+    /// single thread pool and the colors are resolved by depth. The image is
+    /// identical to drawing the instances one by one
+    /// (`render_objects_without_clear` + `render_ship_without_clear`), but
+    /// idle cores at the end of each instance are avoided. Wireframe draws
+    /// the instances one by one.
     pub fn render_frame(
         &self,
         framebuffer: &mut Framebuffer,
@@ -323,9 +333,83 @@ impl SolarScene {
     ) -> Result<usize, RenderError> {
         framebuffer.clear();
         draw_stars(framebuffer, &self.stars, &self.sky_camera());
-        let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
-        let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
-        Ok(bodies.iter().map(|s| s.fragments_shaded).sum::<usize>() + ship.fragments_shaded)
+        if mode == TriangleMode::Wireframe {
+            let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
+            let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
+            return Ok(
+                bodies.iter().map(|s| s.fragments_shaded).sum::<usize>() + ship.fragments_shaded
+            );
+        }
+        let (w, h) = (framebuffer.width(), framebuffer.height());
+        let shared = self.frame_context(mode, options);
+        let mut scratch = self.scratch.borrow_mut();
+        scratch.begin_batch();
+        let mut jobs: Vec<Job> = Vec::with_capacity(self.bodies.len() + 1);
+        for (i, body) in self.bodies.iter().enumerate() {
+            if !self.body_in_view(i, w, h) {
+                continue;
+            }
+            let drawn = self.drawn_body(i, &shared.projection, h);
+            let frame = FrameContext {
+                light_world: self.light_for(body),
+                ..shared
+            };
+            jobs.push(Job::Body(
+                Box::new(prepare_instance(&drawn, &frame)),
+                drawn.transform,
+            ));
+            let model = Uniforms {
+                model_matrix: drawn.transform.matrix(),
+            };
+            let tag = (jobs.len() - 1) as u32;
+            scratch.rasterize(
+                framebuffer,
+                &model,
+                &self.meshes.sphere,
+                &shared.projection,
+                mode,
+                options,
+                tag,
+            )?;
+        }
+        if self.sphere_in_view(self.ship.position, self.ship.radius(), w, h) {
+            jobs.push(Job::Ship(ship_light(&self.ship, self.ship_light())));
+            let model = Uniforms {
+                model_matrix: self.ship.model_matrix(),
+            };
+            let tag = (jobs.len() - 1) as u32;
+            scratch.rasterize(
+                framebuffer,
+                &model,
+                &self.meshes.ship,
+                &shared.projection,
+                mode,
+                ship_options(options.threads),
+                tag,
+            )?;
+        }
+        scratch.shade_batch(options.threads, |tag, s, v| match &jobs[tag as usize] {
+            Job::Body(prepared, transform) => shade_instance(prepared, transform, s, v),
+            Job::Ship(light) => ship_color(light, s),
+        });
+        scratch.resolve(framebuffer);
+        Ok(scratch.batch_len())
+    }
+
+    /// Body `index` as drawn this frame: its material adapted to the
+    /// quality policy and its projected size.
+    fn drawn_body(&self, index: usize, projection: &ViewProjection, height: u32) -> BodyInstance {
+        let body = &self.bodies[index];
+        let radius_px = projected_radius_px(
+            projection,
+            body.transform.position,
+            self.radius_of(index),
+            height,
+        );
+        BodyInstance {
+            material: adapted_material(&body.material, self.quality, radius_px),
+            ..*body
+        }
     }
 
     pub fn frame_context(&self, mode: TriangleMode, options: ShadedOptions) -> FrameContext {
@@ -410,16 +494,7 @@ impl SolarScene {
                     light_world: self.light_for(body),
                     ..shared
                 };
-                let radius_px = projected_radius_px(
-                    &shared.projection,
-                    body.transform.position,
-                    self.radius_of(i),
-                    h,
-                );
-                let drawn = BodyInstance {
-                    material: adapted_material(&body.material, self.quality, radius_px),
-                    ..*body
-                };
+                let drawn = self.drawn_body(i, &shared.projection, h);
                 render_instance_scratch(
                     framebuffer,
                     &self.meshes.sphere,
@@ -430,4 +505,11 @@ impl SolarScene {
             })
             .collect()
     }
+}
+
+/// One shading job of a frame batch: what a tagged sample is shaded with.
+enum Job {
+    /// Boxed: a prepared shader is large and at most four jobs exist.
+    Body(Box<PreparedShader>, Transform),
+    Ship(DirectionalLight),
 }

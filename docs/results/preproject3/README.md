@@ -24,7 +24,7 @@ Escenarios A–J de la escena solar (`cargo run --release -- --benchmark-solar`,
 | H / I | D con / sin campo estelar |
 | J | Vuelo local a la altura mínima (0.5) sobre Crimson Entrance, nariz 0.8 rad abajo |
 
-Medianas de tres corridas independientes del 2026-11-09 (ms por cuadro), además del archivo commiteado, que es una cuarta corrida:
+Medianas de tres corridas independientes del 2026-11-09 con el dibujo instancia por instancia (antes de C37; ms por cuadro). El archivo `solar_benchmark.csv` se regeneró después de adoptar el planificador por cuadro de C37 (ver `thread_scheduler_study.md`):
 
 | | A | B | C | D | E | F | G | H | I | J |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
