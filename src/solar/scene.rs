@@ -13,8 +13,10 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
+use crate::solar::camera::{CameraRig, FollowRig};
 use crate::solar::{
-    BodyInstance, FrameContext, Orbit, SimulationClock, SolarMeshes, render_instance,
+    BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes, render_instance,
+    render_ship,
 };
 use raylib::math::Vector3;
 
@@ -51,6 +53,17 @@ impl std::str::FromStr for CameraMode {
     }
 }
 
+/// Spacecraft scale: the 3.99-unit mesh becomes about 0.32 units, well
+/// below the smallest planet (0.52).
+pub const SHIP_SCALE: f32 = 0.08;
+/// Start of the spacecraft: outside every orbit, slightly above the orbital
+/// plane, nose (-Z) towards the star.
+pub const SHIP_SPAWN: Vector3 = Vector3 {
+    x: 0.0,
+    y: 0.6,
+    z: 7.5,
+};
+
 /// Vertical field of view of the perspective camera, radians (60 degrees).
 pub const FOV_Y: f32 = std::f32::consts::FRAC_PI_3;
 /// Near plane of the perspective camera.
@@ -63,6 +76,10 @@ pub struct SolarScene {
     /// Orbit camera rig: target, azimuth, elevation and zoom.
     pub view: OrbitView,
     pub camera_mode: CameraMode,
+    /// Which rig drives the perspective camera.
+    pub rig: CameraRig,
+    pub follow: FollowRig,
+    pub ship: ShipState,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
     /// Center of the orbits (the star).
@@ -78,6 +95,9 @@ impl SolarScene {
             bodies: Vec::new(),
             view,
             camera_mode: CameraMode::default(),
+            rig: CameraRig::default(),
+            follow: FollowRig::default(),
+            ship: ShipState::new(SHIP_SPAWN, SHIP_SCALE),
             clock: SimulationClock::default(),
             center: Vector3::zero(),
             light_world,
@@ -173,11 +193,63 @@ impl SolarScene {
         crate::solar::camera::orbit_perspective(&self.view.camera, self.extent().max(1.0) * 2.2)
     }
 
+    /// The camera of this frame: orthographic orbit (`--camera orbit`), or
+    /// perspective from the orbit rig or behind the spacecraft.
     pub fn projection(&self) -> ViewProjection {
-        match self.camera_mode {
-            CameraMode::Orbit => ViewProjection::Orbit(self.view),
-            CameraMode::Perspective => ViewProjection::Perspective(self.perspective_camera()),
+        match (self.camera_mode, self.rig) {
+            (CameraMode::Orbit, _) => ViewProjection::Orbit(self.view),
+            (CameraMode::Perspective, CameraRig::Orbit) => {
+                ViewProjection::Perspective(self.perspective_camera())
+            }
+            (CameraMode::Perspective, CameraRig::Follow) => {
+                ViewProjection::Perspective(self.follow.camera(&self.ship))
+            }
         }
+    }
+
+    /// Direction from the spacecraft towards the star (scene light when the
+    /// ship sits on the center).
+    pub fn ship_light(&self) -> Vector3 {
+        let d = self.center - self.ship.position;
+        let len = d.length();
+        if len.is_finite() && len > 1e-6 {
+            d / len
+        } else {
+            self.light_world
+        }
+    }
+
+    /// Draws the spacecraft without clearing.
+    pub fn render_ship_without_clear(
+        &self,
+        framebuffer: &mut Framebuffer,
+        mode: TriangleMode,
+        options: ShadedOptions,
+    ) -> Result<ShadedStats, RenderError> {
+        render_ship(
+            framebuffer,
+            &self.meshes.ship,
+            &self.ship,
+            &self.projection(),
+            self.ship_light(),
+            mode,
+            options.threads,
+        )
+    }
+
+    /// One frame: clear color and depth once, then every body, then the
+    /// spacecraft, all through the same camera and depth buffer. Returns the
+    /// fragments shaded.
+    pub fn render_frame(
+        &self,
+        framebuffer: &mut Framebuffer,
+        mode: TriangleMode,
+        options: ShadedOptions,
+    ) -> Result<usize, RenderError> {
+        framebuffer.clear();
+        let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
+        let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
+        Ok(bodies.iter().map(|s| s.fragments_shaded).sum::<usize>() + ship.fragments_shaded)
     }
 
     pub fn frame_context(&self, mode: TriangleMode, options: ShadedOptions) -> FrameContext {

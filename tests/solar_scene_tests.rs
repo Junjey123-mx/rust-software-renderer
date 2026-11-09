@@ -8,6 +8,9 @@ use rust_software_renderer::pipeline::{
 };
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
+use rust_software_renderer::solar::camera::CameraRig;
+use rust_software_renderer::solar::input::SolarAction;
+use rust_software_renderer::solar::viewer::step;
 use rust_software_renderer::solar::{BodyInstance, CameraMode, Orbit, SolarMeshes, SolarScene};
 
 const W: u32 = 320;
@@ -320,6 +323,7 @@ fn perspective_mode_grows_the_nearer_body_and_orbit_mode_does_not() {
     let fragments = |mode: CameraMode| {
         let mut s = scene();
         s.camera_mode = mode;
+        s.rig = CameraRig::Orbit;
         s.bodies = vec![
             body(Body::CrimsonEntrance, 1.5, -2.0, 0.6),
             body(Body::HouseOfCards, -1.5, 2.0, 0.6),
@@ -350,5 +354,114 @@ fn perspective_camera_follows_the_orbit_rig_and_zoom_approaches() {
     s.view.camera.orbit(0.7);
     assert!(
         (s.perspective_camera().eye.normalized() - s.view.camera.eye_direction()).length() < 1e-5
+    );
+}
+
+fn flying_scene() -> SolarScene {
+    let mut s = orbiting_system();
+    s.camera_mode = CameraMode::Perspective;
+    s.rig = CameraRig::Follow;
+    s.advance(0.0);
+    s
+}
+
+#[test]
+fn the_frame_draws_the_bodies_and_the_spacecraft_through_the_follow_camera() {
+    let s = flying_scene();
+    let mut fb = Framebuffer::new(W, H);
+    let shaded = s
+        .render_frame(&mut fb, TriangleMode::FilledScanline, options())
+        .unwrap();
+    assert!(shaded > 0);
+    // The ship sits just ahead and below the follow camera's view center.
+    let ship_px = s.projection();
+    let rust_software_renderer::pipeline::ViewProjection::Perspective(cam) = ship_px else {
+        panic!("follow rig is perspective");
+    };
+    let p = cam
+        .project_view(cam.world_to_view(s.ship.position), W, H)
+        .unwrap();
+    let px = fb.get_pixel(p.x as i32, p.y as i32).unwrap();
+    assert_ne!(px, fb.background_color(), "spacecraft visible at {p:?}");
+    // Bodies are visible ahead too.
+    let mut bodies_only = Framebuffer::new(W, H);
+    bodies_only.clear();
+    s.render_objects_without_clear(&mut bodies_only, TriangleMode::FilledScanline, options())
+        .unwrap();
+    assert!(bodies_only.count_non_background() > 200);
+}
+
+#[test]
+fn render_frame_clears_once_so_old_pixels_never_survive() {
+    let s = flying_scene();
+    let mut fb = Framebuffer::new(W, H);
+    fb.point_depth(1, 1, Vector3::one(), -1.0e6);
+    s.render_frame(&mut fb, TriangleMode::FilledScanline, options())
+        .unwrap();
+    assert_eq!(fb.get_pixel(1, 1), Some(fb.background_color()));
+}
+
+#[test]
+fn follow_controls_fly_the_ship_and_the_camera_follows_while_orbit_rig_moves_the_camera() {
+    let mut s = flying_scene();
+    let start = s.ship.position;
+    for _ in 0..20 {
+        step(&mut s, &[SolarAction::Forward], &[], 0.05);
+    }
+    assert!((s.ship.position - start).length() > 1.0, "flew forward");
+    let cam_eye = match s.projection() {
+        rust_software_renderer::pipeline::ViewProjection::Perspective(c) => c.eye,
+        _ => unreachable!(),
+    };
+    assert!(
+        (cam_eye
+            - (s.ship.position - s.ship.forward * s.follow.distance + s.ship.up * s.follow.height))
+            .length()
+            < 1e-4
+    );
+
+    // V switches to the orbit rig: thrust no longer moves the ship, arrows
+    // (camera actions) orbit the camera instead.
+    step(&mut s, &[SolarAction::ToggleCamera], &[], 0.0);
+    assert_eq!(s.rig, CameraRig::Orbit);
+    let parked = s.ship.position;
+    let az = s.view.camera.azimuth;
+    step(
+        &mut s,
+        &[SolarAction::Forward],
+        &[rust_software_renderer::app::CameraAction::OrbitLeft],
+        0.05,
+    );
+    assert_eq!(s.ship.position, parked);
+    assert_ne!(s.view.camera.azimuth, az);
+}
+
+#[test]
+fn flight_keeps_working_while_the_simulation_is_paused() {
+    let mut s = flying_scene();
+    step(&mut s, &[SolarAction::TogglePause], &[], 0.0);
+    let planets: Vec<_> = s.bodies.iter().map(|b| b.transform).collect();
+    let start = s.ship.position;
+    for _ in 0..5 {
+        step(&mut s, &[SolarAction::Forward], &[], 0.05);
+    }
+    assert_eq!(
+        planets,
+        s.bodies.iter().map(|b| b.transform).collect::<Vec<_>>()
+    );
+    assert!((s.ship.position - start).length() > 0.3);
+}
+
+#[test]
+fn the_spawn_is_outside_every_body_and_the_ship_is_small() {
+    let s = flying_scene();
+    let r = rust_software_renderer::solar::SPHERE_RADIUS;
+    for b in &s.bodies {
+        let d = (s.ship.position - b.transform.position).length();
+        assert!(d > b.transform.scale * r + s.ship.radius() + 1.0, "{d}");
+    }
+    assert!(
+        s.ship.radius() < 0.6 * r,
+        "smaller than the smallest planet"
     );
 }

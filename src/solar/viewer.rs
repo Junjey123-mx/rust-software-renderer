@@ -1,15 +1,17 @@
 //! Window viewer of the solar scene. Raylib only owns the window, reads the
 //! keyboard and presents the CPU framebuffer as a texture.
 
-use crate::app::{CliArgs, apply_input, poll_input, save_screenshot};
+use crate::app::{CameraAction, CliArgs, apply_input, poll_input, save_screenshot};
 use crate::celestial::cli::CelestialArgs;
 use crate::celestial::{Body, CelestialScene};
 use crate::pipeline::{OrbitCamera, OrbitView, ShadedOptions, Viewport};
 use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
+use crate::solar::camera::CameraRig;
+use crate::solar::flight::{FlightInput, space_step};
+use crate::solar::input::{SolarAction, poll_solar};
 use crate::solar::{SolarMeshes, SolarScene};
-use raylib::consts::KeyboardKey;
 use raylib::math::Vector3;
 use std::error::Error;
 
@@ -46,16 +48,53 @@ pub fn solar_mode(cli: &CliArgs, lab6: &CelestialArgs) -> TriangleMode {
     }
 }
 
-/// One frame: clear once, then every body.
+/// One frame: clear once, then every body and the spacecraft.
 pub fn render_frame(
     scene: &SolarScene,
     framebuffer: &mut Framebuffer,
     mode: TriangleMode,
     options: ShadedOptions,
 ) -> Result<usize, Box<dyn Error>> {
-    framebuffer.clear();
-    let stats = scene.render_objects_without_clear(framebuffer, mode, options)?;
-    Ok(stats.iter().map(|s| s.fragments_shaded).sum())
+    Ok(scene.render_frame(framebuffer, mode, options)?)
+}
+
+/// Applies one frame of input in the order of the frame contract: toggles,
+/// then the simulation clock and orbits, then the active controller (the
+/// spacecraft under the follow rig, the orbit camera otherwise), which uses
+/// the real delta so it keeps working while paused.
+pub fn step(
+    scene: &mut SolarScene,
+    actions: &[SolarAction],
+    camera_actions: &[CameraAction],
+    real_dt: f32,
+) {
+    for action in actions {
+        match action {
+            SolarAction::TogglePause => {
+                let paused = scene.clock.toggle_pause();
+                println!(
+                    "Time {} at {:.2} s",
+                    if paused { "paused" } else { "running" },
+                    scene.time()
+                );
+            }
+            SolarAction::ToggleCamera => {
+                scene.rig = scene.rig.toggled();
+                println!("Camera rig: {}", scene.rig.name());
+            }
+            _ => {}
+        }
+    }
+    scene.advance(real_dt);
+    let dt = scene.clock.real_delta;
+    match scene.rig {
+        CameraRig::Follow => space_step(&mut scene.ship, &FlightInput::from_actions(actions), dt),
+        CameraRig::Orbit => {
+            for &action in camera_actions {
+                apply_input(&mut scene.view.camera, action, dt);
+            }
+        }
+    }
 }
 
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
@@ -66,9 +105,10 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies, mode {mode}, camera {}. Controls: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, arrows turn (follow) or orbit (orbit rig), V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
         scene.bodies.len(),
-        scene.camera_mode.name()
+        scene.camera_mode.name(),
+        scene.rig.name()
     );
     let (mut rl, thread) = raylib::init()
         .size(WIDTH as i32, HEIGHT as i32)
@@ -82,29 +122,19 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
-        let (actions, new_mode) = poll_input(&rl);
-        for action in actions {
-            apply_input(&mut scene.view.camera, action, dt);
-        }
+        let actions = poll_solar(&rl);
+        let (camera_actions, new_mode) = poll_input(&rl);
         if let Some(m) = new_mode
             && m != mode
         {
             mode = m;
             println!("Mode: {mode}");
         }
-        if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
-            let paused = scene.clock.toggle_pause();
-            println!(
-                "Time {} at {:.2} s",
-                if paused { "paused" } else { "running" },
-                scene.time()
-            );
-        }
-        scene.advance(dt);
+        step(&mut scene, &actions, &camera_actions, dt);
         let shaded = render_frame(&scene, &mut framebuffer, mode, options)?;
         if !reported {
             println!(
-                "Rendered {} bodies, {shaded} fragments shaded",
+                "Rendered {} bodies and the spacecraft, {shaded} fragments shaded",
                 scene.bodies.len()
             );
             reported = true;

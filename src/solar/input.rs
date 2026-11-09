@@ -15,6 +15,7 @@ pub enum SolarAction {
     PitchUp,
     PitchDown,
     TogglePause,
+    ToggleCamera,
 }
 
 /// Held keys and the action they produce.
@@ -28,8 +29,10 @@ pub const HELD: [(KeyboardKey, SolarAction); 6] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 1] =
-    [(KeyboardKey::KEY_SPACE, SolarAction::TogglePause)];
+pub const PRESSED: [(KeyboardKey, SolarAction); 2] = [
+    (KeyboardKey::KEY_SPACE, SolarAction::TogglePause),
+    (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
+];
 
 /// Reads this frame's keyboard state into actions.
 pub fn poll_solar(rl: &RaylibHandle) -> Vec<SolarAction> {
