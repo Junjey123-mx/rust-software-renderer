@@ -4,6 +4,7 @@
 use crate::app::{CliArgs, Scene};
 use crate::celestial::DebugView;
 use crate::celestial::timeline::Timeline;
+use crate::solar::record::SolarTimeline;
 use crate::solar::skybox::{MAX_STARS, StarDensity};
 use crate::solar::{CameraMode, Quality};
 
@@ -43,6 +44,8 @@ pub struct CelestialArgs {
     pub star_density: Option<StarDensity>,
     /// `--solar-quality full|adaptive` of the solar scene.
     pub solar_quality: Option<Quality>,
+    /// `--timeline flight` of a solar recording.
+    pub solar_timeline: Option<SolarTimeline>,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -146,7 +149,11 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
                 out.fps = Some(n);
             }
             "--timeline" => {
-                out.timeline = Some(value(&mut it, "--timeline")?.parse()?);
+                let text = value(&mut it, "--timeline")?;
+                match text.parse::<Timeline>() {
+                    Ok(t) => out.timeline = Some(t),
+                    Err(_) => out.solar_timeline = Some(text.parse()?),
+                }
             }
             "--camera" => {
                 out.camera = Some(value(&mut it, "--camera")?.parse()?);
@@ -195,8 +202,11 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if lab6.benchmark_solar && (cli.benchmark || lab6.benchmark_shaders) {
         return Err("--benchmark-solar cannot be combined with another benchmark".into());
     }
-    if solar && lab6.record.is_some() {
-        return Err("--record is not available for --scene solar yet".into());
+    if solar && lab6.timeline.is_some() {
+        return Err("--scene solar records the flight timeline (--timeline flight)".into());
+    }
+    if !solar && lab6.solar_timeline.is_some() {
+        return Err("--timeline flight requires --scene solar".into());
     }
     if solar && cli.obj.is_some() {
         return Err("--obj cannot be combined with --scene solar".into());
@@ -233,6 +243,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         star_seed: None,
         star_density: None,
         solar_quality: None,
+        solar_timeline: None,
+        record: if solar { None } else { lab6.record },
+        fps: if solar { None } else { lab6.fps },
         ..lab6.clone()
     };
     if !celestial && !scene_options.is_empty() {
@@ -241,7 +254,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
                 .into(),
         );
     }
-    if lab6.record.is_none() && (lab6.fps.is_some() || lab6.timeline.is_some()) {
+    if lab6.record.is_none()
+        && (lab6.fps.is_some() || lab6.timeline.is_some() || lab6.solar_timeline.is_some())
+    {
         return Err("--fps and --timeline require --record".into());
     }
     if lab6.record.is_some() && (cli.screenshot.is_some() || cli.interactive) {

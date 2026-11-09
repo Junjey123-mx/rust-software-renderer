@@ -100,42 +100,48 @@ pub fn render_frame(
     Ok(scene.render_frame(framebuffer, mode, options)?)
 }
 
-/// Applies one frame of input in the order of the frame contract: toggles,
-/// then the simulation clock and orbits, then the active controller (the
-/// spacecraft under the follow rig, the orbit camera otherwise), which uses
-/// the real delta so it keeps working while paused.
-pub fn step(
-    scene: &mut SolarScene,
-    actions: &[SolarAction],
-    camera_actions: &[CameraAction],
-    real_dt: f32,
-) {
+/// Applies the one-shot actions of a frame (pause, camera rig, local
+/// flight, warp) and returns what happened, for the caller to report.
+pub fn apply_toggles(scene: &mut SolarScene, actions: &[SolarAction]) -> Vec<String> {
+    let mut messages = Vec::new();
     for action in actions {
         match action {
             SolarAction::TogglePause => {
                 let paused = scene.clock.toggle_pause();
-                println!(
+                messages.push(format!(
                     "Time {} at {:.2} s",
                     if paused { "paused" } else { "running" },
                     scene.time()
-                );
+                ));
             }
             SolarAction::ToggleCamera => {
                 scene.rig = scene.rig.toggled();
-                println!("Camera rig: {}", scene.rig.name());
+                messages.push(format!("Camera rig: {}", scene.rig.name()));
             }
-            SolarAction::ToggleLocal => match scene.toggle_local() {
-                Ok(mode) => println!("Flight mode: {}", mode.name()),
-                Err(reason) => println!("Local flight unavailable: {reason}"),
-            },
+            SolarAction::ToggleLocal => messages.push(match scene.toggle_local() {
+                Ok(mode) => format!("Flight mode: {}", mode.name()),
+                Err(reason) => format!("Local flight unavailable: {reason}"),
+            }),
             &SolarAction::Warp(index) if warp_to(scene, index) => {
-                println!("Warped to {}", scene.bodies[index].body().display_name());
+                messages.push(format!(
+                    "Warped to {}",
+                    scene.bodies[index].body().display_name()
+                ));
             }
             _ => {}
         }
     }
-    scene.advance(real_dt);
-    let dt = scene.clock.real_delta;
+    messages
+}
+
+/// Runs the active controller for `dt` real seconds: the spacecraft under
+/// the follow rig (space or local flight), the orbit camera otherwise.
+pub fn fly(
+    scene: &mut SolarScene,
+    actions: &[SolarAction],
+    camera_actions: &[CameraAction],
+    dt: f32,
+) {
     match scene.rig {
         CameraRig::Follow => {
             let input = FlightInput::from_actions(actions);
@@ -150,6 +156,23 @@ pub fn step(
             }
         }
     }
+}
+
+/// Applies one frame of input in the order of the frame contract: toggles,
+/// then the simulation clock and orbits, then the active controller with
+/// the real delta (so it keeps working while paused). Returns the messages
+/// of the toggles.
+pub fn step(
+    scene: &mut SolarScene,
+    actions: &[SolarAction],
+    camera_actions: &[CameraAction],
+    real_dt: f32,
+) -> Vec<String> {
+    let messages = apply_toggles(scene, actions);
+    scene.advance(real_dt);
+    let dt = scene.clock.real_delta;
+    fly(scene, actions, camera_actions, dt);
+    messages
 }
 
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
@@ -188,7 +211,9 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         }
         let before = scene.ship.position;
         let mode_before = scene.flight;
-        step(&mut scene, &actions, &camera_actions, dt);
+        for message in step(&mut scene, &actions, &camera_actions, dt) {
+            println!("{message}");
+        }
         title_timer += dt;
         if title_timer >= 0.5 || scene.flight != mode_before {
             let speed = if scene.clock.real_delta > 0.0 {

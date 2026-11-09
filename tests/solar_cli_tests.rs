@@ -47,11 +47,10 @@ fn solar_accepts_threads_mode_view_and_screenshot() {
 }
 
 #[test]
-fn solar_rejects_recording_obj_and_single_body_options_for_now() {
+fn solar_rejects_obj_and_single_body_options_and_records_the_flight() {
     assert!(
-        parse("--scene solar --record 2")
-            .unwrap_err()
-            .contains("--record")
+        parse("--scene solar --record 2").is_ok(),
+        "the solar recorder exists since C39"
     );
     assert!(
         parse("--scene solar --obj a.obj")

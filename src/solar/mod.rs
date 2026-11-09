@@ -7,6 +7,7 @@ pub mod flight;
 pub mod input;
 pub mod instance;
 pub mod orbit;
+pub mod record;
 pub mod resources;
 pub mod scene;
 pub mod ship;
