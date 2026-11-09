@@ -8,6 +8,7 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
+use crate::solar::Orbit;
 use raylib::math::Vector3;
 
 /// Shader uniforms of one instance: the laboratory six shaders expect the
@@ -44,6 +45,8 @@ pub struct BodyInstance {
     pub transform: Transform,
     /// Self-rotation, radians per simulated second (applied to `yaw`).
     pub spin_speed: f32,
+    /// Orbit around the scene center; `None` keeps the transform position.
+    pub orbit: Option<Orbit>,
     pub debug: DebugView,
 }
 
@@ -53,8 +56,24 @@ impl BodyInstance {
             material: CelestialMaterial::for_body(body),
             transform,
             spin_speed,
+            orbit: None,
             debug: DebugView::None,
         }
+    }
+
+    pub fn with_orbit(mut self, orbit: Orbit) -> Self {
+        self.orbit = Some(orbit);
+        self
+    }
+
+    /// Places the body for simulated `time`: orbital position (when it has
+    /// an orbit) around `center` and self-rotation about its own Y axis.
+    /// The material animation reads the same time through the uniforms.
+    pub fn update(&mut self, time: f32, center: Vector3) {
+        if let Some(orbit) = self.orbit {
+            self.transform.position = orbit.position_at(time, center);
+        }
+        self.transform.yaw = self.spin_speed * time;
     }
 
     pub fn body(&self) -> Body {

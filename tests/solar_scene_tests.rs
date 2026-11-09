@@ -8,7 +8,7 @@ use rust_software_renderer::pipeline::{
 };
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
-use rust_software_renderer::solar::{BodyInstance, SolarMeshes, SolarScene};
+use rust_software_renderer::solar::{BodyInstance, Orbit, SolarMeshes, SolarScene};
 
 const W: u32 = 320;
 const H: u32 = 240;
@@ -187,4 +187,80 @@ fn world_view_frames_every_body_of_a_radius_4_4_system_without_refitting() {
     let before = s.view.scale();
     s.view.camera.orbit(1.0);
     assert_eq!(s.view.scale(), before);
+}
+
+fn orbiting_system() -> SolarScene {
+    let mut s = scene();
+    s.bodies = vec![
+        body(Body::KingsCrown, 0.0, 0.0, 1.3),
+        body(Body::CrimsonEntrance, 0.0, 0.0, 0.6).with_orbit(Orbit::new(2.6, 0.5, 0.0).unwrap()),
+        body(Body::HouseOfCards, 0.0, 0.0, 0.9)
+            .with_orbit(Orbit::new(3.2, 0.2, std::f32::consts::PI).unwrap()),
+    ];
+    s.bodies[1].spin_speed = 0.6;
+    s
+}
+
+#[test]
+fn update_places_orbiting_bodies_and_keeps_the_star_at_the_center() {
+    let mut s = orbiting_system();
+    s.advance(0.0);
+    assert_eq!(s.bodies[0].transform.position, Vector3::zero());
+    assert!((s.bodies[1].transform.position - Vector3::new(2.6, 0.0, 0.0)).length() < 1e-5);
+    assert!((s.bodies[2].transform.position - Vector3::new(-3.2, 0.0, 0.0)).length() < 1e-5);
+    for _ in 0..60 {
+        s.advance(1.0 / 60.0);
+    }
+    assert!((s.time() - 1.0).abs() < 1e-4);
+    assert_eq!(
+        s.bodies[0].transform.position,
+        Vector3::zero(),
+        "star never moves"
+    );
+    let p = s.bodies[1].transform.position;
+    assert!((p.length() - 2.6).abs() < 1e-4 && p.z > 0.0, "{p:?}");
+    assert!(
+        (s.bodies[1].transform.yaw - 0.6).abs() < 1e-4,
+        "spin = speed * time"
+    );
+}
+
+#[test]
+fn the_same_simulated_time_gives_the_same_image_regardless_of_frame_rate() {
+    let mut a = orbiting_system();
+    let mut b = orbiting_system();
+    for _ in 0..30 {
+        a.advance(1.0 / 30.0);
+    }
+    for _ in 0..60 {
+        b.advance(1.0 / 60.0);
+    }
+    assert!((a.time() - b.time()).abs() < 1e-4);
+    // Snap both to exactly the same time so rounding cannot leak into pixels.
+    a.clock.time = 1.0;
+    b.clock.time = 1.0;
+    a.update();
+    b.update();
+    assert_eq!(fnv(&draw(&a)), fnv(&draw(&b)));
+}
+
+#[test]
+fn pause_freezes_positions_spins_and_the_material_time() {
+    let mut s = orbiting_system();
+    s.advance(0.5);
+    let before = draw(&s);
+    let positions: Vec<_> = s.bodies.iter().map(|b| b.transform).collect();
+    s.clock.toggle_pause();
+    for _ in 0..10 {
+        s.advance(0.1);
+    }
+    let after: Vec<_> = s.bodies.iter().map(|b| b.transform).collect();
+    assert_eq!(positions, after);
+    assert_eq!(fnv(&before), fnv(&draw(&s)));
+    s.clock.toggle_pause();
+    s.advance(0.1);
+    assert_ne!(
+        positions,
+        s.bodies.iter().map(|b| b.transform).collect::<Vec<_>>()
+    );
 }

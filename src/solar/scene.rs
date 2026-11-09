@@ -9,7 +9,7 @@
 use crate::pipeline::{OrbitView, RenderError, ShadedOptions, ShadedStats};
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
-use crate::solar::{BodyInstance, FrameContext, SolarMeshes, render_instance};
+use crate::solar::{BodyInstance, FrameContext, SimulationClock, SolarMeshes, render_instance};
 use raylib::math::Vector3;
 
 #[derive(Debug, Clone)]
@@ -17,8 +17,10 @@ pub struct SolarScene {
     pub meshes: SolarMeshes,
     pub bodies: Vec<BodyInstance>,
     pub view: OrbitView,
-    /// Simulated seconds shared by every body.
-    pub time: f32,
+    /// Simulated time shared by orbits, spins and material animation.
+    pub clock: SimulationClock,
+    /// Center of the orbits (the star).
+    pub center: Vector3,
     /// Unit direction towards the light, world space.
     pub light_world: Vector3,
 }
@@ -29,15 +31,35 @@ impl SolarScene {
             meshes,
             bodies: Vec::new(),
             view,
-            time: 0.0,
+            clock: SimulationClock::default(),
+            center: Vector3::zero(),
             light_world,
+        }
+    }
+
+    pub fn time(&self) -> f32 {
+        self.clock.time
+    }
+
+    /// Advances the clock by a real frame delta and places every body at the
+    /// new simulated time. Call before drawing; never during.
+    pub fn advance(&mut self, real_dt: f32) {
+        self.clock.advance(real_dt);
+        self.update();
+    }
+
+    /// Places every body at the current simulated time.
+    pub fn update(&mut self) {
+        let (time, center) = (self.clock.time, self.center);
+        for body in &mut self.bodies {
+            body.update(time, center);
         }
     }
 
     pub fn frame_context(&self, mode: TriangleMode, options: ShadedOptions) -> FrameContext {
         FrameContext {
             view: self.view,
-            time: self.time,
+            time: self.clock.time,
             light_world: self.light_world,
             mode,
             options,

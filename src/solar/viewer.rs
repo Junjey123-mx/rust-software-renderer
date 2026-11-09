@@ -8,7 +8,8 @@ use crate::pipeline::{OrbitCamera, OrbitView, ShadedOptions, Transform, Viewport
 use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
-use crate::solar::{BodyInstance, SolarMeshes, SolarScene};
+use crate::solar::{BodyInstance, Orbit, SolarMeshes, SolarScene};
+use raylib::consts::KeyboardKey;
 use raylib::math::Vector3;
 use std::error::Error;
 
@@ -18,8 +19,8 @@ pub const HEIGHT: u32 = 600;
 pub const WORLD_RADIUS: f32 = 5.3;
 pub const TITLE: &str = "Rust Software Renderer - Camino al Proyecto 3: Solar";
 
-/// Builds the scene described by the command line: the three bodies placed
-/// side by side (static until the orbital update lands).
+/// Builds the scene described by the command line: the star at the center
+/// and the two planets on circular orbits.
 pub fn build_scene(cli: &CliArgs, _lab6: &CelestialArgs) -> Result<SolarScene, Box<dyn Error>> {
     let camera = OrbitCamera::new(Vector3::zero(), cli.view.unwrap_or_default());
     let view = OrbitView::for_world(camera, WORLD_RADIUS, Viewport::new(WIDTH, HEIGHT, 0.1))?;
@@ -28,18 +29,21 @@ pub fn build_scene(cli: &CliArgs, _lab6: &CelestialArgs) -> Result<SolarScene, B
         .light_direction;
     let mut scene = SolarScene::new(SolarMeshes::load()?, view, light);
     scene.bodies = vec![
-        BodyInstance::new(Body::KingsCrown, Transform::new(Vector3::zero(), 1.3), 0.0),
+        BodyInstance::new(Body::KingsCrown, Transform::new(Vector3::zero(), 1.3), 0.05),
         BodyInstance::new(
             Body::CrimsonEntrance,
             Transform::new(Vector3::new(2.6, 0.0, 0.0), 0.6),
-            0.0,
-        ),
+            0.6,
+        )
+        .with_orbit(Orbit::new(2.6, 0.5, 0.0)?),
         BodyInstance::new(
             Body::HouseOfCards,
             Transform::new(Vector3::new(-4.4, 0.0, 0.0), 0.9),
-            0.0,
-        ),
+            0.35,
+        )
+        .with_orbit(Orbit::new(4.4, 0.22, std::f32::consts::PI)?),
     ];
+    scene.update();
     Ok(scene)
 }
 
@@ -72,7 +76,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies, mode {mode}. Controls: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, ESC quit",
+        "Solar scene: {} bodies, mode {mode}. Controls: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
         scene.bodies.len()
     );
     let (mut rl, thread) = raylib::init()
@@ -97,6 +101,15 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
             mode = m;
             println!("Mode: {mode}");
         }
+        if rl.is_key_pressed(KeyboardKey::KEY_SPACE) {
+            let paused = scene.clock.toggle_pause();
+            println!(
+                "Time {} at {:.2} s",
+                if paused { "paused" } else { "running" },
+                scene.time()
+            );
+        }
+        scene.advance(dt);
         let shaded = render_frame(&scene, &mut framebuffer, mode, options)?;
         if !reported {
             println!(
