@@ -1,0 +1,130 @@
+//! The spacecraft state: position and an orthonormal `forward` / `up` basis
+//! rotated with Rodrigues' formula, re-orthonormalised after every turn.
+//!
+//! `Laboratorio3.obj` was measured before fixing the conventions: its mesh
+//! narrows towards `-Z` (nose), is widest along `X` (wings) and its top is
+//! `+Y`; the bounding box is centered at `MESH_CENTER`, not at the origin.
+
+use crate::shading::sphere::rotate_axis;
+use raylib::math::{Matrix, Vector3};
+
+/// Bounding-box center of `Laboratorio3.obj` (measured), subtracted so the
+/// spacecraft rotates about its own middle.
+pub const MESH_CENTER: Vector3 = Vector3 {
+    x: 0.0,
+    y: 0.255,
+    z: -1.3,
+};
+/// Distance from `MESH_CENTER` to the farthest vertex of the mesh.
+pub const MESH_RADIUS: f32 = 3.99;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShipState {
+    pub position: Vector3,
+    /// Unit nose direction, world space.
+    pub forward: Vector3,
+    /// Unit top direction, world space, perpendicular to `forward`.
+    pub up: Vector3,
+    /// Uniform scale of the mesh.
+    pub scale: f32,
+    /// World units per second.
+    pub move_speed: f32,
+    /// Radians per second.
+    pub turn_speed: f32,
+}
+
+impl ShipState {
+    /// Unrotated spacecraft: nose along `-Z`, top along `+Y`.
+    pub fn new(position: Vector3, scale: f32) -> Self {
+        Self {
+            position,
+            forward: Vector3::new(0.0, 0.0, -1.0),
+            up: Vector3::new(0.0, 1.0, 0.0),
+            scale,
+            move_speed: 1.5,
+            turn_speed: 1.0,
+        }
+    }
+
+    /// Unit right direction (`forward x up`).
+    pub fn right(&self) -> Vector3 {
+        self.forward.cross(self.up).normalized()
+    }
+
+    /// Turns around `up`: positive turns the nose from `-Z` towards `-X`.
+    pub fn yaw(&mut self, angle: f32) {
+        self.forward = rotate_axis(self.forward, self.up, angle);
+        self.renormalize();
+    }
+
+    /// Turns around `right`: positive lifts the nose.
+    pub fn pitch(&mut self, angle: f32) {
+        let right = self.right();
+        self.forward = rotate_axis(self.forward, right, angle);
+        self.up = rotate_axis(self.up, right, angle);
+        self.renormalize();
+    }
+
+    /// Rotates both basis vectors around an arbitrary unit `axis`.
+    pub fn rotate(&mut self, axis: Vector3, angle: f32) {
+        self.forward = rotate_axis(self.forward, axis, angle);
+        self.up = rotate_axis(self.up, axis, angle);
+        self.renormalize();
+    }
+
+    /// Rebuilds an orthonormal basis (Gram-Schmidt) so rounding never
+    /// accumulates; a degenerate basis falls back to the default one.
+    pub fn renormalize(&mut self) {
+        let f_len = self.forward.length();
+        if !(f_len.is_finite() && f_len > 1e-6) {
+            self.forward = Vector3::new(0.0, 0.0, -1.0);
+        } else {
+            self.forward /= f_len;
+        }
+        let mut right = self.forward.cross(self.up);
+        if !(right.length().is_finite() && right.length() > 1e-6) {
+            let alt = if self.forward.y.abs() < 0.9 {
+                Vector3::new(0.0, 1.0, 0.0)
+            } else {
+                Vector3::new(1.0, 0.0, 0.0)
+            };
+            right = self.forward.cross(alt);
+        }
+        let right = right.normalized();
+        self.up = right.cross(self.forward).normalized();
+    }
+
+    /// Column-major model matrix: object `+X` to `right`, `+Y` to `up`,
+    /// `+Z` to `-forward` (the nose is `-Z`), scaled, with `MESH_CENTER`
+    /// placed at `position`.
+    pub fn model_matrix(&self) -> Matrix {
+        let s = self.scale;
+        let (r, u, b) = (self.right(), self.up, -self.forward);
+        let offset = (r * MESH_CENTER.x + u * MESH_CENTER.y + b * MESH_CENTER.z) * s;
+        let t = self.position - offset;
+        let mut m = Matrix::identity();
+        m.m0 = r.x * s;
+        m.m1 = r.y * s;
+        m.m2 = r.z * s;
+        m.m4 = u.x * s;
+        m.m5 = u.y * s;
+        m.m6 = u.z * s;
+        m.m8 = b.x * s;
+        m.m9 = b.y * s;
+        m.m10 = b.z * s;
+        m.m12 = t.x;
+        m.m13 = t.y;
+        m.m14 = t.z;
+        m
+    }
+
+    /// Rotates a world direction into the spacecraft's object space.
+    pub fn to_object_dir(&self, d: Vector3) -> Vector3 {
+        Vector3::new(d.dot(self.right()), d.dot(self.up), d.dot(-self.forward))
+    }
+
+    /// World radius of the scaled mesh.
+    pub fn radius(&self) -> f32 {
+        MESH_RADIUS * self.scale
+    }
+}
