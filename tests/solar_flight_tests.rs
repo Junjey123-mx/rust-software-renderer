@@ -183,3 +183,99 @@ fn the_frame_holds_near_the_poles_and_at_any_heading() {
         assert!(f.tangent.dot(f.normal).abs() < 1e-4);
     }
 }
+
+// ---------------------------------------------------------------------------
+// FlightMode and the L toggle
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::solar::flight::{
+    CLEARANCE, FlightMode, LOCAL_RANGE, LocalTarget, toggle_local,
+};
+
+fn targets() -> Vec<LocalTarget> {
+    vec![
+        LocalTarget {
+            index: 1,
+            position: Vector3::new(3.0, 0.0, 0.0),
+            radius: 0.5,
+        },
+        LocalTarget {
+            index: 2,
+            position: Vector3::new(-4.0, 0.0, 0.0),
+            radius: 0.8,
+        },
+    ]
+}
+
+#[test]
+fn entering_local_flight_picks_the_nearest_planet_and_records_its_position() {
+    let s = ShipState::new(Vector3::new(3.0, 1.5, 0.0), 0.1);
+    let mode = toggle_local(FlightMode::Space, &s, &targets()).unwrap();
+    assert_eq!(
+        mode,
+        FlightMode::Local {
+            planet: 1,
+            previous_planet_position: Vector3::new(3.0, 0.0, 0.0),
+        }
+    );
+    assert_eq!(mode.name(), "local");
+    // Leaving returns to space flight; the ship is untouched by both toggles.
+    assert_eq!(
+        toggle_local(mode, &s, &targets()).unwrap(),
+        FlightMode::Space
+    );
+}
+
+#[test]
+fn entry_is_refused_inside_the_clearance_and_too_far_away() {
+    let inside = ShipState::new(Vector3::new(3.0, 0.5 + CLEARANCE * 0.5, 0.0), 0.1);
+    assert!(
+        toggle_local(FlightMode::Space, &inside, &targets())
+            .unwrap_err()
+            .contains("too close")
+    );
+    let center = ShipState::new(Vector3::new(3.0, 0.0, 0.0), 0.1);
+    assert!(toggle_local(FlightMode::Space, &center, &targets()).is_err());
+    let far = ShipState::new(Vector3::new(3.0, 0.5 + LOCAL_RANGE + 1.0, 0.0), 0.1);
+    assert!(
+        toggle_local(FlightMode::Space, &far, &targets())
+            .unwrap_err()
+            .contains("too far")
+    );
+    assert!(toggle_local(FlightMode::Space, &far, &[]).is_err());
+}
+
+#[test]
+fn the_scene_never_offers_the_star_and_toggling_keeps_the_ship_in_place() {
+    use rust_software_renderer::pipeline::{OrbitCamera, OrbitView, ViewPreset, Viewport};
+    use rust_software_renderer::solar::{SolarMeshes, SolarScene};
+    let view = OrbitView::for_world(
+        OrbitCamera::new(Vector3::zero(), ViewPreset::Oblique),
+        5.0,
+        Viewport::new(320, 240, 0.1),
+    )
+    .unwrap();
+    let mut scene = SolarScene::default_system(
+        SolarMeshes::load().unwrap(),
+        view,
+        Vector3::new(0.0, 1.0, 0.0),
+    )
+    .unwrap();
+    let targets = scene.local_targets();
+    assert_eq!(targets.iter().map(|t| t.index).collect::<Vec<_>>(), [1, 2]);
+    // Park the ship 1 unit above Crimson Entrance (index 1).
+    let p = scene.bodies[1].transform.position;
+    scene.ship.position = p + Vector3::new(0.0, scene.radius_of(1) + 1.0, 0.0);
+    let before = scene.ship;
+    assert!(matches!(
+        scene.toggle_local().unwrap(),
+        FlightMode::Local { planet: 1, .. }
+    ));
+    assert_eq!(scene.ship, before);
+    assert_eq!(scene.toggle_local().unwrap(), FlightMode::Space);
+    assert_eq!(scene.ship, before);
+    // From the spawn, outside every range: refused, still in space flight.
+    scene.ship.position = Vector3::new(0.0, 0.6, 7.5);
+    assert!(scene.toggle_local().is_err());
+    assert_eq!(scene.flight, FlightMode::Space);
+}

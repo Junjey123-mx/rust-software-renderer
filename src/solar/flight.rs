@@ -98,3 +98,76 @@ pub fn local_frame(ship: &ShipState, planet: Vector3, radius: f32) -> Option<Loc
         tangent,
     })
 }
+
+/// Minimum height of the ship center above a planet's ideal surface in
+/// local flight: the ship radius (about 0.32) plus room for the camera.
+pub const CLEARANCE: f32 = 0.5;
+/// Local flight can start only within this height above the surface.
+pub const LOCAL_RANGE: f32 = 3.0;
+
+/// Which controller runs this frame; never both.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FlightMode {
+    #[default]
+    Space,
+    /// Around the body at `planet` (index into the scene bodies).
+    Local {
+        planet: usize,
+        /// Planet position recorded when it was last followed; set to the
+        /// current position on entry so the first displacement is zero.
+        previous_planet_position: Vector3,
+    },
+}
+
+impl FlightMode {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Space => "space",
+            Self::Local { .. } => "local",
+        }
+    }
+}
+
+/// A body local flight may orbit: its index, current center and radius.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LocalTarget {
+    pub index: usize,
+    pub position: Vector3,
+    pub radius: f32,
+}
+
+/// `L`: from local flight, return to space flight keeping the ship as it
+/// is; from space flight, enter local flight around the nearest candidate
+/// when the ship is outside its clearance and within `LOCAL_RANGE`. On
+/// refusal the mode stays `Space` and the reason is returned.
+pub fn toggle_local(
+    mode: FlightMode,
+    ship: &ShipState,
+    candidates: &[LocalTarget],
+) -> Result<FlightMode, String> {
+    if let FlightMode::Local { .. } = mode {
+        return Ok(FlightMode::Space);
+    }
+    let nearest = candidates
+        .iter()
+        .min_by(|a, b| {
+            let da = (ship.position - a.position).length() - a.radius;
+            let db = (ship.position - b.position).length() - b.radius;
+            da.total_cmp(&db)
+        })
+        .ok_or("no planet to fly around")?;
+    let distance = (ship.position - nearest.position).length();
+    if !(distance.is_finite() && distance >= nearest.radius + CLEARANCE) {
+        return Err("too close to the planet: move away before entering local flight".into());
+    }
+    if distance > nearest.radius + LOCAL_RANGE {
+        return Err(format!(
+            "too far from the nearest planet ({:.2} above its surface, at most {LOCAL_RANGE})",
+            distance - nearest.radius
+        ));
+    }
+    Ok(FlightMode::Local {
+        planet: nearest.index,
+        previous_planet_position: nearest.position,
+    })
+}

@@ -14,6 +14,7 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::{CameraRig, FollowRig};
+use crate::solar::flight::{FlightMode, LocalTarget, toggle_local};
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes, render_instance,
     render_ship,
@@ -80,6 +81,7 @@ pub struct SolarScene {
     pub rig: CameraRig,
     pub follow: FollowRig,
     pub ship: ShipState,
+    pub flight: FlightMode,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
     /// Center of the orbits (the star).
@@ -98,6 +100,7 @@ impl SolarScene {
             rig: CameraRig::default(),
             follow: FollowRig::default(),
             ship: ShipState::new(SHIP_SPAWN, SHIP_SCALE),
+            flight: FlightMode::Space,
             clock: SimulationClock::default(),
             center: Vector3::zero(),
             light_world,
@@ -145,6 +148,31 @@ impl SolarScene {
                 r + crate::solar::SPHERE_RADIUS * b.transform.scale
             })
             .fold(0.0, f32::max)
+    }
+
+    /// Ideal-sphere radius of a body instance.
+    pub fn radius_of(&self, index: usize) -> f32 {
+        crate::solar::SPHERE_RADIUS * self.bodies[index].transform.scale
+    }
+
+    /// Bodies local flight may orbit: every orbiting body (never the star).
+    pub fn local_targets(&self) -> Vec<LocalTarget> {
+        self.bodies
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.orbit.is_some())
+            .map(|(index, b)| LocalTarget {
+                index,
+                position: b.transform.position,
+                radius: self.radius_of(index),
+            })
+            .collect()
+    }
+
+    /// `L`: toggles local flight; the ship is never moved by the toggle.
+    pub fn toggle_local(&mut self) -> Result<FlightMode, String> {
+        self.flight = toggle_local(self.flight, &self.ship, &self.local_targets())?;
+        Ok(self.flight)
     }
 
     pub fn body_mut(&mut self, body: Body) -> Option<&mut BodyInstance> {

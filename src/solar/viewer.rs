@@ -9,7 +9,7 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
-use crate::solar::flight::{FlightInput, space_step};
+use crate::solar::flight::{FlightInput, FlightMode, space_step};
 use crate::solar::input::{SolarAction, poll_solar};
 use crate::solar::{SolarMeshes, SolarScene};
 use raylib::math::Vector3;
@@ -82,13 +82,23 @@ pub fn step(
                 scene.rig = scene.rig.toggled();
                 println!("Camera rig: {}", scene.rig.name());
             }
+            SolarAction::ToggleLocal => match scene.toggle_local() {
+                Ok(mode) => println!("Flight mode: {}", mode.name()),
+                Err(reason) => println!("Local flight unavailable: {reason}"),
+            },
             _ => {}
         }
     }
     scene.advance(real_dt);
     let dt = scene.clock.real_delta;
     match scene.rig {
-        CameraRig::Follow => space_step(&mut scene.ship, &FlightInput::from_actions(actions), dt),
+        CameraRig::Follow => match scene.flight {
+            FlightMode::Space => {
+                space_step(&mut scene.ship, &FlightInput::from_actions(actions), dt)
+            }
+            // The local controller holds the ship until it is implemented.
+            FlightMode::Local { .. } => {}
+        },
         CameraRig::Orbit => {
             for &action in camera_actions {
                 apply_input(&mut scene.view.camera, action, dt);
@@ -105,7 +115,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, arrows turn (follow) or orbit (orbit rig), V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, arrows turn (follow) or orbit (orbit rig), L local flight, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
