@@ -48,6 +48,40 @@ pub fn solar_mode(cli: &CliArgs, lab6: &CelestialArgs) -> TriangleMode {
     }
 }
 
+/// Window title text: flight mode, the body local flight follows (or the
+/// nearest planet in space flight) with the altitude above its ideal
+/// surface, the ship speed, the camera rig and the measured frame rate.
+pub fn status_line(scene: &SolarScene, speed: f32, fps: f32) -> String {
+    let focus = match scene.flight {
+        FlightMode::Local { planet, .. } => Some(planet),
+        FlightMode::Space => scene
+            .local_targets()
+            .iter()
+            .min_by(|a, b| {
+                let da = (scene.ship.position - a.position).length() - a.radius;
+                let db = (scene.ship.position - b.position).length() - b.radius;
+                da.total_cmp(&db)
+            })
+            .map(|t| t.index),
+    };
+    let place = match focus {
+        Some(i) => {
+            let altitude = (scene.ship.position - scene.bodies[i].transform.position).length()
+                - scene.radius_of(i);
+            format!(
+                "{} altitude {altitude:.2}",
+                scene.bodies[i].body().display_name()
+            )
+        }
+        None => "no planet".to_string(),
+    };
+    format!(
+        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS",
+        scene.flight.name(),
+        scene.rig.name()
+    )
+}
+
 /// One frame: clear once, then every body and the spacecraft.
 pub fn render_frame(
     scene: &SolarScene,
@@ -129,6 +163,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
     framebuffer.set_background_color(hex(0x05030a));
     let mut presenter = Presenter::new(&mut rl, &thread, &framebuffer)?;
     let mut reported = false;
+    let mut title_timer = 0.0f32;
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -140,7 +175,20 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
             mode = m;
             println!("Mode: {mode}");
         }
+        let before = scene.ship.position;
+        let mode_before = scene.flight;
         step(&mut scene, &actions, &camera_actions, dt);
+        title_timer += dt;
+        if title_timer >= 0.5 || scene.flight != mode_before {
+            let speed = if scene.clock.real_delta > 0.0 {
+                (scene.ship.position - before).length() / scene.clock.real_delta
+            } else {
+                0.0
+            };
+            let title = status_line(&scene, speed, rl.get_fps() as f32);
+            rl.set_window_title(&thread, &title);
+            title_timer = 0.0;
+        }
         let shaded = render_frame(&scene, &mut framebuffer, mode, options)?;
         if !reported {
             println!(

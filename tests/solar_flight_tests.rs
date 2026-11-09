@@ -387,3 +387,47 @@ fn flying_over_the_poles_and_in_space_mode_is_stable() {
     local_step(&mut s, &mut space, planet, 1.0, &fly, 0.05);
     assert_eq!(s, before);
 }
+
+// ---------------------------------------------------------------------------
+// Status line
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_status_line_reports_mode_body_altitude_speed_rig_and_fps() {
+    use rust_software_renderer::pipeline::{OrbitCamera, OrbitView, ViewPreset, Viewport};
+    use rust_software_renderer::solar::viewer::status_line;
+    use rust_software_renderer::solar::{SolarMeshes, SolarScene};
+    let view = OrbitView::for_world(
+        OrbitCamera::new(Vector3::zero(), ViewPreset::Oblique),
+        5.0,
+        Viewport::new(320, 240, 0.1),
+    )
+    .unwrap();
+    let mut scene = SolarScene::default_system(
+        SolarMeshes::load().unwrap(),
+        view,
+        Vector3::new(0.0, 1.0, 0.0),
+    )
+    .unwrap();
+    let space = status_line(&scene, 1.5, 59.6);
+    assert!(
+        space.contains("space flight") && space.contains("speed 1.50"),
+        "{space}"
+    );
+    assert!(
+        space.contains("follow rig") && space.contains("60 FPS"),
+        "{space}"
+    );
+    assert!(
+        space.contains("altitude"),
+        "nearest planet shown in space flight: {space}"
+    );
+
+    let p = scene.bodies[1].transform.position;
+    scene.ship.position = p + Vector3::new(0.0, scene.radius_of(1) + 1.25, 0.0);
+    scene.toggle_local().unwrap();
+    let local = status_line(&scene, 0.0, 30.0);
+    assert!(local.contains("local flight"), "{local}");
+    assert!(local.contains("Crimson Entrance altitude 1.25"), "{local}");
+    assert!(!local.contains('\n'));
+}
