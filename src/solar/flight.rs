@@ -19,6 +19,8 @@ pub struct FlightInput {
     pub pitch: f32,
     /// Local flight only: `E` = +1 (away from the planet), `Q` = -1.
     pub radial: f32,
+    /// Space flight only: `LEFT_SHIFT` held multiplies the speed by `BOOST`.
+    pub boost: bool,
 }
 
 impl FlightInput {
@@ -32,6 +34,7 @@ impl FlightInput {
             yaw: axis(SolarAction::YawLeft, SolarAction::YawRight),
             pitch: axis(SolarAction::PitchUp, SolarAction::PitchDown),
             radial: axis(SolarAction::Ascend, SolarAction::Descend),
+            boost: actions.contains(&SolarAction::Boost),
         }
     }
 }
@@ -44,8 +47,12 @@ fn clamp_dt(dt: f32) -> f32 {
     }
 }
 
+/// Speed factor of light speed (space flight with the boost held).
+pub const BOOST: f32 = 8.0;
+
 /// Space flight: turn around the ship's own axes, then move along the nose
-/// by `throttle * move_speed * dt`. No inertia, no collisions.
+/// by `throttle * move_speed * dt`, times `BOOST` while boosting. No
+/// inertia and no collisions: a boosted ship can pass through a body.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
     if input.yaw != 0.0 {
@@ -54,7 +61,8 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     if input.pitch != 0.0 {
         ship.pitch(input.pitch * ship.turn_speed * dt);
     }
-    let step = input.throttle * ship.move_speed * dt;
+    let boost = if input.boost { BOOST } else { 1.0 };
+    let step = input.throttle * ship.move_speed * boost * dt;
     ship.position += ship.forward * step;
 }
 

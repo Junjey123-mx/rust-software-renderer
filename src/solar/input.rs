@@ -18,6 +18,8 @@ pub enum SolarAction {
     Ascend,
     /// Local flight: towards the planet.
     Descend,
+    /// Space flight: light speed while held.
+    Boost,
     TogglePause,
     ToggleCamera,
     ToggleLocal,
@@ -26,7 +28,7 @@ pub enum SolarAction {
 }
 
 /// Held keys and the action they produce.
-pub const HELD: [(KeyboardKey, SolarAction); 8] = [
+pub const HELD: [(KeyboardKey, SolarAction); 9] = [
     (KeyboardKey::KEY_W, SolarAction::Forward),
     (KeyboardKey::KEY_S, SolarAction::Backward),
     (KeyboardKey::KEY_LEFT, SolarAction::YawLeft),
@@ -35,6 +37,7 @@ pub const HELD: [(KeyboardKey, SolarAction); 8] = [
     (KeyboardKey::KEY_DOWN, SolarAction::PitchDown),
     (KeyboardKey::KEY_E, SolarAction::Ascend),
     (KeyboardKey::KEY_Q, SolarAction::Descend),
+    (KeyboardKey::KEY_LEFT_SHIFT, SolarAction::Boost),
 ];
 
 /// Keys that fire once per press.

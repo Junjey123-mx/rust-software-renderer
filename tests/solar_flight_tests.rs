@@ -431,3 +431,60 @@ fn the_status_line_reports_mode_body_altitude_speed_rig_and_fps() {
     assert!(local.contains("Crimson Entrance altitude 1.25"), "{local}");
     assert!(!local.contains('\n'));
 }
+
+// ---------------------------------------------------------------------------
+// Light speed
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::solar::flight::BOOST;
+
+#[test]
+fn shift_boosts_space_flight_only_while_held() {
+    let fwd = FlightInput::from_actions(&[SolarAction::Forward]);
+    let fast = FlightInput::from_actions(&[SolarAction::Forward, SolarAction::Boost]);
+    assert!(fast.boost && !fwd.boost);
+    let (mut a, mut b) = (ship(), ship());
+    space_step(&mut a, &fwd, 0.05);
+    space_step(&mut b, &fast, 0.05);
+    assert!((b.position.length() - a.position.length() * BOOST).abs() < 1e-5);
+    // Released: back to the normal step at once.
+    let before = b.position;
+    space_step(&mut b, &fwd, 0.05);
+    assert!(((b.position - before).length() - a.position.length()).abs() < 1e-6);
+    // Boost alone does not move, and the stalled-frame clamp still applies.
+    let mut c = ship();
+    space_step(
+        &mut c,
+        &FlightInput::from_actions(&[SolarAction::Boost]),
+        0.05,
+    );
+    assert_eq!(c.position, Vector3::zero());
+    let mut d = ship();
+    space_step(&mut d, &fast, 10.0);
+    assert!((d.position.length() - 1.5 * BOOST * 0.1).abs() < 1e-4);
+}
+
+#[test]
+fn boost_never_changes_local_flight_speed_or_the_orbits() {
+    let planet = Vector3::zero();
+    let mut a = ShipState::new(Vector3::new(0.0, 2.0, 0.0), 0.1);
+    let mut b = a;
+    let (mut ma, mut mb) = (local_at(planet), local_at(planet));
+    local_step(
+        &mut a,
+        &mut ma,
+        planet,
+        1.0,
+        &FlightInput::from_actions(&[SolarAction::Forward]),
+        0.05,
+    );
+    local_step(
+        &mut b,
+        &mut mb,
+        planet,
+        1.0,
+        &FlightInput::from_actions(&[SolarAction::Forward, SolarAction::Boost]),
+        0.05,
+    );
+    assert_eq!(a, b);
+}
