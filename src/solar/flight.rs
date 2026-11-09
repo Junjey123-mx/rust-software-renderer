@@ -5,6 +5,7 @@
 use crate::solar::ShipState;
 use crate::solar::clock::MAX_STEP;
 use crate::solar::input::SolarAction;
+use raylib::math::Vector3;
 
 /// Signed axes of one frame, each in `[-1, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -51,4 +52,49 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     }
     let step = input.throttle * ship.move_speed * dt;
     ship.position += ship.forward * step;
+}
+
+/// Radial frame of the spacecraft around a planet treated as an ideal
+/// sphere of `radius` (no relief, no gravity).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LocalFrame {
+    /// Unit direction from the planet center to the ship: the local up.
+    pub normal: Vector3,
+    /// Distance from the planet center to the ship center.
+    pub distance: f32,
+    /// `distance - radius`: height of the ship center above the surface.
+    pub altitude: f32,
+    /// Unit direction of travel on the tangent plane: the nose projected
+    /// onto it, or the ship's up when the nose points radially.
+    pub tangent: Vector3,
+}
+
+/// Tolerance below which a vector is treated as zero.
+pub const EPSILON: f32 = 1e-5;
+
+fn unit_or_none(v: Vector3) -> Option<Vector3> {
+    let len = v.length();
+    (len.is_finite() && len > EPSILON).then(|| v / len)
+}
+
+/// Local frame of `ship` around a planet centered at `planet` with
+/// `radius`. `None` when the ship sits (almost) at the center or any value
+/// is non-finite.
+pub fn local_frame(ship: &ShipState, planet: Vector3, radius: f32) -> Option<LocalFrame> {
+    let offset = ship.position - planet;
+    let distance = offset.length();
+    let normal = unit_or_none(offset)?;
+    if !radius.is_finite() {
+        return None;
+    }
+    let project = |v: Vector3| v - normal * v.dot(normal);
+    let tangent = unit_or_none(project(ship.forward))
+        .or_else(|| unit_or_none(project(ship.up)))
+        .or_else(|| unit_or_none(project(ship.right())))?;
+    Some(LocalFrame {
+        normal,
+        distance,
+        altitude: distance - radius,
+        tangent,
+    })
 }

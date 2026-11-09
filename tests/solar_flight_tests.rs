@@ -120,3 +120,66 @@ fn the_input_map_uses_distinct_keys() {
     keys.dedup();
     assert_eq!(keys.len(), n, "no key bound twice");
 }
+
+// ---------------------------------------------------------------------------
+// Local frame around a planet
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::solar::flight::local_frame;
+
+#[test]
+fn the_local_frame_has_radial_up_distance_altitude_and_a_tangent() {
+    let planet = Vector3::new(2.0, 0.0, 0.0);
+    let s = ShipState::new(Vector3::new(2.0, 3.0, 0.0), 0.1); // above the planet, nose -Z
+    let f = local_frame(&s, planet, 1.0).unwrap();
+    assert!(close(f.normal, Vector3::new(0.0, 1.0, 0.0), 1e-6));
+    assert!((f.distance - 3.0).abs() < 1e-6 && (f.altitude - 2.0).abs() < 1e-6);
+    assert!(close(f.tangent, Vector3::new(0.0, 0.0, -1.0), 1e-6));
+    assert!(f.tangent.dot(f.normal).abs() < 1e-6);
+}
+
+#[test]
+fn below_the_planet_the_local_up_points_down() {
+    let s = ShipState::new(Vector3::new(0.0, -2.0, 0.0), 0.1);
+    let f = local_frame(&s, Vector3::zero(), 0.5).unwrap();
+    assert!(close(f.normal, Vector3::new(0.0, -1.0, 0.0), 1e-6));
+    assert!(f.tangent.dot(f.normal).abs() < 1e-6);
+}
+
+#[test]
+fn a_radial_nose_falls_back_to_the_projected_up() {
+    // Ship on +Z of the planet pointing straight at it (nose -Z).
+    let s = ShipState::new(Vector3::new(0.0, 0.0, 3.0), 0.1);
+    let f = local_frame(&s, Vector3::zero(), 1.0).unwrap();
+    assert!(close(f.tangent, s.up, 1e-6), "{:?}", f.tangent);
+    // Tilted slightly off radial: the projected nose is used and stays unit.
+    let mut t = s;
+    t.pitch(0.01);
+    let g = local_frame(&t, Vector3::zero(), 1.0).unwrap();
+    assert!((g.tangent.length() - 1.0).abs() < 1e-4);
+    assert!(g.tangent.dot(g.normal).abs() < 1e-4);
+}
+
+#[test]
+fn a_ship_at_the_center_or_non_finite_values_have_no_frame() {
+    let s = ShipState::new(Vector3::zero(), 0.1);
+    assert!(local_frame(&s, Vector3::zero(), 1.0).is_none());
+    let s = ShipState::new(Vector3::new(0.0, 0.0, f32::NAN), 0.1);
+    assert!(local_frame(&s, Vector3::zero(), 1.0).is_none());
+    let s = ShipState::new(Vector3::new(0.0, 2.0, 0.0), 0.1);
+    assert!(local_frame(&s, Vector3::zero(), f32::INFINITY).is_none());
+}
+
+#[test]
+fn the_frame_holds_near_the_poles_and_at_any_heading() {
+    let mut s = ShipState::new(Vector3::new(0.0, 5.0, 0.001), 0.1);
+    for i in 0..36 {
+        s.yaw(0.17);
+        if i % 4 == 0 {
+            s.pitch(0.3);
+        }
+        let f = local_frame(&s, Vector3::zero(), 1.0).unwrap();
+        assert!((f.tangent.length() - 1.0).abs() < 1e-4);
+        assert!(f.tangent.dot(f.normal).abs() < 1e-4);
+    }
+}
