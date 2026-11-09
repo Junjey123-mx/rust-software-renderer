@@ -4,11 +4,11 @@
 use crate::app::{CliArgs, apply_input, poll_input, save_screenshot};
 use crate::celestial::cli::CelestialArgs;
 use crate::celestial::{Body, CelestialScene};
-use crate::pipeline::{OrbitCamera, OrbitView, ShadedOptions, Transform, Viewport};
+use crate::pipeline::{OrbitCamera, OrbitView, ShadedOptions, Viewport};
 use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
-use crate::solar::{BodyInstance, Orbit, SolarMeshes, SolarScene};
+use crate::solar::{SolarMeshes, SolarScene};
 use raylib::consts::KeyboardKey;
 use raylib::math::Vector3;
 use std::error::Error;
@@ -19,30 +19,19 @@ pub const HEIGHT: u32 = 600;
 pub const WORLD_RADIUS: f32 = 5.3;
 pub const TITLE: &str = "Rust Software Renderer - Camino al Proyecto 3: Solar";
 
-/// Builds the scene described by the command line: the star at the center
-/// and the two planets on circular orbits.
-pub fn build_scene(cli: &CliArgs, _lab6: &CelestialArgs) -> Result<SolarScene, Box<dyn Error>> {
+/// Builds the scene described by the command line: the default system at
+/// `--time`, with `--set body.param=value` overrides applied per instance.
+pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Box<dyn Error>> {
     let camera = OrbitCamera::new(Vector3::zero(), cli.view.unwrap_or_default());
     let view = OrbitView::for_world(camera, WORLD_RADIUS, Viewport::new(WIDTH, HEIGHT, 0.1))?;
     let light = CelestialScene::new(Body::KingsCrown, Default::default(), WIDTH, HEIGHT)?
         .uniforms()
         .light_direction;
-    let mut scene = SolarScene::new(SolarMeshes::load()?, view, light);
-    scene.bodies = vec![
-        BodyInstance::new(Body::KingsCrown, Transform::new(Vector3::zero(), 1.3), 0.05),
-        BodyInstance::new(
-            Body::CrimsonEntrance,
-            Transform::new(Vector3::new(2.6, 0.0, 0.0), 0.6),
-            0.6,
-        )
-        .with_orbit(Orbit::new(2.6, 0.5, 0.0)?),
-        BodyInstance::new(
-            Body::HouseOfCards,
-            Transform::new(Vector3::new(-4.4, 0.0, 0.0), 0.9),
-            0.35,
-        )
-        .with_orbit(Orbit::new(4.4, 0.22, std::f32::consts::PI)?),
-    ];
+    let mut scene = SolarScene::default_system(SolarMeshes::load()?, view, light)?;
+    if let Some(t) = lab6.time {
+        scene.clock.time = t;
+    }
+    scene.apply_overrides(&lab6.sets)?;
     scene.update();
     Ok(scene)
 }

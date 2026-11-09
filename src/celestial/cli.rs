@@ -157,11 +157,23 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if solar && cli.obj.is_some() {
         return Err("--obj cannot be combined with --scene solar".into());
     }
+    if solar {
+        for (name, _) in &lab6.sets {
+            if !name.contains('.') {
+                return Err(format!(
+                    "--set '{name}' needs a body prefix in --scene solar (crown., entrance. or house.)"
+                ));
+            }
+        }
+    }
     // The shader benchmark renders every body itself, so it needs no scene;
-    // the solar scene shares only `--threads` with the single-body scenes.
+    // the solar scene shares `--threads`, `--time` and prefixed `--set` with
+    // the single-body scenes.
     let scene_options = CelestialArgs {
         benchmark_shaders: false,
         threads: if solar { None } else { lab6.threads },
+        time: if solar { None } else { lab6.time },
+        sets: if solar { Vec::new() } else { lab6.sets.clone() },
         ..lab6.clone()
     };
     if !celestial && !scene_options.is_empty() {
