@@ -33,7 +33,8 @@ pub use screen_mapping::{
     model_bounds, project_orbit,
 };
 pub use shaded::{
-    FragmentView, ShadedOptions, ShadedStats, ViewProjection, render_shaded, render_shaded_with,
+    FragmentView, RenderScratch, ShadedOptions, ShadedStats, ViewProjection, render_shaded,
+    render_shaded_with, render_shaded_with_scratch,
 };
 pub use surface::{NormalSource, ShaderUniforms, SurfaceSample, direction_from_angles};
 pub use transform::Transform;

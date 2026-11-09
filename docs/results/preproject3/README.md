@@ -32,3 +32,16 @@ Medianas de tres corridas independientes del 2026-11-09 (ms por cuadro), además
 | Fragmentos sombreados | 39 380 | 30 231 | 18 356 | 57 900 | 78 182 | 101 850 | 39 380 | 57 900 | 57 900 | 150 452 |
 
 La variación entre corridas es alta en esta laptop (hasta ±25 % en E, I y J) por el escalado de frecuencia de la CPU; H e I no se distinguen dentro de ese ruido (el campo estelar cuesta 0.02 ms medido aislado). J, el acercamiento máximo a Crimson Entrance, es el peor caso: unos 20 FPS de CPU.
+
+## Reutilización de buffers (`RenderScratch`)
+
+Comparación A/B intercalada en un mismo proceso (120 cuadros por variante, escenarios del benchmark solar, 800×600, 20 hilos): búferes nuevos en cada dibujo frente a `RenderScratch` reutilizado por la escena. Mediana por cuadro:
+
+| Escenario | Búferes nuevos (ms) | Reutilizados (ms) | Cambio |
+|---|---:|---:|---:|
+| D | 21.68 | 21.56 | −0.5 % |
+| E | 35.99 | 35.14 | −2.3 % |
+| F | 30.58 | 29.02 | −5.1 % |
+| J | 60.04 | 60.12 | +0.1 % |
+
+El efecto es marginal y queda dentro del ruido entre corridas: no se atribuye una mejora de FPS. Se conserva porque las imágenes son idénticas byte a byte (oráculos y pruebas de reutilización) y evita reservar hasta unos 7 MB de muestras por instancia en cada cuadro.

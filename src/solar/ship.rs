@@ -7,8 +7,8 @@
 
 use crate::geometry::Vertex;
 use crate::pipeline::{
-    DirectionalLight, NormalSource, RenderError, ShadedOptions, ShadedStats, Uniforms,
-    ViewProjection, intensity, render_shaded_with,
+    DirectionalLight, NormalSource, RenderError, RenderScratch, ShadedOptions, ShadedStats,
+    Uniforms, ViewProjection, intensity, render_shaded_with_scratch,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
@@ -149,6 +149,30 @@ pub fn render_ship(
     mode: TriangleMode,
     threads: usize,
 ) -> Result<ShadedStats, RenderError> {
+    render_ship_scratch(
+        framebuffer,
+        mesh,
+        ship,
+        projection,
+        light_world,
+        mode,
+        threads,
+        &mut RenderScratch::new(),
+    )
+}
+
+/// `render_ship` reusing the caller's buffers.
+#[allow(clippy::too_many_arguments)]
+pub fn render_ship_scratch(
+    framebuffer: &mut Framebuffer,
+    mesh: &[Vertex],
+    ship: &ShipState,
+    projection: &ViewProjection,
+    light_world: Vector3,
+    mode: TriangleMode,
+    threads: usize,
+    scratch: &mut RenderScratch,
+) -> Result<ShadedStats, RenderError> {
     let light = DirectionalLight {
         direction: ship.to_object_dir(light_world),
         ..DirectionalLight::default()
@@ -161,7 +185,7 @@ pub fn render_ship(
         normal_source: NormalSource::Face,
         threads,
     };
-    render_shaded_with(
+    render_shaded_with_scratch(
         framebuffer,
         &uniforms,
         mesh,
@@ -169,5 +193,6 @@ pub fn render_ship(
         mode,
         options,
         &|s, _| light.base_color * intensity(s.face_normal, &light),
+        scratch,
     )
 }

@@ -3,8 +3,8 @@
 use crate::celestial::{Body, CelestialMaterial, DebugView};
 use crate::geometry::Vertex;
 use crate::pipeline::{
-    RenderError, ShadedOptions, ShadedStats, ShaderUniforms, Transform, Uniforms, ViewProjection,
-    render_shaded_with,
+    RenderError, RenderScratch, ShadedOptions, ShadedStats, ShaderUniforms, Transform, Uniforms,
+    ViewProjection, render_shaded_with_scratch,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
@@ -113,6 +113,23 @@ pub fn render_instance(
     instance: &BodyInstance,
     frame: &FrameContext,
 ) -> Result<ShadedStats, RenderError> {
+    render_instance_scratch(
+        framebuffer,
+        mesh,
+        instance,
+        frame,
+        &mut RenderScratch::new(),
+    )
+}
+
+/// `render_instance` reusing the caller's buffers.
+pub fn render_instance_scratch(
+    framebuffer: &mut Framebuffer,
+    mesh: &[Vertex],
+    instance: &BodyInstance,
+    frame: &FrameContext,
+    scratch: &mut RenderScratch,
+) -> Result<ShadedStats, RenderError> {
     let transform = instance.transform;
     let eye_world = eye_towards(&frame.projection, transform.position);
     let uniforms = instance_uniforms(&transform, frame.time, frame.light_world, eye_world);
@@ -120,7 +137,7 @@ pub fn render_instance(
     let model = Uniforms {
         model_matrix: transform.matrix(),
     };
-    render_shaded_with(
+    render_shaded_with_scratch(
         framebuffer,
         &model,
         mesh,
@@ -128,5 +145,6 @@ pub fn render_instance(
         frame.mode,
         frame.options,
         &|s, v| prepared.shade_with_eye(s, unit(transform.to_object_dir(v.view_direction))),
+        scratch,
     )
 }

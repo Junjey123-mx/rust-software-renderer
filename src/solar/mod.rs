@@ -15,8 +15,11 @@ pub mod travel;
 pub mod viewer;
 
 pub use clock::{MAX_STEP, SimulationClock};
-pub use instance::{BodyInstance, FrameContext, eye_towards, instance_uniforms, render_instance};
+pub use instance::{
+    BodyInstance, FrameContext, eye_towards, instance_uniforms, render_instance,
+    render_instance_scratch,
+};
 pub use orbit::Orbit;
 pub use resources::{SPHERE_RADIUS, SolarMeshes};
 pub use scene::{CameraMode, FOV_Y, NEAR, SolarScene};
-pub use ship::{ShipState, render_ship};
+pub use ship::{ShipState, render_ship, render_ship_scratch};

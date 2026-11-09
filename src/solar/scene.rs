@@ -8,19 +8,19 @@
 
 use crate::celestial::Body;
 use crate::pipeline::{
-    OrbitView, PerspectiveCamera, RenderError, ShadedOptions, ShadedStats, Transform,
-    ViewProjection,
+    OrbitView, PerspectiveCamera, RenderError, RenderScratch, ShadedOptions, ShadedStats,
+    Transform, ViewProjection,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
+use crate::solar::instance::render_instance_scratch;
+use crate::solar::ship::render_ship_scratch;
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField, draw_stars};
-use crate::solar::{
-    BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes, render_instance,
-    render_ship,
-};
+use crate::solar::{BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes};
 use raylib::math::Vector3;
+use std::cell::RefCell;
 
 /// Which projection the solar scene renders through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -85,6 +85,8 @@ pub struct SolarScene {
     pub flight: FlightMode,
     /// Background stars, generated once.
     pub stars: StarField,
+    /// Shaded-stage buffers reused by every draw of this scene.
+    scratch: RefCell<RenderScratch>,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
     /// Center of the orbits (the star).
@@ -105,6 +107,7 @@ impl SolarScene {
             ship: ShipState::new(SHIP_SPAWN, SHIP_SCALE),
             flight: FlightMode::Space,
             stars: StarField::generate(DEFAULT_SEED, DEFAULT_STARS),
+            scratch: RefCell::new(RenderScratch::new()),
             clock: SimulationClock::default(),
             center: Vector3::zero(),
             light_world,
@@ -288,7 +291,7 @@ impl SolarScene {
         mode: TriangleMode,
         options: ShadedOptions,
     ) -> Result<ShadedStats, RenderError> {
-        render_ship(
+        render_ship_scratch(
             framebuffer,
             &self.meshes.ship,
             &self.ship,
@@ -296,6 +299,7 @@ impl SolarScene {
             self.ship_light(),
             mode,
             options.threads,
+            &mut self.scratch.borrow_mut(),
         )
     }
 
@@ -338,6 +342,11 @@ impl SolarScene {
         }
     }
 
+    /// Fragments the reused shaded-stage buffers can hold.
+    pub fn scratch_capacity(&self) -> usize {
+        self.scratch.borrow().capacity()
+    }
+
     /// Draws every body into `framebuffer` without clearing it. Returns the
     /// stats of each instance in list order.
     pub fn render_objects_without_clear(
@@ -347,6 +356,7 @@ impl SolarScene {
         options: ShadedOptions,
     ) -> Result<Vec<ShadedStats>, RenderError> {
         let shared = self.frame_context(mode, options);
+        let mut scratch = self.scratch.borrow_mut();
         self.bodies
             .iter()
             .map(|body| {
@@ -354,7 +364,13 @@ impl SolarScene {
                     light_world: self.light_for(body),
                     ..shared
                 };
-                render_instance(framebuffer, &self.meshes.sphere, body, &frame)
+                render_instance_scratch(
+                    framebuffer,
+                    &self.meshes.sphere,
+                    body,
+                    &frame,
+                    &mut scratch,
+                )
             })
             .collect()
     }

@@ -76,6 +76,27 @@ pub struct FragmentView {
     pub view_direction: Vector3,
 }
 
+/// Per-frame buffers of the shaded stage, owned by the caller so their
+/// capacity survives between draws instead of being reallocated for every
+/// instance. Contents never carry over: every draw clears them first.
+#[derive(Debug, Clone, Default)]
+pub struct RenderScratch {
+    samples: Vec<SurfaceSample>,
+    views: Vec<FragmentView>,
+    colors: Vec<Vector3>,
+}
+
+impl RenderScratch {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Fragments the buffers can hold without reallocating.
+    pub fn capacity(&self) -> usize {
+        self.samples.capacity().min(self.colors.capacity())
+    }
+}
+
 /// Renders `vertex_array` with the orbit `view`, shading every visible
 /// fragment with `shader`. `Wireframe` delegates to the laboratory 4/5
 /// outline path (no shader evaluation).
@@ -87,6 +108,32 @@ pub fn render_shaded<S>(
     mode: TriangleMode,
     options: ShadedOptions,
     shader: &S,
+) -> Result<ShadedStats, RenderError>
+where
+    S: Fn(&SurfaceSample) -> Vector3 + Sync,
+{
+    render_orbit(
+        framebuffer,
+        uniforms,
+        vertex_array,
+        view,
+        mode,
+        options,
+        shader,
+        &mut RenderScratch::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_orbit<S>(
+    framebuffer: &mut Framebuffer,
+    uniforms: &Uniforms,
+    vertex_array: &[Vertex],
+    view: OrbitView,
+    mode: TriangleMode,
+    options: ShadedOptions,
+    shader: &S,
+    scratch: &mut RenderScratch,
 ) -> Result<ShadedStats, RenderError>
 where
     S: Fn(&SurfaceSample) -> Vector3 + Sync,
@@ -130,7 +177,8 @@ where
         triangles_processed: triangles.len(),
         ..ShadedStats::default()
     };
-    let mut samples: Vec<SurfaceSample> = Vec::new();
+    let samples = &mut scratch.samples;
+    samples.clear();
     for (i, tri) in triangles.iter().enumerate() {
         let k = 3 * i;
         let Some(world_normal) = face_normal(world[k], world[k + 1], world[k + 2]) else {
@@ -194,11 +242,14 @@ where
     stats.raster_time = raster_start.elapsed();
 
     let shade_start = Instant::now();
-    let colors = shade_all(&samples, shader, options.threads);
+    let samples = &scratch.samples;
+    shade_indexed(&mut scratch.colors, samples.len(), options.threads, |i| {
+        shader(&samples[i])
+    });
     stats.shade_time = shade_start.elapsed();
     stats.fragments_shaded = samples.len();
 
-    for (s, color) in samples.iter().zip(colors) {
+    for (s, &color) in samples.iter().zip(&scratch.colors) {
         framebuffer.point_depth(s.x, s.y, color, s.depth);
     }
     Ok(stats)
@@ -220,12 +271,39 @@ pub fn render_shaded_with<S>(
 where
     S: Fn(&SurfaceSample, &FragmentView) -> Vector3 + Sync,
 {
+    render_shaded_with_scratch(
+        framebuffer,
+        uniforms,
+        vertex_array,
+        projection,
+        mode,
+        options,
+        shader,
+        &mut RenderScratch::new(),
+    )
+}
+
+/// `render_shaded_with` reusing the caller's buffers.
+#[allow(clippy::too_many_arguments)]
+pub fn render_shaded_with_scratch<S>(
+    framebuffer: &mut Framebuffer,
+    uniforms: &Uniforms,
+    vertex_array: &[Vertex],
+    projection: &ViewProjection,
+    mode: TriangleMode,
+    options: ShadedOptions,
+    shader: &S,
+    scratch: &mut RenderScratch,
+) -> Result<ShadedStats, RenderError>
+where
+    S: Fn(&SurfaceSample, &FragmentView) -> Vector3 + Sync,
+{
     match projection {
         ViewProjection::Orbit(view) => {
             let fragment_view = FragmentView {
                 view_direction: view.camera.eye_direction(),
             };
-            render_shaded(
+            render_orbit(
                 framebuffer,
                 uniforms,
                 vertex_array,
@@ -233,6 +311,7 @@ where
                 mode,
                 options,
                 &|s| shader(s, &fragment_view),
+                scratch,
             )
         }
         ViewProjection::Perspective(camera) => render_perspective(
@@ -243,10 +322,12 @@ where
             mode,
             options,
             shader,
+            scratch,
         ),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_perspective<S>(
     framebuffer: &mut Framebuffer,
     uniforms: &Uniforms,
@@ -255,6 +336,7 @@ fn render_perspective<S>(
     mode: TriangleMode,
     options: ShadedOptions,
     shader: &S,
+    scratch: &mut RenderScratch,
 ) -> Result<ShadedStats, RenderError>
 where
     S: Fn(&SurfaceSample, &FragmentView) -> Vector3 + Sync,
@@ -273,8 +355,10 @@ where
         triangles_processed: triangles.len(),
         ..ShadedStats::default()
     };
-    let mut samples: Vec<SurfaceSample> = Vec::new();
-    let mut views: Vec<FragmentView> = Vec::new();
+    let samples = &mut scratch.samples;
+    let views = &mut scratch.views;
+    samples.clear();
+    views.clear();
     for i in 0..triangles.len() {
         let tri = [corners[3 * i], corners[3 * i + 1], corners[3 * i + 2]];
         let Some(world_normal) = face_normal(
@@ -398,13 +482,14 @@ where
     stats.raster_time = raster_start.elapsed();
 
     let shade_start = Instant::now();
-    let colors = shade_indexed(samples.len(), options.threads, |i| {
+    let (samples, views) = (&scratch.samples, &scratch.views);
+    shade_indexed(&mut scratch.colors, samples.len(), options.threads, |i| {
         shader(&samples[i], &views[i])
     });
     stats.shade_time = shade_start.elapsed();
     stats.fragments_shaded = samples.len();
 
-    for (s, color) in samples.iter().zip(colors) {
+    for (s, &color) in samples.iter().zip(&scratch.colors) {
         framebuffer.point_depth(s.x, s.y, color, s.depth);
     }
     Ok(stats)
@@ -413,50 +498,45 @@ where
 /// Fragments per job of the shader threads.
 const SHADE_CHUNK: usize = 512;
 
-/// Evaluates the shader on small chunks that idle threads take from a shared
-/// queue, so fast and slow cores (and cheap and expensive regions) stay
-/// busy. Every color is written at its sample's index, so the result does
-/// not depend on the number of threads.
-fn shade_all<S>(samples: &[SurfaceSample], shader: &S, threads: usize) -> Vec<Vector3>
-where
-    S: Fn(&SurfaceSample) -> Vector3 + Sync,
-{
-    shade_indexed(samples.len(), threads, |i| shader(&samples[i]))
-}
-
-/// Colors `0..count` computed by `color(i)` on chunks of `SHADE_CHUNK`
-/// indices; sequential below two samples or with one thread.
-fn shade_indexed<F>(count: usize, threads: usize, color: F) -> Vec<Vector3>
+/// Evaluates `color(i)` for `0..count` into `out` (resized, capacity
+/// kept) on small chunks that idle threads take from a shared queue, so fast
+/// and slow cores (and cheap and expensive regions) stay busy. Every color
+/// is written at its sample's index, so the result does not depend on the
+/// number of threads; sequential below two samples or with one thread.
+fn shade_indexed<F>(out: &mut Vec<Vector3>, count: usize, threads: usize, color: F)
 where
     F: Fn(usize) -> Vector3 + Sync,
 {
+    out.clear();
+    out.resize(count, Vector3::zero());
     let n = match threads {
         0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,
     };
     if n <= 1 || count < 2 {
-        return (0..count).map(|i| sanitize(color(i))).collect();
+        for (i, c) in out.iter_mut().enumerate() {
+            *c = sanitize(color(i));
+        }
+        return;
     }
-    let mut colors = vec![Vector3::zero(); count];
     let jobs = Mutex::new(
         (0..count)
             .step_by(SHADE_CHUNK)
-            .zip(colors.chunks_mut(SHADE_CHUNK)),
+            .zip(out.chunks_mut(SHADE_CHUNK)),
     );
     std::thread::scope(|scope| {
         for _ in 0..n.min(count.div_ceil(SHADE_CHUNK)) {
             scope.spawn(|| {
                 loop {
                     let job = jobs.lock().expect("shader job queue").next();
-                    let Some((start, out)) = job else { break };
-                    for (offset, c) in out.iter_mut().enumerate() {
+                    let Some((start, chunk)) = job else { break };
+                    for (offset, c) in chunk.iter_mut().enumerate() {
                         *c = sanitize(color(start + offset));
                     }
                 }
             });
         }
     });
-    colors
 }
 
 /// Non-finite components become 0 so a shader bug cannot poison the image.

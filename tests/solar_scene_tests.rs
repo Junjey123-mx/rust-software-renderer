@@ -465,3 +465,18 @@ fn the_spawn_is_outside_every_body_and_the_ship_is_small() {
         "smaller than the smallest planet"
     );
 }
+
+#[test]
+fn the_scene_reuses_its_buffers_across_frames_without_changing_the_image() {
+    let s = flying_scene();
+    let mut a = Framebuffer::new(W, H);
+    s.render_frame(&mut a, TriangleMode::FilledScanline, options())
+        .unwrap();
+    let capacity = s.scratch_capacity();
+    assert!(capacity > 0);
+    let mut b = Framebuffer::new(W, H);
+    s.render_frame(&mut b, TriangleMode::FilledScanline, options())
+        .unwrap();
+    assert_eq!(fnv(&a), fnv(&b));
+    assert_eq!(s.scratch_capacity(), capacity);
+}

@@ -521,3 +521,52 @@ fn geometry_crossing_the_near_plane_is_clipped_without_artifacts() {
         "no depth"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Reused scratch buffers
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::pipeline::{RenderScratch, render_shaded_with_scratch};
+
+#[test]
+fn a_reused_scratch_gives_byte_identical_images_and_keeps_its_capacity() {
+    let proj = ViewProjection::Perspective(eye_at(-6.0));
+    let big = Transform::new(Vector3::zero(), 2.0);
+    let small = Transform::new(Vector3::new(1.5, 0.0, -2.0), 0.4);
+    let draw = |scratch: Option<&mut RenderScratch>, threads: usize| {
+        let mut fb = Framebuffer::new(W, H);
+        fb.clear();
+        let mut local = RenderScratch::new();
+        let scratch = scratch.unwrap_or(&mut local);
+        for t in [big, small] {
+            let uniforms = Uniforms {
+                model_matrix: t.matrix(),
+            };
+            render_shaded_with_scratch(
+                &mut fb,
+                &uniforms,
+                &sphere(),
+                &proj,
+                TriangleMode::FilledScanline,
+                options(threads),
+                &normal_color,
+                scratch,
+            )
+            .unwrap();
+        }
+        fnv(&fb)
+    };
+    let fresh = draw(None, 1);
+    let mut shared = RenderScratch::new();
+    // A large draw first leaves stale samples behind; later draws must not see them.
+    assert_eq!(draw(Some(&mut shared), 1), fresh);
+    let capacity = shared.capacity();
+    assert!(capacity > 1000);
+    assert_eq!(draw(Some(&mut shared), 0), fresh, "1 and all threads agree");
+    assert_eq!(draw(Some(&mut shared), 1), fresh);
+    assert_eq!(
+        shared.capacity(),
+        capacity,
+        "no reallocation once warmed up"
+    );
+}
