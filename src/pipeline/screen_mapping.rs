@@ -218,6 +218,27 @@ impl OrbitView {
         })
     }
 
+    /// Scale such that a world sphere of `world_radius` around the camera
+    /// target fits the viewport minus margin at zoom 1. For multi-object
+    /// scenes, where no single model defines the framing.
+    pub fn for_world(
+        camera: OrbitCamera,
+        world_radius: f32,
+        viewport: Viewport,
+    ) -> Result<Self, MappingError> {
+        if !(world_radius.is_finite() && world_radius > 0.0) {
+            return Err(MappingError::NonFinitePosition);
+        }
+        Self::new(
+            camera,
+            &ModelBounds {
+                center: camera.target,
+                radius: world_radius,
+            },
+            viewport,
+        )
+    }
+
     pub fn scale(&self) -> f32 {
         self.base_scale * self.camera.zoom
     }
