@@ -264,3 +264,50 @@ fn pause_freezes_positions_spins_and_the_material_time() {
         s.bodies.iter().map(|b| b.transform).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn planets_are_lit_from_the_star_and_the_star_keeps_the_scene_light() {
+    let mut s = orbiting_system();
+    s.advance(0.0);
+    let star = &s.bodies[0];
+    assert_eq!(s.light_for(star), s.light_world);
+    // Entrance sits at +2.6 X: its light points towards -X, unit length.
+    let l = s.light_for(&s.bodies[1]);
+    assert!((l - Vector3::new(-1.0, 0.0, 0.0)).length() < 1e-5, "{l:?}");
+    s.advance(1.0);
+    let p = s.bodies[2].transform.position;
+    let l = s.light_for(&s.bodies[2]);
+    assert!((l.length() - 1.0).abs() < 1e-5);
+    assert!(l.dot(-p) > 0.999, "points at the star from {p:?}");
+}
+
+#[test]
+fn the_hemisphere_facing_the_star_is_brighter() {
+    // House at +3 X with no spin. In the Front view world +X is the screen
+    // left, so the star-facing side (-X) is the right half of its disk.
+    let mut s = scene();
+    s.bodies = vec![
+        body(Body::KingsCrown, 0.0, 0.0, 0.5),
+        body(Body::HouseOfCards, 3.0, 0.0, 1.0),
+    ];
+    let fb = draw(&s);
+    let (cy, cx) = (H as i32 / 2, W as i32 / 2 - 72); // 3 units * 24 px
+    let lum = |x: i32| {
+        let p = pixel(&fb, x, cy);
+        p.x + p.y + p.z
+    };
+    let towards_star: f32 = (6..18).map(|d| lum(cx + d)).sum();
+    let away: f32 = (6..18).map(|d| lum(cx - d)).sum();
+    assert!(towards_star > away * 1.5, "{towards_star} vs {away}");
+
+    // Rotating the planet half a turn keeps the lit side towards the star.
+    s.bodies[1].transform.yaw = std::f32::consts::PI;
+    let fb2 = draw(&s);
+    let lum2 = |x: i32| {
+        let p = pixel(&fb2, x, cy);
+        p.x + p.y + p.z
+    };
+    let towards2: f32 = (6..18).map(|d| lum2(cx + d)).sum();
+    let away2: f32 = (6..18).map(|d| lum2(cx - d)).sum();
+    assert!(towards2 > away2 * 1.5, "{towards2} vs {away2}");
+}

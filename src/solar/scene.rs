@@ -66,6 +66,19 @@ impl SolarScene {
         }
     }
 
+    /// World light of one body: the unit direction from the body towards
+    /// the scene center (the star). A body sitting at the center (the star
+    /// itself, emissive) keeps the scene light.
+    pub fn light_for(&self, body: &BodyInstance) -> Vector3 {
+        let to_star = self.center - body.transform.position;
+        let len = to_star.length();
+        if len.is_finite() && len > 1e-6 {
+            to_star / len
+        } else {
+            self.light_world
+        }
+    }
+
     /// Draws every body into `framebuffer` without clearing it. Returns the
     /// stats of each instance in list order.
     pub fn render_objects_without_clear(
@@ -74,10 +87,16 @@ impl SolarScene {
         mode: TriangleMode,
         options: ShadedOptions,
     ) -> Result<Vec<ShadedStats>, RenderError> {
-        let frame = self.frame_context(mode, options);
+        let shared = self.frame_context(mode, options);
         self.bodies
             .iter()
-            .map(|body| render_instance(framebuffer, &self.meshes.sphere, body, &frame))
+            .map(|body| {
+                let frame = FrameContext {
+                    light_world: self.light_for(body),
+                    ..shared
+                };
+                render_instance(framebuffer, &self.meshes.sphere, body, &frame)
+            })
             .collect()
     }
 }
