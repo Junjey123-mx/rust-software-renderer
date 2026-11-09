@@ -150,3 +150,91 @@ fn view_direction_points_from_the_fragment_to_the_eye() {
         "at the eye: backwards"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Near-plane clipping
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::pipeline::clip_near;
+
+fn cv(z: f32, tag: f32) -> ClipVertex {
+    ClipVertex {
+        object_position: Vector3::new(tag, 0.0, 0.0),
+        world_position: Vector3::new(0.0, tag, 0.0),
+        view_position: Vector3::new(tag, tag, z),
+        color: Vector3::one() * tag,
+    }
+}
+
+#[test]
+fn a_triangle_fully_in_front_is_returned_whole() {
+    let tri = [cv(1.0, 0.0), cv(2.0, 1.0), cv(3.0, 2.0)];
+    let p = clip_near(&tri, 0.5);
+    assert_eq!(p.len(), 3);
+    assert_eq!(p.corners(), &tri);
+    assert_eq!(p.triangles().count(), 1);
+    assert_eq!(p.edges().count(), 3);
+}
+
+#[test]
+fn a_triangle_fully_behind_or_non_finite_is_dropped() {
+    let p = clip_near(&[cv(-1.0, 0.0), cv(-2.0, 1.0), cv(0.2, 2.0)], 0.5);
+    assert!(p.is_empty() && p.triangles().count() == 0 && p.edges().count() == 0);
+    let nan = [cv(f32::NAN, 0.0), cv(2.0, 1.0), cv(3.0, 2.0)];
+    assert!(clip_near(&nan, 0.5).is_empty());
+}
+
+#[test]
+fn one_corner_behind_gives_a_quad_and_two_triangles() {
+    // Corner 0 at z = -1, the others at z = 1; near 0 -> cuts at t = 0.5.
+    let tri = [cv(-1.0, 0.0), cv(1.0, 1.0), cv(1.0, 2.0)];
+    let p = clip_near(&tri, 0.0);
+    assert_eq!(p.len(), 4);
+    assert_eq!(p.triangles().count(), 2);
+    assert_eq!(p.edges().count(), 4, "perimeter only, no fan diagonal");
+    let cut: Vec<&ClipVertex> = p
+        .corners()
+        .iter()
+        .filter(|c| c.view_position.z == 0.0)
+        .collect();
+    assert_eq!(cut.len(), 2);
+    for c in cut {
+        // Interpolated attributes: halfway between corner 0 and 1 or 2.
+        assert!(
+            c.object_position.x == 0.5 || c.object_position.x == 1.0,
+            "{c:?}"
+        );
+        assert_eq!(c.world_position.y, c.object_position.x);
+        assert_eq!(c.color.x, c.object_position.x);
+    }
+    // Every produced triangle has all corners at or beyond the near plane.
+    for t in p.triangles() {
+        assert!(t.iter().all(|v| v.view_position.z >= 0.0));
+    }
+}
+
+#[test]
+fn two_corners_behind_give_one_smaller_triangle() {
+    let tri = [cv(-1.0, 0.0), cv(-1.0, 1.0), cv(1.0, 2.0)];
+    let p = clip_near(&tri, 0.0);
+    assert_eq!(p.len(), 3);
+    assert_eq!(p.triangles().count(), 1);
+    let survivors: Vec<_> = p
+        .corners()
+        .iter()
+        .filter(|c| c.view_position.z > 0.0)
+        .collect();
+    assert_eq!(survivors.len(), 1);
+    assert_eq!(survivors[0].object_position.x, 2.0);
+}
+
+#[test]
+fn a_corner_exactly_on_the_near_plane_is_kept_without_duplicates() {
+    let tri = [cv(0.5, 0.0), cv(2.0, 1.0), cv(3.0, 2.0)];
+    let p = clip_near(&tri, 0.5);
+    assert_eq!(p.len(), 3);
+    let tri = [cv(0.5, 0.0), cv(-2.0, 1.0), cv(3.0, 2.0)];
+    let p = clip_near(&tri, 0.5);
+    assert_eq!(p.len(), 4);
+    assert!(p.corners().iter().all(|c| c.view_position.z >= 0.5));
+}

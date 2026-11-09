@@ -21,7 +21,7 @@ pub mod vertex_shader;
 pub use face_shading::{DirectionalLight, face_normal, intensity, shade_faces};
 pub use fragment_shader::fragment_shader;
 pub use orbit_camera::{CameraBasis, OrbitCamera, ViewPreset};
-pub use perspective::{ClipVertex, PerspectiveCamera};
+pub use perspective::{ClipPolygon, ClipVertex, PerspectiveCamera, clip_near};
 pub use primitive::{IncompletePrimitive, primitive_assembly};
 pub use rasterizer::{rasterize, rasterize_with_mode};
 pub use render::{

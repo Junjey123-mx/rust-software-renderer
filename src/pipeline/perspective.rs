@@ -156,3 +156,88 @@ impl ClipVertex {
         })
     }
 }
+
+/// Result of clipping one triangle: up to four corners in order. Empty when
+/// the triangle lies entirely in front of the near plane or is degenerate.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClipPolygon {
+    corners: [ClipVertex; 4],
+    len: usize,
+}
+
+impl ClipPolygon {
+    fn empty() -> Self {
+        let blank = ClipVertex {
+            object_position: Vector3::zero(),
+            world_position: Vector3::zero(),
+            view_position: Vector3::zero(),
+            color: Vector3::zero(),
+        };
+        Self {
+            corners: [blank; 4],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, v: ClipVertex) {
+        debug_assert!(
+            self.len < 4,
+            "a triangle clipped by one plane has at most 4 corners"
+        );
+        self.corners[self.len] = v;
+        self.len += 1;
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len < 3
+    }
+
+    pub fn corners(&self) -> &[ClipVertex] {
+        &self.corners[..self.len]
+    }
+
+    /// Fan triangulation: zero, one or two triangles.
+    pub fn triangles(&self) -> impl Iterator<Item = [ClipVertex; 3]> + '_ {
+        (1..self.len.saturating_sub(1))
+            .map(move |i| [self.corners[0], self.corners[i], self.corners[i + 1]])
+    }
+
+    /// Perimeter edges in order, without the fan diagonal.
+    pub fn edges(&self) -> impl Iterator<Item = (ClipVertex, ClipVertex)> + '_ {
+        (0..self.len).map(move |i| (self.corners[i], self.corners[(i + 1) % self.len]))
+    }
+}
+
+/// Sutherland-Hodgman clipping of a triangle against the plane
+/// `view.z >= near`, before any perspective division. Every attribute of a
+/// new corner is interpolated at `t = (near - zA) / (zB - zA)`. Non-finite
+/// corners empty the result.
+pub fn clip_near(tri: &[ClipVertex; 3], near: f32) -> ClipPolygon {
+    let mut out = ClipPolygon::empty();
+    if !near.is_finite() || tri.iter().any(|v| !finite(v.view_position)) {
+        return out;
+    }
+    let inside = |v: &ClipVertex| v.view_position.z >= near;
+    for i in 0..3 {
+        let a = &tri[i];
+        let b = &tri[(i + 1) % 3];
+        let (ina, inb) = (inside(a), inside(b));
+        if ina {
+            out.push(*a);
+        }
+        if ina != inb {
+            let t = (near - a.view_position.z) / (b.view_position.z - a.view_position.z);
+            let mut cut = a.lerp(b, t.clamp(0.0, 1.0));
+            cut.view_position.z = near;
+            out.push(cut);
+        }
+    }
+    if out.len < 3 {
+        out.len = 0;
+    }
+    out
+}
