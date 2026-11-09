@@ -63,3 +63,123 @@ fn the_count_is_clamped() {
     );
     assert!(StarField::generate(1, 0).stars.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Drawing the star field
+// ---------------------------------------------------------------------------
+
+use raylib::math::Vector3;
+use rust_software_renderer::celestial::Body;
+use rust_software_renderer::pipeline::{
+    OrbitCamera, OrbitView, PerspectiveCamera, ShadedOptions, Transform, ViewPreset, Viewport,
+};
+use rust_software_renderer::rasterization::TriangleMode;
+use rust_software_renderer::rendering::Framebuffer;
+use rust_software_renderer::solar::camera::CameraRig;
+use rust_software_renderer::solar::skybox::draw_stars;
+use rust_software_renderer::solar::{BodyInstance, CameraMode, SolarMeshes, SolarScene};
+
+const W: u32 = 320;
+const H: u32 = 240;
+
+fn cam(eye: Vector3, dir: Vector3) -> PerspectiveCamera {
+    PerspectiveCamera::new(eye, eye + dir, Vector3::new(0.0, 1.0, 0.0), 1.0, 0.05).unwrap()
+}
+
+fn sky(c: &PerspectiveCamera) -> (Framebuffer, usize) {
+    let mut fb = Framebuffer::new(W, H);
+    fb.clear();
+    let n = draw_stars(&mut fb, &StarField::generate(42, 2000), c);
+    (fb, n)
+}
+
+fn bytes(fb: &Framebuffer) -> Vec<u8> {
+    fb.to_rgba_bytes()
+}
+
+#[test]
+fn translating_the_camera_leaves_the_sky_unchanged_and_rotating_changes_it() {
+    let dir = Vector3::new(0.3, 0.1, -1.0);
+    let (a, n) = sky(&cam(Vector3::zero(), dir));
+    let (b, _) = sky(&cam(Vector3::new(50.0, -3.0, 9.0), dir));
+    assert!(n > 50, "{n} stars in view");
+    assert_eq!(bytes(&a), bytes(&b));
+    let (c, _) = sky(&cam(Vector3::zero(), Vector3::new(1.0, 0.0, 0.0)));
+    assert_ne!(bytes(&a), bytes(&c));
+    // Turning back to the first orientation shows the same stars again.
+    let (d, _) = sky(&cam(Vector3::new(1.0, 1.0, 1.0), dir));
+    assert_eq!(bytes(&a), bytes(&d));
+}
+
+#[test]
+fn stars_write_color_only_and_stay_inside_the_framebuffer() {
+    let (fb, n) = sky(&cam(Vector3::zero(), Vector3::new(0.0, 0.0, -1.0)));
+    assert!(n > 0);
+    assert!(fb.count_non_background() > 0 && fb.count_non_background() <= n);
+    for y in 0..H as i32 {
+        for x in 0..W as i32 {
+            assert_eq!(fb.get_depth(x, y), Some(f32::INFINITY));
+        }
+    }
+    // A very wide view puts stars at the borders without any panic.
+    let wide = PerspectiveCamera::new(
+        Vector3::zero(),
+        Vector3::new(0.0, 0.0, -1.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        3.1,
+        0.05,
+    )
+    .unwrap();
+    let (_, m) = sky(&wide);
+    assert!(m > n, "{m} vs {n}");
+}
+
+#[test]
+fn bodies_hide_the_stars_behind_them() {
+    let view = OrbitView::for_world(
+        OrbitCamera::new(Vector3::zero(), ViewPreset::Front),
+        2.0,
+        Viewport::new(W, H, 0.1),
+    )
+    .unwrap();
+    let mut s = SolarScene::new(
+        SolarMeshes::load().unwrap(),
+        view,
+        Vector3::new(0.0, 0.0, -1.0),
+    );
+    s.camera_mode = CameraMode::Perspective;
+    s.rig = CameraRig::Orbit;
+    s.stars = StarField::generate(3, 20_000);
+    s.ship.position = Vector3::new(0.0, 0.0, 500.0);
+    let opts = ShadedOptions {
+        threads: 1,
+        ..ShadedOptions::default()
+    };
+    let mut sky_only = Framebuffer::new(W, H);
+    s.render_frame(&mut sky_only, TriangleMode::FilledScanline, opts)
+        .unwrap();
+    s.bodies = vec![BodyInstance::new(
+        Body::HouseOfCards,
+        Transform::new(Vector3::zero(), 1.5),
+        0.0,
+    )];
+    let mut with_body = Framebuffer::new(W, H);
+    s.render_frame(&mut with_body, TriangleMode::FilledScanline, opts)
+        .unwrap();
+    let (cx, cy) = (W as i32 / 2, H as i32 / 2);
+    let mut covered = 0;
+    for y in cy - 15..cy + 15 {
+        for x in cx - 15..cx + 15 {
+            let star = sky_only.get_pixel(x, y).unwrap();
+            if star != sky_only.background_color() {
+                covered += 1;
+                assert_ne!(
+                    with_body.get_pixel(x, y),
+                    Some(star),
+                    "star over the body at ({x}, {y})"
+                );
+            }
+        }
+    }
+    assert!(covered > 0, "some stars lay behind the body");
+}

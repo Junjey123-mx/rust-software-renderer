@@ -13,8 +13,9 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
-use crate::solar::camera::{CameraRig, FollowRig};
+use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
+use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField, draw_stars};
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes, render_instance,
     render_ship,
@@ -82,6 +83,8 @@ pub struct SolarScene {
     pub follow: FollowRig,
     pub ship: ShipState,
     pub flight: FlightMode,
+    /// Background stars, generated once.
+    pub stars: StarField,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
     /// Center of the orbits (the star).
@@ -101,6 +104,7 @@ impl SolarScene {
             follow: FollowRig::default(),
             ship: ShipState::new(SHIP_SPAWN, SHIP_SCALE),
             flight: FlightMode::Space,
+            stars: StarField::generate(DEFAULT_SEED, DEFAULT_STARS),
             clock: SimulationClock::default(),
             center: Vector3::zero(),
             light_world,
@@ -238,7 +242,17 @@ impl SolarScene {
     /// eye direction at a distance that frames the system at zoom 1 and
     /// approaches with the zoom.
     pub fn perspective_camera(&self) -> PerspectiveCamera {
-        crate::solar::camera::orbit_perspective(&self.view.camera, self.extent().max(1.0) * 2.2)
+        orbit_perspective(&self.view.camera, self.extent().max(1.0) * 2.2)
+    }
+
+    /// Camera whose rotation and field of view orient the star field: the
+    /// frame camera, or the orbit rig's perspective under the orthographic
+    /// camera (which has no field of view of its own).
+    pub fn sky_camera(&self) -> PerspectiveCamera {
+        match self.projection() {
+            ViewProjection::Perspective(camera) => camera,
+            ViewProjection::Orbit(_) => self.perspective_camera(),
+        }
     }
 
     /// The camera of this frame: orthographic orbit (`--camera orbit`), or
@@ -285,9 +299,9 @@ impl SolarScene {
         )
     }
 
-    /// One frame: clear color and depth once, then every body, then the
-    /// spacecraft, all through the same camera and depth buffer. Returns the
-    /// fragments shaded.
+    /// One frame: clear color and depth once, the star field (color only),
+    /// then every body, then the spacecraft, all through the same camera and
+    /// depth buffer. Returns the fragments shaded.
     pub fn render_frame(
         &self,
         framebuffer: &mut Framebuffer,
@@ -295,6 +309,7 @@ impl SolarScene {
         options: ShadedOptions,
     ) -> Result<usize, RenderError> {
         framebuffer.clear();
+        draw_stars(framebuffer, &self.stars, &self.sky_camera());
         let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
         let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
         Ok(bodies.iter().map(|s| s.fragments_shaded).sum::<usize>() + ship.fragments_shaded)

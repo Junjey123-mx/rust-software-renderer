@@ -2,6 +2,8 @@
 //! projected with the camera rotation only, so translating the camera never
 //! moves the background.
 
+use crate::pipeline::PerspectiveCamera;
+use crate::rendering::Framebuffer;
 use raylib::math::Vector3;
 
 /// Most stars a field may hold.
@@ -77,4 +79,36 @@ impl StarField {
             .collect();
         Self { seed, stars }
     }
+}
+
+/// Projects every star with the camera rotation (never its position) and
+/// the perspective focal length, discarding stars behind the camera or off
+/// screen, and writes color only: the depth buffer keeps its cleared value
+/// so any body or the spacecraft drawn afterwards hides the background.
+/// Returns the number of stars written.
+pub fn draw_stars(
+    framebuffer: &mut Framebuffer,
+    field: &StarField,
+    camera: &PerspectiveCamera,
+) -> usize {
+    let (w, h) = (framebuffer.width(), framebuffer.height());
+    let basis = camera.basis();
+    let focal = camera.focal_px(h);
+    let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+    let mut written = 0;
+    for star in &field.stars {
+        let d = star.direction;
+        let z = d.dot(basis.forward);
+        if z <= 0.0 {
+            continue;
+        }
+        let x = (cx + focal * d.dot(basis.right) / z).floor();
+        let y = (cy - focal * d.dot(basis.up) / z).floor();
+        if !(x >= 0.0 && y >= 0.0 && x < w as f32 && y < h as f32) {
+            continue;
+        }
+        framebuffer.point(x as i32, y as i32, star.color());
+        written += 1;
+    }
+    written
 }
