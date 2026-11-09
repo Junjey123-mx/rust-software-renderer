@@ -2,6 +2,8 @@
 //! bodies and the spacecraft on the shared CPU pipeline.
 
 pub mod clock;
+pub mod flight;
+pub mod input;
 pub mod instance;
 pub mod orbit;
 pub mod resources;
