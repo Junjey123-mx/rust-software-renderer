@@ -32,7 +32,9 @@ pub use screen_mapping::{
     MappingError, ModelBounds, OrbitView, ScreenFit, ViewPlane, Viewport, fit_to_viewport,
     model_bounds, project_orbit,
 };
-pub use shaded::{ShadedOptions, ShadedStats, render_shaded};
+pub use shaded::{
+    FragmentView, ShadedOptions, ShadedStats, ViewProjection, render_shaded, render_shaded_with,
+};
 pub use surface::{NormalSource, ShaderUniforms, SurfaceSample, direction_from_angles};
 pub use transform::Transform;
 pub use uniforms::Uniforms;

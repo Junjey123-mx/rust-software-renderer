@@ -238,3 +238,286 @@ fn a_corner_exactly_on_the_near_plane_is_kept_without_duplicates() {
     assert_eq!(p.len(), 4);
     assert!(p.corners().iter().all(|c| c.view_position.z >= 0.5));
 }
+
+// ---------------------------------------------------------------------------
+// Shaded stage through the perspective projection
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::celestial::{Body, CelestialScene};
+use rust_software_renderer::pipeline::{
+    FragmentView, OrbitCamera, OrbitView, ShadedOptions, ShadedStats, SurfaceSample, Transform,
+    Uniforms, ViewPreset, ViewProjection, Viewport, render_shaded, render_shaded_with,
+};
+use rust_software_renderer::rasterization::TriangleMode;
+use rust_software_renderer::rendering::Framebuffer;
+use rust_software_renderer::solar::SolarMeshes;
+
+fn sphere() -> Vec<Vertex> {
+    SolarMeshes::load().unwrap().sphere.as_ref().clone()
+}
+
+fn fnv(fb: &Framebuffer) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in fb.to_rgba_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+fn options(threads: usize) -> ShadedOptions {
+    ShadedOptions {
+        threads,
+        ..ShadedOptions::default()
+    }
+}
+
+fn eye_at(z: f32) -> PerspectiveCamera {
+    PerspectiveCamera::new(
+        Vector3::new(0.0, 0.0, z),
+        Vector3::zero(),
+        Vector3::new(0.0, 1.0, 0.0),
+        FRAC_PI_2,
+        0.1,
+    )
+    .unwrap()
+}
+
+fn normal_color(s: &SurfaceSample, _v: &FragmentView) -> Vector3 {
+    (s.normal + Vector3::one()) * 0.5
+}
+
+fn draw_sphere<S>(
+    transform: Transform,
+    proj: ViewProjection,
+    mode: TriangleMode,
+    threads: usize,
+    shader: &S,
+) -> (Framebuffer, ShadedStats)
+where
+    S: Fn(&SurfaceSample, &FragmentView) -> Vector3 + Sync,
+{
+    let mut fb = Framebuffer::new(W, H);
+    fb.clear();
+    let uniforms = Uniforms {
+        model_matrix: transform.matrix(),
+    };
+    let stats = render_shaded_with(
+        &mut fb,
+        &uniforms,
+        &sphere(),
+        &proj,
+        mode,
+        options(threads),
+        shader,
+    )
+    .unwrap();
+    (fb, stats)
+}
+
+#[test]
+fn orbit_projection_through_render_shaded_with_is_bit_identical_to_render_shaded() {
+    for body in Body::ALL {
+        let mut scene = CelestialScene::new(body, ViewPreset::Oblique, W, H).unwrap();
+        scene.time = 6.0;
+        let prepared = scene.material.prepare(&scene.uniforms(), scene.debug);
+        let mut a = Framebuffer::new(W, H);
+        a.clear();
+        render_shaded(
+            &mut a,
+            &Uniforms::default(),
+            &scene.vertices,
+            scene.view,
+            TriangleMode::FilledScanline,
+            options(1),
+            &|s| prepared.shade(s),
+        )
+        .unwrap();
+        let mut b = Framebuffer::new(W, H);
+        b.clear();
+        render_shaded_with(
+            &mut b,
+            &Uniforms::default(),
+            &scene.vertices,
+            &ViewProjection::Orbit(scene.view),
+            TriangleMode::FilledScanline,
+            options(1),
+            &|s, v| {
+                assert_eq!(v.view_direction, scene.view.camera.eye_direction());
+                prepared.shade(s)
+            },
+        )
+        .unwrap();
+        assert_eq!(fnv(&a), fnv(&b), "{body}");
+    }
+}
+
+#[test]
+fn a_nearer_sphere_covers_more_pixels_and_the_center_normal_faces_the_eye() {
+    let proj = ViewProjection::Perspective(eye_at(-10.0));
+    let (near_fb, near) = draw_sphere(
+        Transform::new(Vector3::new(0.0, 0.0, -4.0), 1.0),
+        proj,
+        TriangleMode::FilledScanline,
+        1,
+        &normal_color,
+    );
+    let (_, far) = draw_sphere(
+        Transform::new(Vector3::new(0.0, 0.0, 6.0), 1.0),
+        proj,
+        TriangleMode::FilledScanline,
+        1,
+        &normal_color,
+    );
+    assert!(
+        near.fragments_shaded > far.fragments_shaded * 4,
+        "{near:?} vs {far:?}"
+    );
+    assert_eq!(near.triangles_processed, 192);
+    assert!(
+        near.triangles_culled >= 90,
+        "back faces culled: {}",
+        near.triangles_culled
+    );
+    // Encoded normal at the disk center: (0, 0, -1) towards the eye on -Z.
+    let c = near_fb.get_pixel(W as i32 / 2, H as i32 / 2).unwrap();
+    assert!((c - Vector3::new(0.5, 0.5, 0.0)).length() < 0.08, "{c:?}");
+}
+
+#[test]
+fn perspective_depth_is_the_true_view_distance_of_the_surface() {
+    let cam = eye_at(-10.0);
+    let (fb, _) = draw_sphere(
+        Transform::new(Vector3::zero(), 1.0),
+        ViewProjection::Perspective(cam),
+        TriangleMode::FilledScanline,
+        1,
+        &normal_color,
+    );
+    let d = fb.get_depth(W as i32 / 2, H as i32 / 2).unwrap();
+    // The nearest facet of the 0.84-0.87 radius sphere sits about 9.15 away.
+    assert!((9.05..=9.2).contains(&d), "{d}");
+    // Depth grows towards the limb and stays finite everywhere it was written.
+    let limb = fb.get_depth(W as i32 / 2 + 20, H as i32 / 2).unwrap();
+    assert!(limb > d && limb.is_finite());
+    assert_eq!(
+        fb.get_depth(2, 2),
+        Some(f32::INFINITY),
+        "background untouched"
+    );
+}
+
+#[test]
+fn the_view_direction_varies_across_the_disk_only_in_perspective() {
+    let spread = |proj: ViewProjection| {
+        let (fb, _) = draw_sphere(
+            Transform::new(Vector3::zero(), 2.0),
+            proj,
+            TriangleMode::FilledScanline,
+            1,
+            &|_s: &SurfaceSample, v: &FragmentView| (v.view_direction + Vector3::one()) * 0.5,
+        );
+        let c = fb.get_pixel(W as i32 / 2, H as i32 / 2).unwrap();
+        let e = fb.get_pixel(W as i32 / 2 + 120, H as i32 / 2).unwrap();
+        ((c - e).length(), c)
+    };
+    let (persp, center) = spread(ViewProjection::Perspective(eye_at(-4.0)));
+    assert!(
+        (center - Vector3::new(0.5, 0.5, 0.0)).length() < 0.02,
+        "{center:?}"
+    );
+    assert!(persp > 0.1, "perspective spread {persp}");
+    let cam = OrbitCamera::new(Vector3::zero(), ViewPreset::Front);
+    let view = OrbitView::for_world(cam, 3.0, Viewport::new(W, H, 0.1)).unwrap();
+    let (ortho, _) = spread(ViewProjection::Orbit(view));
+    assert!(ortho < 1e-6, "orthographic spread {ortho}");
+}
+
+#[test]
+fn perspective_occlusion_is_independent_of_draw_order_and_thread_count() {
+    let proj = ViewProjection::Perspective(eye_at(-10.0));
+    let near = Transform::new(Vector3::new(0.0, 0.0, -2.0), 0.6);
+    let far = Transform::new(Vector3::new(0.0, 0.0, 3.0), 1.5);
+    let tag = |t: Transform| move |_s: &SurfaceSample, _v: &FragmentView| Vector3::one() * t.scale;
+    let render = |order: [Transform; 2], threads: usize| {
+        let mut fb = Framebuffer::new(W, H);
+        fb.clear();
+        for t in order {
+            let uniforms = Uniforms {
+                model_matrix: t.matrix(),
+            };
+            render_shaded_with(
+                &mut fb,
+                &uniforms,
+                &sphere(),
+                &proj,
+                TriangleMode::FilledBarycentric,
+                options(threads),
+                &tag(t),
+            )
+            .unwrap();
+        }
+        fb
+    };
+    let a = render([far, near], 1);
+    let b = render([near, far], 1);
+    let c = render([near, far], 0);
+    assert_eq!(fnv(&a), fnv(&b));
+    assert_eq!(fnv(&b), fnv(&c));
+    let center = a.get_pixel(W as i32 / 2, H as i32 / 2).unwrap();
+    assert_eq!(
+        center,
+        Vector3::one() * 0.6,
+        "the near sphere owns the center"
+    );
+    // Far sphere: radius 1.3 at distance 13 -> 30 px; near one: 0.52 at 8 -> 19 px.
+    assert_eq!(
+        a.get_pixel(W as i32 / 2 + 25, H as i32 / 2).unwrap(),
+        Vector3::one() * 1.5
+    );
+}
+
+#[test]
+fn geometry_crossing_the_near_plane_is_clipped_without_artifacts() {
+    // The eye sits 0.5 from the center of a radius ~0.87 sphere: the front
+    // half is behind the eye and the near plane cuts through the mesh. Seen
+    // from inside, every face points away, so culling is off here.
+    let cam = eye_at(-0.5);
+    let inside = ShadedOptions {
+        cull_back_faces: false,
+        ..options(1)
+    };
+    let draw_inside = |mode: TriangleMode| {
+        let mut fb = Framebuffer::new(W, H);
+        fb.clear();
+        let stats = render_shaded_with(
+            &mut fb,
+            &Uniforms::default(),
+            &sphere(),
+            &ViewProjection::Perspective(cam),
+            mode,
+            inside,
+            &normal_color,
+        )
+        .unwrap();
+        (fb, stats)
+    };
+    let (fb, stats) = draw_inside(TriangleMode::FilledScanline);
+    assert!(stats.fragments_shaded > 1000, "{stats:?}");
+    for y in 0..H as i32 {
+        for x in 0..W as i32 {
+            let d = fb.get_depth(x, y).unwrap();
+            assert!(d.is_infinite() || d >= cam.near, "({x}, {y}) depth {d}");
+        }
+    }
+    // Both fills agree on the clipped geometry and the outline draws too.
+    let (bary, _) = draw_inside(TriangleMode::FilledBarycentric);
+    assert_eq!(fnv(&fb), fnv(&bary));
+    let (wire, ws) = draw_inside(TriangleMode::Wireframe);
+    assert!(ws.fragments_generated > 0 && ws.fragments_shaded == 0);
+    assert!(wire.count_non_background() > 0);
+    assert!(
+        wire.get_depth(W as i32 / 2, H as i32 / 2) == Some(f32::INFINITY),
+        "no depth"
+    );
+}
