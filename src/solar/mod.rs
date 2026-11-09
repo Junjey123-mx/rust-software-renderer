@@ -3,11 +3,13 @@
 
 pub mod clock;
 pub mod instance;
+pub mod orbit;
 pub mod resources;
 pub mod scene;
 pub mod viewer;
 
 pub use clock::{MAX_STEP, SimulationClock};
 pub use instance::{BodyInstance, FrameContext, instance_uniforms, render_instance};
+pub use orbit::Orbit;
 pub use resources::{SPHERE_RADIUS, SolarMeshes};
 pub use scene::SolarScene;
