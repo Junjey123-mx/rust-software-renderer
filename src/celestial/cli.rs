@@ -31,6 +31,8 @@ pub struct CelestialArgs {
     pub timeline: Option<Timeline>,
     /// `--benchmark-shaders`: headless timing of the three shaders.
     pub benchmark_shaders: bool,
+    /// `--benchmark-solar`: headless timing of the solar scenarios A-J.
+    pub benchmark_solar: bool,
     /// `--camera perspective|orbit` of the solar scene.
     pub camera: Option<CameraMode>,
     /// `--stars <n>` of the solar scene (0 disables the star field).
@@ -87,6 +89,7 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
             }
             "--freeze-time" => out.freeze_time = true,
             "--benchmark-shaders" => out.benchmark_shaders = true,
+            "--benchmark-solar" => out.benchmark_solar = true,
             "--light-azimuth" => {
                 out.light_azimuth = Some(number(
                     value(&mut it, "--light-azimuth")?,
@@ -184,6 +187,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if lab6.benchmark_shaders && cli.benchmark {
         return Err("--benchmark-shaders cannot be combined with --benchmark-triangles".into());
     }
+    if lab6.benchmark_solar && (cli.benchmark || lab6.benchmark_shaders) {
+        return Err("--benchmark-solar cannot be combined with another benchmark".into());
+    }
     if solar && lab6.record.is_some() {
         return Err("--record is not available for --scene solar yet".into());
     }
@@ -210,6 +216,7 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     // the single-body scenes.
     let scene_options = CelestialArgs {
         benchmark_shaders: false,
+        benchmark_solar: false,
         threads: if solar { None } else { lab6.threads },
         time: if solar { None } else { lab6.time },
         sets: if solar { Vec::new() } else { lab6.sets.clone() },

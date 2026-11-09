@@ -5,9 +5,11 @@
 //! benchmark of the procedural shaders that leaves this workload untouched.
 
 pub mod shaders;
+pub mod solar;
 pub mod triangles;
 
 pub use shaders::{ShaderBenchConfig, ShaderBenchRow, run_shader_benchmark, write_shader_csv};
+pub use solar::{SolarBenchConfig, SolarBenchRow, run_solar_benchmark, write_solar_csv};
 
 pub use triangles::{
     BenchmarkConfig, BenchmarkReport, Round, Workload, build_workload, median_ns, profile_workload,

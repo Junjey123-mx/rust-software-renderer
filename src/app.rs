@@ -1,8 +1,9 @@
 //! Application lifecycle and orchestration.
 
 use crate::benchmark::{
-    BenchmarkConfig, ShaderBenchConfig, build_workload, profile_workload, run_benchmark,
-    run_shader_benchmark, write_csv, write_shader_csv,
+    BenchmarkConfig, ShaderBenchConfig, SolarBenchConfig, build_workload, profile_workload,
+    run_benchmark, run_shader_benchmark, run_solar_benchmark, write_csv, write_shader_csv,
+    write_solar_csv,
 };
 use crate::config::AppConfig;
 use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
@@ -74,6 +75,7 @@ Usage: rust-software-renderer [options]
   --benchmark-shaders [--benchmark-output <dir>]   headless shader timing (default docs/results/lab6)
   --scene solar [--camera perspective|orbit]   Camino al Proyecto 3: the three bodies in one scene (--time, --threads, --set body.param=v)
   --stars <n> --star-seed <s> --star-density uniform|clustered   solar star field (--stars 0 disables it)
+  --benchmark-solar [--benchmark-output <dir>]   headless solar scenarios A-J (default docs/results/preproject3)
 Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit
 Celestial keys: TAB body, SPACE pause, J/L I/K light, N debug view, [ ] main parameter, C/H/B/P toggle clouds, shadows, bump and parallax when the body provides them";
 
@@ -368,6 +370,26 @@ fn run_shader_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn 
     Ok(())
 }
 
+/// Headless solar scenarios A-J (Camino al Proyecto 3, no window).
+fn run_solar_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>> {
+    let config = SolarBenchConfig::default();
+    println!(
+        "Solar benchmark: scenarios A-J, {}x{}, {} warm-up + {} rounds, t = {} s, all threads, CPU frame only (no presentation)",
+        config.width, config.height, config.warmup, config.rounds, config.time
+    );
+    let rows = run_solar_benchmark(&config)?;
+    for r in &rows {
+        println!(
+            "{} {:<38} {} bodies, {:>7} fragments, median {:>8.2} ms, p95 {:>8.2} ms",
+            r.id, r.name, r.bodies, r.fragments_shaded, r.median_ms, r.p95_ms
+        );
+    }
+    let path = output_dir.join("solar_benchmark.csv");
+    write_solar_csv(&rows, &path)?;
+    println!("Wrote {}", path.display());
+    Ok(())
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let (lab6, rest) = crate::celestial::cli::extract(raw)?;
@@ -377,6 +399,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     crate::celestial::cli::validate(&args, &lab6)?;
+    if lab6.benchmark_solar {
+        let dir = args
+            .benchmark_output
+            .unwrap_or_else(|| PathBuf::from("docs/results/preproject3"));
+        return run_solar_benchmark_cli(&dir);
+    }
     if lab6.benchmark_shaders {
         let dir = args
             .benchmark_output

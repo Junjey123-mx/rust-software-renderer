@@ -1,0 +1,11 @@
+scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms
+A,spacecraft alone,800,600,20,7,0,39380,7.346,8.921,7.023
+B,one planet,800,600,20,7,1,30231,19.185,24.801,15.606
+C,distant system with three bodies,800,600,20,7,3,18356,13.958,14.636,12.740
+D,full system with the spacecraft,800,600,20,7,3,57900,20.352,23.202,17.838
+E,close approach to Crimson Entrance,800,600,20,7,3,78182,23.901,24.564,22.795
+F,close approach to House of Cards,800,600,20,7,3,101850,17.243,20.678,16.142
+G,camera facing empty space,800,600,20,7,3,39380,6.914,7.877,6.725
+H,full system with the star field,800,600,20,7,3,57900,18.804,21.775,14.017
+I,full system without the star field,800,600,20,7,3,57900,19.561,21.041,14.611
+J,lowest flight over Crimson Entrance,800,600,20,7,3,150452,46.476,69.426,42.806
