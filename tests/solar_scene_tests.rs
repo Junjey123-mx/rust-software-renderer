@@ -480,3 +480,147 @@ fn the_scene_reuses_its_buffers_across_frames_without_changing_the_image() {
     assert_eq!(fnv(&a), fnv(&b));
     assert_eq!(s.scratch_capacity(), capacity);
 }
+
+// ---------------------------------------------------------------------------
+// Frustum culling
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::pipeline::{PerspectiveCamera, sphere_visible};
+
+#[test]
+fn sphere_visibility_rejects_behind_and_beside_but_keeps_partial_overlaps() {
+    let cam = PerspectiveCamera::new(
+        Vector3::zero(),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        std::f32::consts::FRAC_PI_2,
+        0.1,
+    )
+    .unwrap();
+    // 90 degree vertical fov, 4:3: the side planes are at x/z = 4/3, y/z = 1.
+    assert!(sphere_visible(
+        &cam,
+        Vector3::new(0.0, 0.0, 5.0),
+        1.0,
+        400,
+        300
+    ));
+    assert!(
+        !sphere_visible(&cam, Vector3::new(0.0, 0.0, -5.0), 1.0, 400, 300),
+        "behind"
+    );
+    assert!(
+        sphere_visible(&cam, Vector3::new(0.0, 0.0, -0.5), 1.0, 400, 300),
+        "around the eye"
+    );
+    assert!(
+        !sphere_visible(&cam, Vector3::new(0.0, 20.0, 5.0), 1.0, 400, 300),
+        "above"
+    );
+    // Center just outside the top plane (y/z = 1.1) but radius reaching in.
+    assert!(sphere_visible(
+        &cam,
+        Vector3::new(0.0, 5.5, 5.0),
+        1.0,
+        400,
+        300
+    ));
+    // Horizontally the view is wider: x/z = 1.2 is inside, 1.5 with r = 0.1 is out.
+    assert!(sphere_visible(
+        &cam,
+        Vector3::new(6.0, 0.0, 5.0),
+        0.1,
+        400,
+        300
+    ));
+    assert!(!sphere_visible(
+        &cam,
+        Vector3::new(7.5, 0.0, 5.0),
+        0.1,
+        400,
+        300
+    ));
+}
+
+#[test]
+fn a_culled_body_could_not_have_added_a_single_fragment() {
+    // Soundness: sweep a body across and behind the camera; whenever the
+    // scene culls it, drawing it for real must shade nothing.
+    let base = flying_scene();
+    let mut state = 12345u32;
+    let mut rand = || {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (state >> 8) as f32 / 16_777_216.0 * 2.0 - 1.0
+    };
+    let mut culled = 0;
+    let mut kept_near_edge = 0;
+    for _ in 0..300 {
+        let mut s = base.clone();
+        let offset = Vector3::new(rand() * 6.0, rand() * 5.0, rand() * 6.0);
+        s.bodies.truncate(1);
+        s.bodies[0].orbit = None;
+        s.bodies[0].transform.position = s.ship.position + offset;
+        s.bodies[0].transform.scale = 0.3 + 0.3 * (rand() + 1.0);
+        let visible = s.body_in_view(0, W, H);
+        let cam = match s.projection() {
+            rust_software_renderer::pipeline::ViewProjection::Perspective(c) => c,
+            _ => unreachable!(),
+        };
+        let center_inside = cam
+            .project_view(cam.world_to_view(s.bodies[0].transform.position), W, H)
+            .is_some_and(|p| p.x >= 0.0 && p.y >= 0.0 && p.x < W as f32 && p.y < H as f32);
+        // Draw without the cull to see what it would really produce.
+        let frame = s.frame_context(TriangleMode::FilledScanline, options());
+        let frame = rust_software_renderer::solar::FrameContext {
+            light_world: s.light_for(&s.bodies[0]),
+            ..frame
+        };
+        let mut fb = Framebuffer::new(W, H);
+        fb.clear();
+        let st = rust_software_renderer::solar::render_instance(
+            &mut fb,
+            &s.meshes.sphere,
+            &s.bodies[0],
+            &frame,
+        )
+        .unwrap();
+        if !visible {
+            culled += 1;
+            assert_eq!(
+                st.fragments_shaded, 0,
+                "culled body would shade at {offset:?}"
+            );
+        } else if !center_inside && st.fragments_shaded > 0 {
+            kept_near_edge += 1;
+        }
+    }
+    assert!(culled > 50, "the sweep exercises culling: {culled}");
+    assert!(
+        kept_near_edge > 0,
+        "bodies with the center off screen are still drawn"
+    );
+}
+
+#[test]
+fn facing_empty_space_skips_every_body_and_the_image_is_unchanged() {
+    let mut s = flying_scene();
+    s.ship.yaw(std::f32::consts::PI);
+    let mut fb = Framebuffer::new(W, H);
+    fb.clear();
+    let stats = s
+        .render_objects_without_clear(&mut fb, TriangleMode::FilledScanline, options())
+        .unwrap();
+    assert!(
+        stats.iter().all(|st| st.triangles_processed == 0),
+        "{stats:?}"
+    );
+    assert_eq!(fb.count_non_background(), 0);
+    // Orthographic orbit camera: a body far off screen is skipped, one in
+    // view is drawn.
+    let mut o = scene();
+    o.bodies = vec![
+        body(Body::HouseOfCards, 30.0, 0.0, 1.0),
+        body(Body::KingsCrown, 0.0, 0.0, 1.0),
+    ];
+    assert!(!o.body_in_view(0, W, H) && o.body_in_view(1, W, H));
+}

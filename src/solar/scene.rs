@@ -9,7 +9,7 @@
 use crate::celestial::Body;
 use crate::pipeline::{
     OrbitView, PerspectiveCamera, RenderError, RenderScratch, ShadedOptions, ShadedStats,
-    Transform, ViewProjection,
+    Transform, ViewProjection, sphere_visible,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
@@ -291,6 +291,10 @@ impl SolarScene {
         mode: TriangleMode,
         options: ShadedOptions,
     ) -> Result<ShadedStats, RenderError> {
+        let (w, h) = (framebuffer.width(), framebuffer.height());
+        if !self.sphere_in_view(self.ship.position, self.ship.radius(), w, h) {
+            return Ok(ShadedStats::default());
+        }
         render_ship_scratch(
             framebuffer,
             &self.meshes.ship,
@@ -342,6 +346,37 @@ impl SolarScene {
         }
     }
 
+    /// Bounding-sphere margin of the view test (relative), against rounding.
+    pub const CULL_MARGIN: f32 = 1.02;
+
+    /// Whether a world sphere can appear on a `width` x `height` framebuffer
+    /// through this frame's camera (frustum under perspective, the screen
+    /// rectangle under the orthographic orbit camera).
+    pub fn sphere_in_view(&self, center: Vector3, radius: f32, width: u32, height: u32) -> bool {
+        let radius = radius * Self::CULL_MARGIN;
+        match self.projection() {
+            ViewProjection::Perspective(camera) => {
+                sphere_visible(&camera, center, radius, width, height)
+            }
+            ViewProjection::Orbit(view) => {
+                let e = view.camera.world_to_view(center);
+                let s = view.scale();
+                let (x, y, r) = (
+                    width as f32 / 2.0 + e.x * s,
+                    height as f32 / 2.0 - e.y * s,
+                    radius * s,
+                );
+                x + r >= 0.0 && x - r <= width as f32 && y + r >= 0.0 && y - r <= height as f32
+            }
+        }
+    }
+
+    /// Whether body `index` passes the view test.
+    pub fn body_in_view(&self, index: usize, width: u32, height: u32) -> bool {
+        let b = &self.bodies[index];
+        self.sphere_in_view(b.transform.position, self.radius_of(index), width, height)
+    }
+
     /// Fragments the reused shaded-stage buffers can hold.
     pub fn scratch_capacity(&self) -> usize {
         self.scratch.borrow().capacity()
@@ -357,9 +392,15 @@ impl SolarScene {
     ) -> Result<Vec<ShadedStats>, RenderError> {
         let shared = self.frame_context(mode, options);
         let mut scratch = self.scratch.borrow_mut();
+        let (w, h) = (framebuffer.width(), framebuffer.height());
         self.bodies
             .iter()
-            .map(|body| {
+            .enumerate()
+            .map(|(i, body)| {
+                // Skipped before any vertex is transformed: it cannot add a pixel.
+                if !self.body_in_view(i, w, h) {
+                    return Ok(ShadedStats::default());
+                }
                 let frame = FrameContext {
                     light_world: self.light_for(body),
                     ..shared

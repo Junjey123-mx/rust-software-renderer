@@ -45,3 +45,14 @@ Comparación A/B intercalada en un mismo proceso (120 cuadros por variante, esce
 | J | 60.04 | 60.12 | +0.1 % |
 
 El efecto es marginal y queda dentro del ruido entre corridas: no se atribuye una mejora de FPS. Se conserva porque las imágenes son idénticas byte a byte (oráculos y pruebas de reutilización) y evita reservar hasta unos 7 MB de muestras por instancia en cada cuadro.
+
+## Descarte por esfera envolvente (frustum culling)
+
+Misma metodología A/B intercalada (120 cuadros): el cuadro completo con descarte frente al mismo cuadro dibujando todos los cuerpos.
+
+| Escenario | Cuerpos descartados | Sin descarte (ms) | Con descarte (ms) | Cambio |
+|---|---:|---:|---:|---:|
+| G (mirando al vacío) | 3 de 3 | 9.73 | 8.83 | −9.3 % |
+| D (sistema a la vista) | 0 de 3 | 25.83 | 25.38 | −1.7 % (ruido) |
+
+Ahorra la transformación, el recorte y el arranque de hilos de los cuerpos que no pueden aportar píxeles; cuando todo está a la vista no cambia nada. Una prueba de solidez barre 300 posiciones al azar y exige que todo cuerpo descartado produzca cero fragmentos al dibujarlo de verdad.

@@ -241,3 +241,32 @@ pub fn clip_near(tri: &[ClipVertex; 3], near: f32) -> ClipPolygon {
     }
     out
 }
+
+/// Whether a world-space sphere can contribute pixels to a `width` x
+/// `height` view: false only when it lies entirely behind the near plane or
+/// entirely outside one of the four side planes. Conservative: a sphere
+/// whose center is outside but whose edge crosses into the view is visible.
+pub fn sphere_visible(
+    camera: &PerspectiveCamera,
+    center: Vector3,
+    radius: f32,
+    width: u32,
+    height: u32,
+) -> bool {
+    if !(finite(center) && radius.is_finite() && radius >= 0.0) || width == 0 || height == 0 {
+        return true;
+    }
+    let c = camera.world_to_view(center);
+    if c.z + radius < camera.near {
+        return false;
+    }
+    let tan_v = (camera.fov_y / 2.0).tan();
+    let tan_h = tan_v * width as f32 / height as f32;
+    // Signed distance to a side plane through the eye with inward normal
+    // (-cos a, 0, sin a) for the right plane at half angle a (and mirrors).
+    let outside = |offset: f32, tan_half: f32| {
+        let norm = (1.0 + tan_half * tan_half).sqrt();
+        (offset - c.z * tan_half) / norm > radius
+    };
+    !(outside(c.x, tan_h) || outside(-c.x, tan_h) || outside(c.y, tan_v) || outside(-c.y, tan_v))
+}
