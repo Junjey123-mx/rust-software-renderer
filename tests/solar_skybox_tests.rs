@@ -76,7 +76,9 @@ use rust_software_renderer::pipeline::{
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
 use rust_software_renderer::solar::camera::CameraRig;
-use rust_software_renderer::solar::skybox::draw_stars;
+use rust_software_renderer::solar::skybox::{
+    GLINT_STAR, MAX_FOOTPRINT, SPECTRAL, StarSize, draw_stars, spectral_tint,
+};
 use rust_software_renderer::solar::{BodyInstance, CameraMode, SolarMeshes, SolarScene};
 
 const W: u32 = 320;
@@ -115,7 +117,8 @@ fn translating_the_camera_leaves_the_sky_unchanged_and_rotating_changes_it() {
 fn stars_write_color_only_and_stay_inside_the_framebuffer() {
     let (fb, n) = sky(&cam(Vector3::zero(), Vector3::new(0.0, 0.0, -1.0)));
     assert!(n > 0);
-    assert!(fb.count_non_background() > 0 && fb.count_non_background() <= n);
+    // Bright stars light a small footprint around their pixel.
+    assert!(fb.count_non_background() > 0 && fb.count_non_background() <= n * MAX_FOOTPRINT);
     for y in 0..H as i32 {
         for x in 0..W as i32 {
             assert_eq!(fb.get_depth(x, y), Some(f32::INFINITY));
@@ -270,4 +273,75 @@ fn density_stays_within_its_bounds() {
             .unwrap_err()
             .contains("nebula")
     );
+}
+
+// ---------------------------------------------------------------------------
+// Spectral classes and footprints
+// ---------------------------------------------------------------------------
+
+#[test]
+fn every_spectral_class_appears_in_its_share() {
+    let f = StarField::generate(42, 10_000);
+    let mut previous = 0.0;
+    for (tint, share) in SPECTRAL {
+        let n = f.stars.iter().filter(|s| s.tint == tint).count() as f32;
+        let expected = share - previous;
+        assert!(
+            (n / 10_000.0 - expected).abs() < 0.02,
+            "{tint:?}: {n} for a share of {expected}"
+        );
+        previous = share;
+    }
+    assert_eq!(spectral_tint(0.0), SPECTRAL[0].0);
+    assert_eq!(spectral_tint(0.999), SPECTRAL[4].0);
+    // Red stars are red and blue-white ones bluish.
+    let (blue, red) = (SPECTRAL[0].0, SPECTRAL[4].0);
+    assert!(blue.z > blue.x && red.x > 2.0 * red.z);
+}
+
+#[test]
+fn few_stars_are_bright_and_glints_are_rare() {
+    let f = StarField::generate(42, 10_000);
+    let share = |size| f.stars.iter().filter(|s| s.size() == size).count() as f32 / 10_000.0;
+    let (bright, glint) = (share(StarSize::Bright), share(StarSize::Glint));
+    assert!((0.02..0.07).contains(&bright), "bright {bright}");
+    assert!((0.001..0.015).contains(&glint), "glint {glint}");
+    assert!(share(StarSize::Dot) > 0.9);
+    for size in [StarSize::Dot, StarSize::Bright, StarSize::Glint] {
+        let fp = size.footprint();
+        assert_eq!(fp[0], (0, 0, 1.0), "the center is drawn at full color");
+        assert!(fp.len() <= MAX_FOOTPRINT);
+        assert!(fp.iter().all(|&(_, _, w)| w > 0.0 && w <= 1.0));
+    }
+}
+
+#[test]
+fn stars_add_light_and_never_darken_the_background() {
+    let c = cam(Vector3::zero(), Vector3::new(0.0, 0.0, -1.0));
+    let field = StarField {
+        seed: 0,
+        stars: vec![rust_software_renderer::solar::skybox::Star {
+            direction: Vector3::new(0.0, 0.0, -1.0),
+            brightness: GLINT_STAR + 0.01,
+            tint: SPECTRAL[4].0,
+        }],
+    };
+    let base = Vector3::new(0.2, 0.05, 0.1);
+    let mut fb = Framebuffer::new(W, H);
+    fb.set_background_color(base);
+    fb.clear();
+    assert_eq!(draw_stars(&mut fb, &field, &c), 1);
+    let (cx, cy) = (W as i32 / 2, H as i32 / 2);
+    // The glint's arms reach three pixels from the center and fade.
+    let lit = |x, y| fb.get_pixel(x, y).unwrap() != base;
+    assert!(lit(cx, cy) && lit(cx + 3, cy) && lit(cx, cy - 3) && !lit(cx + 4, cy));
+    let center = fb.get_pixel(cx, cy).unwrap();
+    assert_eq!(center.x, 1.0, "clamped at full red");
+    assert!(fb.get_pixel(cx + 1, cy).unwrap().y > fb.get_pixel(cx + 3, cy).unwrap().y);
+    for y in 0..H as i32 {
+        for x in 0..W as i32 {
+            let p = fb.get_pixel(x, y).unwrap();
+            assert!(p.x >= base.x && p.y >= base.y && p.z >= base.z);
+        }
+    }
 }

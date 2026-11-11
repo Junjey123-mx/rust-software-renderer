@@ -26,7 +26,7 @@ pub struct Star {
     pub direction: Vector3,
     /// In `[0.3, 1]`: most stars are faint and a few very bright.
     pub brightness: f32,
-    /// Fixed at generation: between warm white and bluish white.
+    /// Fixed at generation: one of the stylized spectral classes.
     pub tint: Vector3,
 }
 
@@ -34,18 +34,99 @@ impl Star {
     pub fn color(&self) -> Vector3 {
         self.tint * self.brightness
     }
+
+    /// Footprint on screen, fixed by the brightness.
+    pub fn size(&self) -> StarSize {
+        if self.brightness > GLINT_STAR {
+            StarSize::Glint
+        } else if self.brightness > BRIGHT_STAR {
+            StarSize::Bright
+        } else {
+            StarSize::Dot
+        }
+    }
 }
 
-const WARM: Vector3 = Vector3 {
-    x: 1.0,
-    y: 0.92,
-    z: 0.82,
-};
-const COOL: Vector3 = Vector3 {
-    x: 0.80,
-    y: 0.88,
-    z: 1.0,
-};
+/// Stylized spectral classes with the cumulative share of stars up to each:
+/// blue-white, white, yellow, orange and red.
+pub const SPECTRAL: [(Vector3, f32); 5] = [
+    (Vector3::new(0.72, 0.82, 1.0), 0.18),
+    (Vector3::new(1.0, 0.97, 0.94), 0.45),
+    (Vector3::new(1.0, 0.88, 0.60), 0.67),
+    (Vector3::new(1.0, 0.68, 0.40), 0.85),
+    (Vector3::new(1.0, 0.46, 0.38), 1.0),
+];
+
+/// Tint of the spectral class `u` in `[0, 1)` falls in.
+pub fn spectral_tint(u: f32) -> Vector3 {
+    SPECTRAL
+        .iter()
+        .find(|(_, share)| u < *share)
+        .map_or(SPECTRAL[4].0, |(tint, _)| *tint)
+}
+
+/// Brightness above which a star is drawn as a plus (about 4 % of them)
+/// and as a glint (well under 1 %).
+pub const BRIGHT_STAR: f32 = 0.92;
+pub const GLINT_STAR: f32 = 0.985;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StarSize {
+    /// One pixel: almost every star.
+    Dot,
+    /// A soft five-pixel plus.
+    Bright,
+    /// A plus whose arms fade over three pixels: an intense distant star.
+    Glint,
+}
+
+impl StarSize {
+    /// Pixels as `(dx, dy, weight)`, the center first.
+    pub fn footprint(self) -> &'static [(i32, i32, f32)] {
+        match self {
+            Self::Dot => &[(0, 0, 1.0)],
+            Self::Bright => &[
+                (0, 0, 1.0),
+                (1, 0, 0.45),
+                (-1, 0, 0.45),
+                (0, 1, 0.45),
+                (0, -1, 0.45),
+            ],
+            Self::Glint => &[
+                (0, 0, 1.0),
+                (1, 0, 0.6),
+                (-1, 0, 0.6),
+                (0, 1, 0.6),
+                (0, -1, 0.6),
+                (1, 1, 0.2),
+                (-1, 1, 0.2),
+                (1, -1, 0.2),
+                (-1, -1, 0.2),
+                (2, 0, 0.3),
+                (-2, 0, 0.3),
+                (0, 2, 0.3),
+                (0, -2, 0.3),
+                (3, 0, 0.12),
+                (-3, 0, 0.12),
+                (0, 3, 0.12),
+                (0, -3, 0.12),
+            ],
+        }
+    }
+}
+
+/// Most pixels one star may touch.
+pub const MAX_FOOTPRINT: usize = 17;
+
+/// The brightness and spectral class drawn after a star's direction.
+fn star_at(direction: Vector3, state: &mut u32) -> Star {
+    let brightness = 0.3 + 0.7 * random01(state).powi(3);
+    Star {
+        direction,
+        brightness,
+        tint: spectral_tint(random01(state)),
+    }
+}
 
 /// Uniform direction on the sphere: height uniform in `[-1, 1]` and an
 /// angle around `Y`, so the poles are not denser.
@@ -106,13 +187,7 @@ impl StarField {
         let stars = (0..count.min(MAX_STARS))
             .map(|_| {
                 let direction = random_direction(&mut state);
-                let brightness = 0.3 + 0.7 * random01(&mut state).powi(3);
-                let tint = WARM + (COOL - WARM) * random01(&mut state);
-                Star {
-                    direction,
-                    brightness,
-                    tint,
-                }
+                star_at(direction, &mut state)
             })
             .collect();
         Self { seed, stars }
@@ -131,14 +206,9 @@ impl StarField {
         for _ in 0..attempts.min(MAX_STARS) {
             let direction = random_direction(&mut state);
             let keep = random01(&mut state) < density_at(direction, noise_seed);
-            let brightness = 0.3 + 0.7 * random01(&mut state).powi(3);
-            let tint = WARM + (COOL - WARM) * random01(&mut state);
+            let star = star_at(direction, &mut state);
             if keep {
-                stars.push(Star {
-                    direction,
-                    brightness,
-                    tint,
-                });
+                stars.push(star);
             }
         }
         Self { seed, stars }
@@ -147,9 +217,10 @@ impl StarField {
 
 /// Projects every star with the camera rotation (never its position) and
 /// the perspective focal length, discarding stars behind the camera or off
-/// screen, and writes color only: the depth buffer keeps its cleared value
-/// so any body or the spacecraft drawn afterwards hides the background.
-/// Returns the number of stars written.
+/// screen, and adds its footprint to the color already there (clamped to
+/// 1). Color only: the depth buffer keeps its cleared value so any body or
+/// the spacecraft drawn afterwards hides the background. Returns the number
+/// of stars written.
 pub fn draw_stars(
     framebuffer: &mut Framebuffer,
     field: &StarField,
@@ -171,8 +242,23 @@ pub fn draw_stars(
         if !(x >= 0.0 && y >= 0.0 && x < w as f32 && y < h as f32) {
             continue;
         }
-        framebuffer.point(x as i32, y as i32, star.color());
+        let color = star.color();
+        for &(dx, dy, weight) in star.size().footprint() {
+            add_color(framebuffer, x as i32 + dx, y as i32 + dy, color * weight);
+        }
         written += 1;
     }
     written
+}
+
+/// Adds `color` to the pixel, clamped to 1; off-screen pixels are skipped.
+fn add_color(framebuffer: &mut Framebuffer, x: i32, y: i32, color: Vector3) {
+    if let Some(p) = framebuffer.get_pixel(x, y) {
+        let sum = p + color;
+        framebuffer.point(
+            x,
+            y,
+            Vector3::new(sum.x.min(1.0), sum.y.min(1.0), sum.z.min(1.0)),
+        );
+    }
 }
