@@ -77,7 +77,8 @@ use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
 use rust_software_renderer::solar::camera::CameraRig;
 use rust_software_renderer::solar::skybox::{
-    GLINT_STAR, MAX_FOOTPRINT, SPECTRAL, StarSize, draw_stars, spectral_tint,
+    GLINT_STAR, MAX_FOOTPRINT, SPECTRAL, STREAK_LENGTH, STREAKS, StarSize, Streak, comet_streaks,
+    draw_stars, spectral_tint,
 };
 use rust_software_renderer::solar::{BodyInstance, CameraMode, SolarMeshes, SolarScene};
 
@@ -325,6 +326,7 @@ fn stars_add_light_and_never_darken_the_background() {
             brightness: GLINT_STAR + 0.01,
             tint: SPECTRAL[4].0,
         }],
+        streaks: Vec::new(),
     };
     let base = Vector3::new(0.2, 0.05, 0.1);
     let mut fb = Framebuffer::new(W, H);
@@ -342,6 +344,65 @@ fn stars_add_light_and_never_darken_the_background() {
         for x in 0..W as i32 {
             let p = fb.get_pixel(x, y).unwrap();
             assert!(p.x >= base.x && p.y >= base.y && p.z >= base.z);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Comet streaks
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_seed_gives_a_few_short_streaks_and_an_empty_field_none() {
+    let a = comet_streaks(42);
+    assert_eq!(a, comet_streaks(42));
+    assert_ne!(a, comet_streaks(7));
+    assert_eq!(a.len(), STREAKS);
+    for s in &a {
+        assert!((s.head.length() - 1.0).abs() < 1e-4 && (s.tail.length() - 1.0).abs() < 1e-4);
+        let angle = s.head.dot(s.tail).clamp(-1.0, 1.0).acos();
+        assert!(
+            (STREAK_LENGTH.0 - 1e-3..=STREAK_LENGTH.1 + 1e-3).contains(&angle),
+            "{angle}"
+        );
+        assert!(s.color.x.max(s.color.y).max(s.color.z) <= 0.75, "faint");
+    }
+    assert_eq!(StarField::generate(42, 2000).streaks, a);
+    assert!(StarField::generate(42, 0).streaks.is_empty());
+    // The streaks have their own sequence: the stars of a seed do not move.
+    let stars = StarField::generate(42, 50).stars;
+    let mut state = 42u32;
+    let first = rust_software_renderer::solar::skybox::random_direction(&mut state);
+    assert_eq!(stars[0].direction, first);
+}
+
+#[test]
+fn a_streak_fades_from_its_head_to_its_tail() {
+    let c = cam(Vector3::zero(), Vector3::new(0.0, 0.0, -1.0));
+    let head = Vector3::new(0.0, 0.0, -1.0);
+    let tail = Vector3::new(0.12, 0.0, -1.0).normalized();
+    let field = StarField {
+        seed: 0,
+        stars: Vec::new(),
+        streaks: vec![Streak {
+            head,
+            tail,
+            color: Vector3::new(0.8, 0.88, 1.0) * 0.6,
+        }],
+    };
+    let mut fb = Framebuffer::new(W, H);
+    fb.clear();
+    assert_eq!(draw_stars(&mut fb, &field, &c), 0, "no stars counted");
+    let (cx, cy) = (W as i32 / 2, H as i32 / 2);
+    let at = |x| fb.get_pixel(x, cy).unwrap().z;
+    // About 30 pixels long to the right, dimmer along the way.
+    assert!(at(cx) > at(cx + 10) && at(cx + 10) > at(cx + 20) && at(cx + 20) > 0.0);
+    assert_eq!(at(cx - 2), 0.0);
+    assert!(fb.count_non_background() > 20 && fb.count_non_background() < 40);
+    assert!(at(cx) <= 0.6 + 1e-6);
+    for y in 0..H as i32 {
+        for x in 0..W as i32 {
+            assert_eq!(fb.get_depth(x, y), Some(f32::INFINITY));
         }
     }
 }

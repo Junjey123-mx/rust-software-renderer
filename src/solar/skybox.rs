@@ -178,6 +178,59 @@ pub fn density_at(direction: Vector3, noise_seed: u32) -> f32 {
 pub struct StarField {
     pub seed: u32,
     pub stars: Vec<Star>,
+    /// A few faint comet streaks; none when the field has no stars.
+    pub streaks: Vec<Streak>,
+}
+
+/// Comet streaks over the whole sphere: about one in view at a time.
+pub const STREAKS: usize = 12;
+/// Angular length of a streak, radians (4 to 9 degrees).
+pub const STREAK_LENGTH: (f32, f32) = (0.07, 0.157);
+/// Pale blue-white of the streaks, scaled by a brightness in `[0.45, 0.75]`.
+const STREAK_TINT: Vector3 = Vector3::new(0.80, 0.88, 1.0);
+
+/// A static comet trace on the sky: brightest at `head`, fading to nothing
+/// at `tail` (both unit directions).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Streak {
+    pub head: Vector3,
+    pub tail: Vector3,
+    pub color: Vector3,
+}
+
+/// `STREAKS` streaks from their own sequence of `seed`, so adding them
+/// leaves every star of the seed where it was.
+pub fn comet_streaks(seed: u32) -> Vec<Streak> {
+    let mut state = seed ^ 0x6c8e_9cf5;
+    (0..STREAKS)
+        .map(|_| {
+            let head = random_direction(&mut state);
+            let side = head.cross(random_direction(&mut state));
+            let side = if side.length() > 1e-3 {
+                side.normalized()
+            } else {
+                head.cross(Vector3::new(1.0, 0.0, 0.0)).normalized()
+            };
+            let (lo, hi) = STREAK_LENGTH;
+            let length = lo + (hi - lo) * random01(&mut state);
+            let tail = head * length.cos() + side * length.sin();
+            let color = STREAK_TINT * (0.45 + 0.3 * random01(&mut state));
+            Streak { head, tail, color }
+        })
+        .collect()
+}
+
+fn with_streaks(seed: u32, stars: Vec<Star>) -> StarField {
+    let streaks = if stars.is_empty() {
+        Vec::new()
+    } else {
+        comet_streaks(seed)
+    };
+    StarField {
+        seed,
+        stars,
+        streaks,
+    }
 }
 
 impl StarField {
@@ -190,7 +243,7 @@ impl StarField {
                 star_at(direction, &mut state)
             })
             .collect();
-        Self { seed, stars }
+        with_streaks(seed, stars)
     }
 
     /// `attempts` candidates (clamped to `MAX_STARS`) distributed by
@@ -211,14 +264,14 @@ impl StarField {
                 stars.push(star);
             }
         }
-        Self { seed, stars }
+        with_streaks(seed, stars)
     }
 }
 
 /// Projects every star with the camera rotation (never its position) and
 /// the perspective focal length, discarding stars behind the camera or off
 /// screen, and adds its footprint to the color already there (clamped to
-/// 1). Color only: the depth buffer keeps its cleared value so any body or
+/// 1). The comet streaks are drawn first, the same way. Color only: the depth buffer keeps its cleared value so any body or
 /// the spacecraft drawn afterwards hides the background. Returns the number
 /// of stars written.
 pub fn draw_stars(
@@ -230,15 +283,33 @@ pub fn draw_stars(
     let basis = camera.basis();
     let focal = camera.focal_px(h);
     let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+    // Screen position of a direction in front of the camera.
+    let project = |d: Vector3| {
+        let z = d.dot(basis.forward);
+        (z > 0.0).then(|| {
+            (
+                (cx + focal * d.dot(basis.right) / z).floor(),
+                (cy - focal * d.dot(basis.up) / z).floor(),
+            )
+        })
+    };
+    // Within one screen of the image: a streak with an end farther out
+    // (nearly sideways to the view) would cost a long off-screen walk.
+    let (wf, hf) = (w as f32, h as f32);
+    let near = |(x, y): (f32, f32)| x > -wf && x < 2.0 * wf && y > -hf && y < 2.0 * hf;
+    for streak in &field.streaks {
+        if let (Some(head), Some(tail)) = (project(streak.head), project(streak.tail))
+            && near(head)
+            && near(tail)
+        {
+            draw_streak(framebuffer, head, tail, streak.color);
+        }
+    }
     let mut written = 0;
     for star in &field.stars {
-        let d = star.direction;
-        let z = d.dot(basis.forward);
-        if z <= 0.0 {
+        let Some((x, y)) = project(star.direction) else {
             continue;
-        }
-        let x = (cx + focal * d.dot(basis.right) / z).floor();
-        let y = (cy - focal * d.dot(basis.up) / z).floor();
+        };
         if !(x >= 0.0 && y >= 0.0 && x < w as f32 && y < h as f32) {
             continue;
         }
@@ -249,6 +320,19 @@ pub fn draw_stars(
         written += 1;
     }
     written
+}
+
+/// A line from `head` to `tail` whose light fades quadratically to zero,
+/// added to the pixels it crosses (off-screen ones are skipped).
+fn draw_streak(framebuffer: &mut Framebuffer, head: (f32, f32), tail: (f32, f32), color: Vector3) {
+    let (dx, dy) = (tail.0 - head.0, tail.1 - head.1);
+    let steps = dx.abs().max(dy.abs()).max(1.0) as i32;
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let fade = (1.0 - t) * (1.0 - t);
+        let (x, y) = (head.0 + dx * t, head.1 + dy * t);
+        add_color(framebuffer, x as i32, y as i32, color * fade);
+    }
 }
 
 /// Adds `color` to the pixel, clamped to 1; off-screen pixels are skipped.
