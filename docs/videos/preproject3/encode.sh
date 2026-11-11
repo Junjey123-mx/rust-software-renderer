@@ -152,8 +152,9 @@ stills() {
   # Entrance at 8 s; just after the warp to House of Cards at 11.2 s).
   flight_intermediate
   still 03-local-flight "$tmp/flight.mkv" $((8 * FPS))
-  # 04: a clustered field of 6000 star candidates behind the system.
-  record 0.04 25 "$tmp/sky.mkv" --time 4 --stars 6000 --star-density clustered
+  # 04: the default Red-Black sky (nebula, star classes, a comet) with
+  # another seed, so it differs from 02, t = 14 s.
+  record 0.04 25 "$tmp/sky.mkv" --time 14 --star-seed 7
   still 04-skybox "$tmp/sky.mkv" 0
   still 05-quick-travel "$tmp/flight.mkv" $((11 * FPS + 6))
 }
