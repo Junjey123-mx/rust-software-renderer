@@ -41,7 +41,7 @@ pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Bo
     scene.camera_mode = lab6.camera.unwrap_or_default();
     scene.quality = lab6.solar_quality.unwrap_or_default();
     let seed = lab6.star_seed.unwrap_or(DEFAULT_SEED);
-    scene.nebula = Nebula::new(seed, 1.0);
+    scene.nebula = Nebula::new(seed, lab6.nebula.unwrap_or(1.0));
     scene.stars = StarField::generate_with(
         seed,
         lab6.stars.unwrap_or(DEFAULT_STARS),

@@ -22,7 +22,7 @@ use crate::solar::instance::{
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
-use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField, draw_stars};
+use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::{BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes};
 use raylib::math::Vector3;
 use std::cell::RefCell;
@@ -116,7 +116,7 @@ impl SolarScene {
             follow: FollowRig::default(),
             ship: ShipState::new(SHIP_SPAWN, SHIP_SCALE),
             flight: FlightMode::Space,
-            stars: StarField::generate(DEFAULT_SEED, DEFAULT_STARS),
+            stars: StarField::generate_with(DEFAULT_SEED, DEFAULT_STARS, StarDensity::default()),
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
             scratch: RefCell::new(RenderScratch::new()),
             quality: Quality::Full,

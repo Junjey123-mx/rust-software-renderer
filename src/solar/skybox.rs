@@ -9,8 +9,9 @@ use raylib::math::Vector3;
 
 /// Most stars a field may hold.
 pub const MAX_STARS: usize = 20_000;
-/// Default star count and seed of the solar scene.
-pub const DEFAULT_STARS: usize = 2_000;
+/// Default star candidates and seed of the solar scene: clustered, about
+/// 4000 stars are kept.
+pub const DEFAULT_STARS: usize = 8_000;
 pub const DEFAULT_SEED: u32 = 42;
 
 /// Seeded linear congruential generator from the course guide: values in
@@ -141,10 +142,10 @@ pub fn random_direction(state: &mut u32) -> Vector3 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StarDensity {
     /// Uniform over the sphere.
-    #[default]
     Uniform,
     /// Kept with a probability set by 3D noise on the direction: dense and
     /// sparse regions without angular seams.
+    #[default]
     Clustered,
 }
 

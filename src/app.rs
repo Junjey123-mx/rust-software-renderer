@@ -75,6 +75,7 @@ Usage: rust-software-renderer [options]
   --benchmark-shaders [--benchmark-output <dir>]   headless shader timing (default docs/results/lab6)
   --scene solar [--camera perspective|orbit]   Camino al Proyecto 3: the three bodies in one scene (--time, --threads, --set body.param=v)
   --stars <n> --star-seed <s> --star-density uniform|clustered   solar star field (--stars 0 disables it)
+  --nebula <0-1>                 solar nebula backdrop intensity (default 1; 0 keeps the black sky)
   --solar-quality full|adaptive  solar shader detail (default full; adaptive lowers it on small bodies)
   --scene solar --record <s> [--fps n] [--timeline flight]   scripted solar flight as raw rgb24 on stdout
   --benchmark-solar [--benchmark-output <dir>]   headless solar scenarios A-J (default docs/results/preproject3)

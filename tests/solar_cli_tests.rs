@@ -200,13 +200,16 @@ fn solar_camera_option_defaults_to_perspective_and_is_solar_only() {
 fn star_options_are_solar_only_and_shape_the_scene_sky() {
     let (cli, lab6) = parse("--scene solar --stars 0").unwrap();
     assert!(build_scene(&cli, &lab6).unwrap().stars.stars.is_empty());
-    let (cli, lab6) = parse("--scene solar --stars 500 --star-seed 7").unwrap();
+    let (cli, lab6) =
+        parse("--scene solar --stars 500 --star-seed 7 --star-density uniform").unwrap();
     let a = build_scene(&cli, &lab6).unwrap().stars;
     assert_eq!((a.seed, a.stars.len()), (7, 500));
     let (cli, lab6) = parse("--scene solar --stars 3000 --star-density clustered").unwrap();
     assert!(build_scene(&cli, &lab6).unwrap().stars.stars.len() < 3000);
+    // By default 8000 clustered candidates keep a little over half.
     let (cli, lab6) = parse("--scene solar").unwrap();
-    assert_eq!(build_scene(&cli, &lab6).unwrap().stars.stars.len(), 2000);
+    let kept = build_scene(&cli, &lab6).unwrap().stars.stars.len();
+    assert!((3000..6000).contains(&kept), "{kept}");
     assert!(parse("--scene solar --stars -1").is_err());
     assert!(
         parse("--scene solar --stars 999999")
@@ -231,4 +234,31 @@ fn solar_quality_defaults_to_full_and_is_solar_only() {
     assert_eq!(build_scene(&cli, &lab6).unwrap().quality, Quality::Adaptive);
     assert!(parse("--scene house --solar-quality adaptive").is_err());
     assert!(parse("--scene solar --solar-quality max").is_err());
+}
+
+#[test]
+fn nebula_option_is_solar_only_and_sets_the_backdrop_intensity() {
+    let (cli, lab6) = parse("--scene solar").unwrap();
+    assert_eq!(build_scene(&cli, &lab6).unwrap().nebula.intensity, 1.0);
+    let (cli, lab6) = parse("--scene solar --nebula 0.4 --star-seed 9").unwrap();
+    let nebula = build_scene(&cli, &lab6).unwrap().nebula;
+    assert_eq!(
+        (nebula.intensity, nebula.seed),
+        (0.4, 9),
+        "one seed for the sky"
+    );
+    let (cli, lab6) = parse("--scene solar --nebula 0").unwrap();
+    assert_eq!(build_scene(&cli, &lab6).unwrap().nebula.intensity, 0.0);
+    for bad in ["2", "-0.1", "x", "NaN"] {
+        assert!(
+            parse(&format!("--scene solar --nebula {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+    assert!(
+        parse("--scene crown --nebula 0.5")
+            .unwrap_err()
+            .contains("--scene solar")
+    );
+    assert!(USAGE.contains("--nebula"));
 }

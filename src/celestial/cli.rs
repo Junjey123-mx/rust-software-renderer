@@ -42,6 +42,8 @@ pub struct CelestialArgs {
     pub star_seed: Option<u32>,
     /// `--star-density uniform|clustered` of the solar scene.
     pub star_density: Option<StarDensity>,
+    /// `--nebula <0-1>`: nebula backdrop intensity of the solar scene.
+    pub nebula: Option<f32>,
     /// `--solar-quality full|adaptive` of the solar scene.
     pub solar_quality: Option<Quality>,
     /// `--timeline flight` of a solar recording.
@@ -178,6 +180,16 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
             "--star-density" => {
                 out.star_density = Some(value(&mut it, "--star-density")?.parse()?);
             }
+            "--nebula" => {
+                let text = value(&mut it, "--nebula")?;
+                let v: f32 = text
+                    .parse()
+                    .map_err(|_| format!("--nebula: '{text}' is not a number"))?;
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(format!("--nebula must be between 0 and 1 (got {text})"));
+                }
+                out.nebula = Some(v);
+            }
             "--solar-quality" => {
                 out.solar_quality = Some(value(&mut it, "--solar-quality")?.parse()?);
             }
@@ -217,8 +229,15 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if !solar && lab6.solar_quality.is_some() {
         return Err("--solar-quality requires --scene solar".into());
     }
-    if !solar && (lab6.stars.is_some() || lab6.star_seed.is_some() || lab6.star_density.is_some()) {
-        return Err("--stars, --star-seed and --star-density require --scene solar".into());
+    if !solar
+        && (lab6.stars.is_some()
+            || lab6.star_seed.is_some()
+            || lab6.star_density.is_some()
+            || lab6.nebula.is_some())
+    {
+        return Err(
+            "--stars, --star-seed, --star-density and --nebula require --scene solar".into(),
+        );
     }
     if solar {
         for (name, _) in &lab6.sets {
@@ -242,6 +261,7 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         stars: None,
         star_seed: None,
         star_density: None,
+        nebula: None,
         solar_quality: None,
         solar_timeline: None,
         record: if solar { None } else { lab6.record },
