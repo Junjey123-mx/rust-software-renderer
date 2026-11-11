@@ -6,6 +6,7 @@ pub mod clock;
 pub mod flight;
 pub mod input;
 pub mod instance;
+pub mod nebula;
 pub mod orbit;
 pub mod record;
 pub mod resources;

@@ -398,7 +398,13 @@ fn render_frame_clears_once_so_old_pixels_never_survive() {
     fb.point_depth(1, 1, Vector3::one(), -1.0e6);
     s.render_frame(&mut fb, TriangleMode::FilledScanline, options())
         .unwrap();
-    assert_eq!(fb.get_pixel(1, 1), Some(fb.background_color()));
+    // The stale pixel is gone: the corner shows what a fresh frame shows
+    // there (the sky backdrop).
+    let mut fresh = Framebuffer::new(W, H);
+    s.render_frame(&mut fresh, TriangleMode::FilledScanline, options())
+        .unwrap();
+    assert_ne!(fb.get_pixel(1, 1), Some(Vector3::one()));
+    assert_eq!(fb.get_pixel(1, 1), fresh.get_pixel(1, 1));
 }
 
 #[test]
@@ -641,7 +647,9 @@ fn the_frame_batch_matches_drawing_the_instances_one_by_one() {
     let one_by_one = |s: &SolarScene, mode: TriangleMode, opts: ShadedOptions| {
         let mut fb = Framebuffer::new(W, H);
         fb.clear();
-        rust_software_renderer::solar::skybox::draw_stars(&mut fb, &s.stars, &s.sky_camera());
+        let sky = s.sky_camera();
+        rust_software_renderer::solar::nebula::draw_nebula(&mut fb, &s.nebula, &sky);
+        rust_software_renderer::solar::skybox::draw_stars(&mut fb, &s.stars, &sky);
         s.render_objects_without_clear(&mut fb, mode, opts).unwrap();
         s.render_ship_without_clear(&mut fb, mode, opts).unwrap();
         fnv(&fb)

@@ -53,7 +53,7 @@ pub const SCENARIOS: [(&str, &str); 10] = [
     ("F", "close approach to House of Cards"),
     ("G", "camera facing empty space"),
     ("H", "full system with the star field"),
-    ("I", "full system without the star field"),
+    ("I", "full system without the sky (stars and nebula)"),
     ("J", "lowest flight over Crimson Entrance"),
 ];
 
@@ -115,7 +115,10 @@ pub fn scenario_scene(id: &str, config: &SolarBenchConfig) -> Result<SolarScene,
         "E" => hover(&mut s, 1, 0.7, 0.5),
         "F" => hover(&mut s, 2, 0.7, 0.5),
         "G" => s.ship.yaw(std::f32::consts::PI),
-        "I" => s.stars = StarField::generate(s.stars.seed, 0),
+        "I" => {
+            s.stars = StarField::generate(s.stars.seed, 0);
+            s.nebula.intensity = 0.0;
+        }
         "J" => hover(&mut s, 1, crate::solar::flight::CLEARANCE, 0.8),
         other => return Err(format!("unknown solar scenario '{other}'").into()),
     }

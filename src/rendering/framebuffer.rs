@@ -92,6 +92,14 @@ impl Framebuffer {
         }
     }
 
+    /// Colors of row `y` (depth untouched), for writers that fill whole rows;
+    /// `None` past the last row.
+    pub fn row_mut(&mut self, y: u32) -> Option<&mut [Vector3]> {
+        let w = self.width as usize;
+        let start = y as usize * w;
+        self.pixels.get_mut(start..start + w)
+    }
+
     /// Writes the color only where `depth` is finite and equal to the stored
     /// depth: the fragment that won the depth test of a frame batch.
     pub fn point_if_depth(&mut self, x: i32, y: i32, color: Vector3, depth: f32) {

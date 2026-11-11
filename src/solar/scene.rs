@@ -20,6 +20,7 @@ use crate::solar::instance::{
     Quality, adapted_material, prepare_instance, projected_radius_px, render_instance_scratch,
     shade_instance,
 };
+use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField, draw_stars};
 use crate::solar::{BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes};
@@ -90,6 +91,8 @@ pub struct SolarScene {
     pub flight: FlightMode,
     /// Background stars, generated once.
     pub stars: StarField,
+    /// Colored backdrop behind the stars.
+    pub nebula: Nebula,
     /// Shader quality policy (full by default).
     pub quality: Quality,
     /// Shaded-stage buffers reused by every draw of this scene.
@@ -114,6 +117,7 @@ impl SolarScene {
             ship: ShipState::new(SHIP_SPAWN, SHIP_SCALE),
             flight: FlightMode::Space,
             stars: StarField::generate(DEFAULT_SEED, DEFAULT_STARS),
+            nebula: Nebula::new(DEFAULT_SEED, 1.0),
             scratch: RefCell::new(RenderScratch::new()),
             quality: Quality::Full,
             clock: SimulationClock::default(),
@@ -335,7 +339,9 @@ impl SolarScene {
         options: ShadedOptions,
     ) -> Result<usize, RenderError> {
         framebuffer.clear();
-        draw_stars(framebuffer, &self.stars, &self.sky_camera());
+        let sky = self.sky_camera();
+        draw_nebula(framebuffer, &self.nebula, &sky);
+        draw_stars(framebuffer, &self.stars, &sky);
         if mode == TriangleMode::Wireframe {
             let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
             let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
