@@ -62,12 +62,13 @@ impl std::str::FromStr for CameraMode {
 /// Spacecraft scale: the 3.99-unit mesh becomes about 0.32 units, well
 /// below the smallest planet (0.52).
 pub const SHIP_SCALE: f32 = 0.08;
-/// Start of the spacecraft: outside every orbit, slightly above the orbital
+/// Start of the spacecraft: outside every orbit and the space reserved for
+/// a ring around House of Cards (6.2 + 1.7), slightly above the orbital
 /// plane, nose (-Z) towards the star.
 pub const SHIP_SPAWN: Vector3 = Vector3 {
     x: 0.0,
     y: 0.6,
-    z: 7.5,
+    z: 9.0,
 };
 
 /// Vertical field of view of the perspective camera, radians (60 degrees).
@@ -121,10 +122,12 @@ impl SolarScene {
         }
     }
 
-    /// The default system: The King's Crown at the center (radius 1.3 at
-    /// scale 1.3 of the course sphere), Crimson Entrance at scale 0.6 on a
-    /// 2.6 orbit and House of Cards at scale 0.9 on a 4.4 orbit, placed for
-    /// time 0.
+    /// The default system: The King's Crown at the center (scale 1.3 of the
+    /// course sphere, radius 1.13), Crimson Entrance at scale 0.6 on a 3.0
+    /// orbit and House of Cards at scale 0.9 on a 6.2 orbit, placed for time
+    /// 0. The gap between the two orbits leaves room for a future ring of
+    /// up to 2.2 radii around the gas giant, about one unit clear of
+    /// Crimson Entrance.
     pub fn default_system(
         meshes: SolarMeshes,
         view: OrbitView,
@@ -138,13 +141,13 @@ impl SolarScene {
                 Transform::new(Vector3::zero(), 0.6),
                 0.6,
             )
-            .with_orbit(Orbit::new(2.6, 0.5, 0.0)?),
+            .with_orbit(Orbit::new(3.0, 0.5, 0.0)?),
             BodyInstance::new(
                 Body::HouseOfCards,
                 Transform::new(Vector3::zero(), 0.9),
                 0.35,
             )
-            .with_orbit(Orbit::new(4.4, 0.22, std::f32::consts::PI)?),
+            .with_orbit(Orbit::new(6.2, 0.22, std::f32::consts::PI)?),
         ];
         scene.update();
         Ok(scene)

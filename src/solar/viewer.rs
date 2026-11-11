@@ -19,8 +19,9 @@ use std::error::Error;
 
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 600;
-/// World sphere framed by the orbit camera at zoom 1.
-pub const WORLD_RADIUS: f32 = 5.3;
+/// World sphere framed by the orbit camera at zoom 1: the outermost orbit
+/// (6.2) plus the space reserved for a ring around House of Cards (1.7).
+pub const WORLD_RADIUS: f32 = 8.0;
 pub const TITLE: &str = "Rust Software Renderer - Camino al Proyecto 3: Solar";
 
 /// Builds the scene described by the command line: the default system at

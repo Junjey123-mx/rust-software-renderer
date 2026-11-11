@@ -131,6 +131,46 @@ fn default_layout_keeps_the_bodies_apart_at_time_zero() {
 }
 
 #[test]
+fn the_layout_reserves_room_for_a_ring_around_the_gas_giant() {
+    use rust_software_renderer::celestial::Body;
+    use rust_software_renderer::solar::scene::SHIP_SPAWN;
+    use rust_software_renderer::solar::viewer::WORLD_RADIUS;
+    // Outer radius of a future ring, in planet radii (Saturn's main rings
+    // end near 2.3).
+    const RING_RESERVE: f32 = 2.2;
+    let (cli, lab6) = parse("--scene solar").unwrap();
+    let scene = build_scene(&cli, &lab6).unwrap();
+    let find = |body| scene.bodies.iter().position(|b| b.body() == body).unwrap();
+    let (house, entrance, crown) = (
+        find(Body::HouseOfCards),
+        find(Body::CrimsonEntrance),
+        find(Body::KingsCrown),
+    );
+    let orbit = |i: usize| scene.bodies[i].orbit.unwrap().radius;
+    let ring = RING_RESERVE * scene.radius_of(house);
+    // Coplanar circular orbits: the nearest House and Crimson Entrance ever
+    // get is the difference of their orbit radii.
+    let ring_gap = orbit(house) - orbit(entrance) - ring - scene.radius_of(entrance);
+    assert!(
+        ring_gap > 0.9,
+        "ring reserve {ring_gap} from Crimson Entrance"
+    );
+    let inner_gap = orbit(entrance) - scene.radius_of(entrance) - scene.radius_of(crown);
+    assert!(
+        inner_gap > 1.2,
+        "Crimson Entrance {inner_gap} from the crown"
+    );
+    assert!(
+        orbit(house) + ring <= WORLD_RADIUS,
+        "the orbit view frames the ring"
+    );
+    assert!(
+        SHIP_SPAWN.length() > orbit(house) + ring + 0.5,
+        "the spacecraft starts outside the ring"
+    );
+}
+
+#[test]
 fn solar_camera_option_defaults_to_perspective_and_is_solar_only() {
     use rust_software_renderer::solar::CameraMode;
     let (cli, lab6) = parse("--scene solar").unwrap();
