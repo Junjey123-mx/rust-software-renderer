@@ -230,20 +230,20 @@ Los ocho efectos están implementados y cada uno tiene pruebas automáticas y ev
 
 ## Camino al Proyecto 3 — Sistema solar navegable
 
-Etapa preparatoria del proyecto final, **no la entrega del Proyecto 3** (su rúbrica aún no existe). La escena nueva `--scene solar` reúne The King's Crown, Crimson Entrance y House of Cards del Laboratorio 6 con la nave del Laboratorio 4: órbitas, cámara en perspectiva, pilotaje, vuelo local alrededor de los planetas, fondo estelar y viaje rápido, todo con el mismo rasterizador en CPU. Las escenas anteriores no cambian y sus imágenes siguen congeladas por oráculos. La guía completa (arquitectura, convenciones, las siete guías del curso frente a lo implementado, mediciones y límites) está en [docs/preproyecto3.md](docs/preproyecto3.md).
+Etapa preparatoria del proyecto final, **no la entrega del Proyecto 3** (su rúbrica aún no existe). La escena nueva `--scene solar` reúne The King's Crown, Crimson Entrance y House of Cards del Laboratorio 6 con la nave del Laboratorio 4: órbitas, cámara en perspectiva, pilotaje, vuelo local alrededor de los planetas, un cielo Red-Black (nebulosa vino y magenta, estrellas de colores y cometas) y viaje rápido, todo con el mismo rasterizador en CPU. Las escenas anteriores no cambian y sus imágenes siguen congeladas por oráculos. La guía completa (arquitectura, convenciones, las siete guías del curso frente a lo implementado, mediciones y límites) está en [docs/preproyecto3.md](docs/preproyecto3.md).
 
 ![Vuelo por el sistema solar](docs/videos/preproject3/01-solar-flight.gif)
 
 ▶ [Video completo](docs/videos/preproject3/01-solar-flight.mp4) · 22 s, 800×600, 30 fps: aproximación, vuelo local sobre Crimson Entrance, warp y vuelo sobre House of Cards, y el sistema completo desde la cámara orbital.
 
-| Sistema en órbita | Cámara Follow | Vuelo local | Fondo estelar | Viaje rápido |
+| Sistema en órbita | Cámara Follow | Vuelo local | Cielo Red-Black | Viaje rápido |
 |---|---|---|---|---|
 | ![Sistema](docs/screenshots/preproject3/01-system-orbit.png) | ![Follow](docs/screenshots/preproject3/02-ship-follow.png) | ![Local](docs/screenshots/preproject3/03-local-flight.png) | ![Estrellas](docs/screenshots/preproject3/04-skybox.png) | ![Warp](docs/screenshots/preproject3/05-quick-travel.png) |
 
 ```bash
 cargo run --release -- --scene solar                       # cámara detrás de la nave
 cargo run --release -- --scene solar --camera orbit        # cámara orbital ortográfica
-cargo run --release -- --scene solar --set entrance.cloud_coverage=0.7 --stars 6000 --star-density clustered
+cargo run --release -- --scene solar --set entrance.cloud_coverage=0.7 --nebula 0.5
 cargo run --release -- --scene solar --record 22 --fps 30 --timeline flight | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - vuelo.mp4
 cargo run --release -- --benchmark-solar                   # escenarios A-J -> docs/results/preproject3
 ```
@@ -260,15 +260,17 @@ cargo run --release -- --benchmark-solar                   # escenarios A-J -> d
 
 **Cómo funciona.**
 - **Escena:** una esfera cargada una vez se dibuja como varias instancias con su transformación y su material. La luz y el ojo se giran al espacio de cada objeto, así que los patrones procedurales quedan pegados al cuerpo cuando gira.
-- **Cuadro:** se limpia una sola vez, las estrellas escriben solo color y todos los objetos comparten la profundidad.
+- **Cuadro:** se limpia una sola vez, el cielo escribe solo color y todos los objetos comparten la profundidad.
+- **Cielo:** la nebulosa se pinta una vez en un mapa de 256×128 con la paleta del mundo Red-Black y se muestrea cada 8 píxeles. Las estrellas tienen cinco clases espectrales, con cruces y destellos para las más brillantes, y hay doce cometas tenues. Todo sale de una sola semilla.
+- **Órbitas:** Crimson Entrance a 3.0 y House of Cards a 6.2, que deja espacio para un futuro anillo del gigante gaseoso.
 - **Perspectiva:** recorta contra el plano cercano antes de dividir, interpola de forma correcta en perspectiva y da a Fresnel, especular y parallax la dirección al ojo de cada fragmento.
 - **Nave:** usa una base `forward/up` girada con Rodrigues. El vuelo local recorre círculos máximos y acompaña el desplazamiento orbital, sin gravedad ni colisiones.
 
-**Rendimiento** (CPU, 800×600, 20 hilos; [método y A/B](docs/results/preproject3/README.md)): unos 16 ms con el sistema y la nave a la vista, 20 ms cerca de Crimson Entrance y 52 ms en el vuelo más bajo sobre ella, que es el peor caso. Dos optimizaciones medidas se adoptaron:
+**Rendimiento** (CPU, 800×600, 20 hilos; [método y A/B](docs/results/preproject3/README.md); medido al cierre del Gate, antes del cielo Red-Black, que añade unos 2 ms por cuadro): unos 16 ms con el sistema y la nave a la vista, 20 ms cerca de Crimson Entrance y 52 ms en el vuelo más bajo sobre ella, que es el peor caso. Dos optimizaciones medidas se adoptaron:
 - sombrear todo el cuadro con un solo grupo de hilos, que da un −26 % en la vista del sistema con imágenes idénticas ([estudio](docs/results/preproject3/thread_scheduler_study.md));
 - descartar los cuerpos fuera de cámara.
 
-La calidad adaptativa es opcional (`--solar-quality adaptive`). `cargo test` suma 149 pruebas nuevas, entre ellas los oráculos de los cuerpos del Laboratorio 6, y los medios se regeneran con [`docs/videos/preproject3/encode.sh`](docs/videos/preproject3/encode.sh).
+La calidad adaptativa es opcional (`--solar-quality adaptive`). `cargo test` suma 162 pruebas nuevas, entre ellas los oráculos de los cuerpos del Laboratorio 6, y los medios se regeneran con [`docs/videos/preproject3/encode.sh`](docs/videos/preproject3/encode.sh).
 
 ---
 
@@ -602,7 +604,7 @@ Una ruta inexistente, un OBJ inválido o un argumento desconocido terminan con m
 ### Pruebas y validación
 
 ```bash
-cargo test                                   # 551 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 195 del Lab 6 + 149 del Camino al Proyecto 3)
+cargo test                                   # 564 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 195 del Lab 6 + 162 del Camino al Proyecto 3)
 cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings
