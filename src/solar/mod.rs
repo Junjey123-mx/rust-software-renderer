@@ -8,6 +8,7 @@ pub mod input;
 pub mod instance;
 pub mod nebula;
 pub mod orbit;
+pub mod plasma_loops;
 pub mod record;
 pub mod resources;
 pub mod scene;
