@@ -60,8 +60,9 @@ params! {
 /// Spreads the normalised fBm (mostly within +-0.4) over the color ramp.
 const PLASMA_CONTRAST: f32 = 1.6;
 
-/// Wine, crimson, orange, gold and incandescent ivory.
-const PLASMA_RAMP: [(f32, Vector3); 5] = [
+/// Wine, crimson, orange, gold and incandescent ivory (shared with the
+/// external plasma loops of the solar scene).
+pub const PLASMA_RAMP: [(f32, Vector3); 5] = [
     (0.0, hex(0x4A0B10)),
     (0.28, hex(0xD21F2B)),
     (0.55, hex(0xFF7A00)),

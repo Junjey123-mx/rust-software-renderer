@@ -1,15 +1,23 @@
 //! External plasma loops of The King's Crown in the solar scene.
 
-use rust_software_renderer::pipeline::face_normal;
-use rust_software_renderer::solar::SPHERE_RADIUS;
+use raylib::math::Vector3;
+use rust_software_renderer::celestial::Body;
+use rust_software_renderer::pipeline::{
+    OrbitCamera, OrbitView, ShadedOptions, Transform, ViewPreset, Viewport, face_normal,
+};
+use rust_software_renderer::rasterization::TriangleMode;
+use rust_software_renderer::rendering::Framebuffer;
 use rust_software_renderer::solar::plasma_loops::{
     CROWN_ARCS, PlasmaLoops, SEGMENTS, SIDES, VERTICES_PER_ARC,
+};
+use rust_software_renderer::solar::{
+    BodyInstance, CameraMode, SPHERE_RADIUS, SolarMeshes, SolarScene,
 };
 
 /// Below the nearest vertex (0.840) and the flattest face of `sphere.obj`.
 const BURIED: f32 = 0.83;
 
-fn angle(a: raylib::math::Vector3, b: raylib::math::Vector3) -> f32 {
+fn angle(a: Vector3, b: Vector3) -> f32 {
     a.dot(b).clamp(-1.0, 1.0).acos()
 }
 
@@ -120,4 +128,147 @@ fn the_tubes_are_small_closed_around_the_curve_and_face_outwards() {
         let reach = SPHERE_RADIUS * loops.extent();
         assert!(mesh.iter().all(|v| v.position.length() <= reach), "{i}");
     }
+}
+
+const W: u32 = 320;
+const H: u32 = 240;
+
+/// The crown alone at the origin under the orthographic front camera,
+/// framed so the star with its loops fills most of the view.
+fn star_scene(spin: f32, time: f32) -> SolarScene {
+    let camera = OrbitCamera::new(Vector3::zero(), ViewPreset::Front);
+    let view = OrbitView::for_world(camera, 2.0, Viewport::new(W, H, 0.1)).unwrap();
+    let mut s = SolarScene::new(
+        SolarMeshes::load().unwrap(),
+        view,
+        Vector3::new(0.0, 0.0, -1.0),
+    );
+    s.camera_mode = CameraMode::Orbit;
+    s.bodies = vec![BodyInstance::new(
+        Body::KingsCrown,
+        Transform::new(Vector3::zero(), 1.3),
+        spin,
+    )];
+    s.clock.time = time;
+    s.update();
+    s
+}
+
+fn frame(s: &SolarScene) -> Framebuffer {
+    let mut fb = Framebuffer::new(W, H);
+    s.render_frame(
+        &mut fb,
+        TriangleMode::FilledScanline,
+        ShadedOptions::default(),
+    )
+    .unwrap();
+    fb
+}
+
+/// Pixels whose depth the loops changed, given the frame without them.
+fn loop_pixels(with: &Framebuffer, without: &Framebuffer) -> Vec<(i32, i32)> {
+    let mut covered = Vec::new();
+    for y in 0..H as i32 {
+        for x in 0..W as i32 {
+            if with.get_depth(x, y) != without.get_depth(x, y) {
+                covered.push((x, y));
+            }
+        }
+    }
+    covered
+}
+
+fn without_loops(mut s: SolarScene) -> SolarScene {
+    s.plasma = PlasmaLoops::new(&[]);
+    s
+}
+
+#[test]
+fn the_loops_rise_outside_the_star_silhouette_in_warm_colors() {
+    let s = star_scene(0.05, 6.0);
+    let (with, without) = (frame(&s), frame(&without_loops(s.clone())));
+    let covered = loop_pixels(&with, &without);
+    let radius_px = s.radius_of(0) * s.view.scale();
+    let (cx, cy) = (W as f32 / 2.0, H as f32 / 2.0);
+    let outside: Vec<_> = covered
+        .iter()
+        .filter(|&&(x, y)| {
+            let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+            (dx * dx + dy * dy).sqrt() > radius_px * 1.05
+        })
+        .collect();
+    assert!(
+        outside.len() > 200,
+        "{} pixels outside the disk",
+        outside.len()
+    );
+    // Warm: red leads green and green leads blue on average.
+    let sum = outside.iter().fold(Vector3::zero(), |acc, &&(x, y)| {
+        acc + with.get_pixel(x, y).unwrap()
+    }) / outside.len() as f32;
+    assert!(sum.x > sum.y && sum.y > sum.z && sum.x > 0.5, "{sum:?}");
+}
+
+#[test]
+fn the_star_hides_the_far_side_of_its_loops() {
+    let s = star_scene(0.05, 6.0);
+    let options = ShadedOptions::default();
+    let mut alone = Framebuffer::new(W, H);
+    alone.clear();
+    let free: usize = s
+        .render_plasma_without_clear(&mut alone, TriangleMode::FilledScanline, options)
+        .unwrap()
+        .iter()
+        .map(|a| a.fragments_shaded)
+        .sum();
+    let mut behind = Framebuffer::new(W, H);
+    behind.clear();
+    s.render_objects_without_clear(&mut behind, TriangleMode::FilledScanline, options)
+        .unwrap();
+    let occluded: usize = s
+        .render_plasma_without_clear(&mut behind, TriangleMode::FilledScanline, options)
+        .unwrap()
+        .iter()
+        .map(|a| a.fragments_shaded)
+        .sum();
+    assert!(occluded > 0 && occluded < free, "{occluded} of {free}");
+}
+
+#[test]
+fn the_loops_stay_put_on_a_still_star_and_follow_its_spin() {
+    let still = |time| {
+        let s = star_scene(0.0, time);
+        loop_pixels(&frame(&s), &frame(&without_loops(s.clone())))
+    };
+    // Only the colors animate: the covered pixels never move.
+    let (a, b) = (star_scene(0.0, 3.0), star_scene(0.0, 7.0));
+    assert_eq!(still(3.0), still(7.0));
+    assert_ne!(frame(&a).to_rgba_bytes(), frame(&b).to_rgba_bytes());
+    // The same instant on a turning star: the loops moved with it.
+    let spun = star_scene(0.05, 7.0);
+    assert_ne!(
+        loop_pixels(&frame(&spun), &frame(&without_loops(spun.clone()))),
+        still(7.0)
+    );
+}
+
+#[test]
+fn a_scene_without_the_crown_or_without_arcs_draws_no_loops() {
+    let mut s = star_scene(0.05, 6.0);
+    assert_eq!(s.plasma_host(), Some(0));
+    s.bodies[0] = BodyInstance::new(
+        Body::HouseOfCards,
+        Transform::new(Vector3::zero(), 1.3),
+        0.05,
+    );
+    assert_eq!(s.plasma_host(), None);
+    let mut fb = Framebuffer::new(W, H);
+    fb.clear();
+    let options = ShadedOptions::default();
+    assert!(
+        s.render_plasma_without_clear(&mut fb, TriangleMode::FilledScanline, options)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(without_loops(star_scene(0.05, 6.0)).plasma_host(), None);
 }

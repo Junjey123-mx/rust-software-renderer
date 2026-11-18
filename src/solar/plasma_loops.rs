@@ -5,19 +5,22 @@
 //! geometry, described here in the star's object space so they can be
 //! built once and drawn with the star's own transform.
 
+use crate::celestial::crown::PLASMA_RAMP;
 use crate::geometry::Vertex;
-use crate::pipeline::direction_from_angles;
-use crate::shading::math::hex;
+use crate::pipeline::{NormalSource, ShadedOptions, direction_from_angles};
+use crate::shading::math::{hex, ramp, saturate, smoothstep};
+use crate::shading::noise::fbm;
 use crate::shading::sphere::east_north;
 use crate::solar::SPHERE_RADIUS;
 use raylib::math::Vector3;
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
 
-/// Quads along each arc and around its tube: few enough that the crown's
-/// arcs together cost about as much to transform as one small body.
-pub const SEGMENTS: usize = 16;
-pub const SIDES: usize = 6;
+/// Quads along each arc and around its tube: the six crown arcs add 840
+/// triangles (the course sphere has 192), still smoother than the star's
+/// own silhouette; the shader rounds the tube, not the facets.
+pub const SEGMENTS: usize = 14;
+pub const SIDES: usize = 5;
 /// Triangle corners of one arc's tube.
 pub const VERTICES_PER_ARC: usize = SEGMENTS * SIDES * 6;
 /// Depth of the feet below the surface, in body radii: the open ends of a
@@ -26,6 +29,17 @@ pub const VERTICES_PER_ARC: usize = SEGMENTS * SIDES * 6;
 pub const FOOT_DEPTH: f32 = 0.12;
 /// Corner color of the tubes, seen only in wireframe: the crown's gold.
 pub const WIRE_COLOR: Vector3 = hex(0xFFC63A);
+/// Seconds per brightness pulse of an arc.
+pub const PULSE_PERIOD: f32 = 5.0;
+/// Bright knots along each arc and how fast they run from the first foot
+/// to the second, knots per second.
+pub const FLOW_KNOTS: f32 = 3.0;
+pub const FLOW_SPEED: f32 = 0.35;
+/// Strands around each tube and the turns they make from foot to foot.
+pub const STRANDS: f32 = 3.0;
+pub const TWISTS: f32 = 2.0;
+/// Noise cells of the plasma grain along an arc.
+pub const GRAIN: f32 = 14.0;
 
 /// One magnetic arc. Directions are on the unit sphere of the star's object
 /// space; heights and widths are in body radii.
@@ -93,7 +107,18 @@ impl PlasmaArc {
     /// Centerline point at `t` in the object space of a body of `radius`:
     /// the great circle between the feet, raised by `lift`.
     pub fn point(&self, t: f32, radius: f32) -> Vector3 {
-        self.basis().direction(self.span * t) * (radius * self.lift(t))
+        self.curve(&self.basis(), t, radius).0
+    }
+
+    /// Centerline point at `t` and its derivative with respect to `t`.
+    pub fn curve(&self, basis: &ArcBasis, t: f32, radius: f32) -> (Vector3, Vector3) {
+        let angle = self.span * t;
+        let (dir, across) = (basis.direction(angle), basis.direction(angle + PI / 2.0));
+        let rise = (FOOT_DEPTH + self.height) * PI * (PI * t).cos();
+        (
+            dir * (radius * self.lift(t)),
+            (across * (self.span * self.lift(t)) + dir * rise) * radius,
+        )
     }
 
     /// The tube around the centerline for a body of `radius`: `SEGMENTS`
@@ -102,16 +127,12 @@ impl PlasmaArc {
     /// open, buried in the star.
     pub fn tube(&self, radius: f32) -> Vec<Vertex> {
         let basis = self.basis();
-        let rise = (FOOT_DEPTH + self.height) * PI;
         let rings: Vec<[Vector3; SIDES]> = (0..=SEGMENTS)
             .map(|i| {
                 let t = i as f32 / SEGMENTS as f32;
-                let angle = self.span * t;
-                let (dir, across) = (basis.direction(angle), basis.direction(angle + PI / 2.0));
-                let center = dir * (radius * self.lift(t));
-                // Derivative of `point`; the ring spans the plane normal
-                // and the in-plane normal of the curve.
-                let tangent = across * (self.span * self.lift(t)) + dir * (rise * (PI * t).cos());
+                // The ring spans the plane normal and the in-plane normal
+                // of the curve.
+                let (center, tangent) = self.curve(&basis, t, radius);
                 let out = basis.normal.cross(tangent).normalized();
                 let w = radius * self.width_at(t);
                 std::array::from_fn(|j| {
@@ -131,6 +152,98 @@ impl PlasmaArc {
             }
         }
         mesh
+    }
+
+    /// What shading this arc needs in a frame at `time` on a body of
+    /// `radius`: its plane and the animation phases, computed once.
+    pub fn shader(&self, time: f32, radius: f32) -> ArcShader {
+        ArcShader {
+            arc: *self,
+            basis: self.basis(),
+            radius,
+            pulse: 0.85 + 0.15 * (TAU * time / PULSE_PERIOD + self.phase).sin(),
+            flow: FLOW_SPEED * time,
+        }
+    }
+}
+
+/// Shaded-stage options of the tubes: closed and wound outwards, so back
+/// faces are culled; flat normals, since the shader derives its own.
+pub fn plasma_options(threads: usize) -> ShadedOptions {
+    ShadedOptions {
+        cull_back_faces: true,
+        normal_source: NormalSource::Face,
+        threads,
+    }
+}
+
+/// One arc ready to shade a frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArcShader {
+    pub arc: PlasmaArc,
+    pub basis: ArcBasis,
+    pub radius: f32,
+    /// Brightness pulse of this frame, around 1.
+    pub pulse: f32,
+    /// Distance the knots have run, in knots.
+    pub flow: f32,
+}
+
+impl ArcShader {
+    /// Emission of the tube at object-space point `p`, seen along the unit
+    /// object-space direction `eye`. The position along the arc comes from
+    /// the angle of `p` in the arc's plane; the offset from the centerline
+    /// gives a smooth tube normal whatever the facets, so the core facing
+    /// the eye burns gold to white and the outline cools to crimson. Its
+    /// angle around the centerline draws strands that twist along the arc
+    /// like a magnetic flux rope; knots of plasma run between the feet, the
+    /// feet glow hotter and the whole arc pulses.
+    pub fn shade(&self, p: Vector3, eye: Vector3) -> Vector3 {
+        let (arc, b) = (&self.arc, &self.basis);
+        // Nearest centerline point: a guess from the polar angle of `p`,
+        // one Newton step along the curve, then the offset without its
+        // component along the axis.
+        let guess = p.dot(b.side).atan2(p.dot(b.start)).clamp(0.0, arc.span) / arc.span;
+        let (c, d) = arc.curve(b, guess, self.radius);
+        let t = (guess + (p - c).dot(d) / d.dot(d)).clamp(0.0, 1.0);
+        let (c, d) = arc.curve(b, t, self.radius);
+        let mut offset = p - c;
+        offset -= d * (offset.dot(d) / d.dot(d));
+        let len = offset.length();
+        let facing = if len > 1e-6 {
+            (offset.dot(eye) / len).abs()
+        } else {
+            1.0
+        };
+        let core = facing * facing;
+        let out = b.normal.cross(d) / d.length();
+        let around = offset.dot(b.normal).atan2(offset.dot(out));
+        let strands = 0.5 + 0.5 * (STRANDS * around - TAU * TWISTS * t + arc.phase).cos();
+        let wave = 0.5 + 0.5 * (TAU * (FLOW_KNOTS * t - self.flow) + arc.phase).sin();
+        let knots = smoothstep(0.55, 1.0, wave);
+        let foot = 1.0 - smoothstep(0.0, 0.2, t.min(1.0 - t));
+        // Grain in tube coordinates (around as a circle, so it never
+        // seams), carried along the arc by the flow.
+        let (sa, ca) = around.sin_cos();
+        let grain = fbm(
+            Vector3::new(1.5 * ca, 1.5 * sa, GRAIN * t - 2.0 * self.flow),
+            2,
+            arc.phase.to_bits(),
+        );
+        let heat = (0.12
+            + 0.38 * facing
+            + 0.3 * core
+            + 0.22 * strands
+            + 0.25 * knots
+            + 0.15 * foot
+            + 0.5 * grain)
+            * self.pulse
+            + arc.heat;
+        let glow = arc.intensity
+            * (0.65 + 0.35 * facing)
+            * (0.7 + 0.3 * strands)
+            * (1.0 + 0.25 * knots + 0.6 * grain);
+        ramp(&PLASMA_RAMP, saturate(heat)) * glow
     }
 }
 
@@ -204,7 +317,7 @@ pub const CROWN_ARCS: [PlasmaArc; 6] = [
         tilt: deg(10.0),
         span: deg(34.0),
         height: 0.42,
-        width: 0.065,
+        width: 0.05,
         heat: 0.10,
         intensity: 1.15,
         phase: 0.0,
@@ -215,7 +328,7 @@ pub const CROWN_ARCS: [PlasmaArc; 6] = [
         tilt: deg(70.0),
         span: deg(28.0),
         height: 0.32,
-        width: 0.055,
+        width: 0.042,
         heat: -0.05,
         intensity: 1.0,
         phase: 1.7,
@@ -226,7 +339,7 @@ pub const CROWN_ARCS: [PlasmaArc; 6] = [
         tilt: deg(-35.0),
         span: deg(40.0),
         height: 0.55,
-        width: 0.075,
+        width: 0.058,
         heat: 0.05,
         intensity: 1.1,
         phase: 3.1,
@@ -237,7 +350,7 @@ pub const CROWN_ARCS: [PlasmaArc; 6] = [
         tilt: deg(55.0),
         span: deg(24.0),
         height: 0.28,
-        width: 0.05,
+        width: 0.04,
         heat: -0.10,
         intensity: 0.95,
         phase: 4.4,
@@ -248,7 +361,7 @@ pub const CROWN_ARCS: [PlasmaArc; 6] = [
         tilt: deg(-10.0),
         span: deg(36.0),
         height: 0.48,
-        width: 0.065,
+        width: 0.05,
         heat: 0.15,
         intensity: 1.2,
         phase: 5.6,
@@ -259,7 +372,7 @@ pub const CROWN_ARCS: [PlasmaArc; 6] = [
         tilt: deg(30.0),
         span: deg(30.0),
         height: 0.36,
-        width: 0.06,
+        width: 0.046,
         heat: 0.0,
         intensity: 1.05,
         phase: 2.4,

@@ -10,7 +10,7 @@ use crate::celestial::Body;
 use crate::celestial::PreparedShader;
 use crate::pipeline::{
     DirectionalLight, OrbitView, PerspectiveCamera, RenderError, RenderScratch, ShadedOptions,
-    ShadedStats, Transform, Uniforms, ViewProjection, sphere_visible,
+    ShadedStats, Transform, Uniforms, ViewProjection, render_shaded_with_scratch, sphere_visible,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
@@ -21,9 +21,12 @@ use crate::solar::instance::{
     shade_instance,
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
+use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
-use crate::solar::{BodyInstance, FrameContext, Orbit, ShipState, SimulationClock, SolarMeshes};
+use crate::solar::{
+    BodyInstance, FrameContext, Orbit, SPHERE_RADIUS, ShipState, SimulationClock, SolarMeshes,
+};
 use raylib::math::Vector3;
 use std::cell::RefCell;
 
@@ -93,6 +96,9 @@ pub struct SolarScene {
     pub stars: StarField,
     /// Colored backdrop behind the stars.
     pub nebula: Nebula,
+    /// Magnetic arcs that rise out of The King's Crown, drawn with its
+    /// transform (no arcs: nothing drawn).
+    pub plasma: PlasmaLoops,
     /// Shader quality policy (full by default).
     pub quality: Quality,
     /// Shaded-stage buffers reused by every draw of this scene.
@@ -118,6 +124,7 @@ impl SolarScene {
             flight: FlightMode::Space,
             stars: StarField::generate_with(DEFAULT_SEED, DEFAULT_STARS, StarDensity::default()),
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
+            plasma: PlasmaLoops::crown(),
             scratch: RefCell::new(RenderScratch::new()),
             quality: Quality::Full,
             clock: SimulationClock::default(),
@@ -321,17 +328,79 @@ impl SolarScene {
         )
     }
 
+    /// The body the plasma loops are anchored to: The King's Crown, when it
+    /// is in the scene and the scene has arcs.
+    pub fn plasma_host(&self) -> Option<usize> {
+        if self.plasma.arcs.is_empty() {
+            return None;
+        }
+        self.bodies
+            .iter()
+            .position(|b| b.body() == Body::KingsCrown)
+    }
+
+    /// The host of the loops when the star with its loops (a sphere of
+    /// `PlasmaLoops::extent` radii) can appear on the framebuffer.
+    fn plasma_in_view(&self, width: u32, height: u32) -> Option<usize> {
+        self.plasma_host().filter(|&i| {
+            let reach = self.radius_of(i) * self.plasma.extent();
+            self.sphere_in_view(self.bodies[i].transform.position, reach, width, height)
+        })
+    }
+
+    /// Draws the star's external plasma loops without clearing: one tube
+    /// per arc with the star's transform, so they turn with it and meet the
+    /// bodies in the shared depth buffer. Returns the stats of each arc
+    /// (none when the star and its loops are out of view).
+    pub fn render_plasma_without_clear(
+        &self,
+        framebuffer: &mut Framebuffer,
+        mode: TriangleMode,
+        options: ShadedOptions,
+    ) -> Result<Vec<ShadedStats>, RenderError> {
+        let Some(host) = self.plasma_in_view(framebuffer.width(), framebuffer.height()) else {
+            return Ok(Vec::new());
+        };
+        let transform = self.bodies[host].transform;
+        let model = Uniforms {
+            model_matrix: transform.matrix(),
+        };
+        let projection = self.projection();
+        let mut scratch = self.scratch.borrow_mut();
+        self.plasma
+            .arcs
+            .iter()
+            .enumerate()
+            .map(|(i, arc)| {
+                let shader = arc.shader(self.clock.time, SPHERE_RADIUS);
+                render_shaded_with_scratch(
+                    framebuffer,
+                    &model,
+                    self.plasma.arc_mesh(i),
+                    &projection,
+                    mode,
+                    plasma_options(options.threads),
+                    &|s, v| {
+                        shader.shade(s.object_position, transform.to_object_dir(v.view_direction))
+                    },
+                    &mut scratch,
+                )
+            })
+            .collect()
+    }
+
     /// One frame: clear color and depth once, the star field (color only),
-    /// then every body, then the spacecraft, all through the same camera and
-    /// depth buffer. Returns the fragments shaded.
+    /// then every body, the star's plasma loops and the spacecraft, all
+    /// through the same camera and depth buffer. Returns the fragments
+    /// shaded.
     ///
     /// Filled modes run as one frame batch: every visible instance is
     /// rasterized first (depth written at once), all samples are shaded by a
     /// single thread pool and the colors are resolved by depth. The image is
     /// identical to drawing the instances one by one
-    /// (`render_objects_without_clear` + `render_ship_without_clear`), but
-    /// idle cores at the end of each instance are avoided. Wireframe draws
-    /// the instances one by one.
+    /// (`render_objects_without_clear`, `render_plasma_without_clear` and
+    /// `render_ship_without_clear`), but idle cores at the end of each
+    /// instance are avoided. Wireframe draws the instances one by one.
     pub fn render_frame(
         &self,
         framebuffer: &mut Framebuffer,
@@ -344,16 +413,20 @@ impl SolarScene {
         draw_stars(framebuffer, &self.stars, &sky);
         if mode == TriangleMode::Wireframe {
             let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
+            let plasma = self.render_plasma_without_clear(framebuffer, mode, options)?;
             let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
-            return Ok(
-                bodies.iter().map(|s| s.fragments_shaded).sum::<usize>() + ship.fragments_shaded
-            );
+            return Ok(bodies
+                .iter()
+                .chain(&plasma)
+                .map(|s| s.fragments_shaded)
+                .sum::<usize>()
+                + ship.fragments_shaded);
         }
         let (w, h) = (framebuffer.width(), framebuffer.height());
         let shared = self.frame_context(mode, options);
         let mut scratch = self.scratch.borrow_mut();
         scratch.begin_batch();
-        let mut jobs: Vec<Job> = Vec::with_capacity(self.bodies.len() + 1);
+        let mut jobs: Vec<Job> = Vec::with_capacity(self.bodies.len() + self.plasma.arcs.len() + 1);
         for (i, body) in self.bodies.iter().enumerate() {
             if !self.body_in_view(i, w, h) {
                 continue;
@@ -381,6 +454,28 @@ impl SolarScene {
                 tag,
             )?;
         }
+        if let Some(host) = self.plasma_in_view(w, h) {
+            let transform = self.bodies[host].transform;
+            let model = Uniforms {
+                model_matrix: transform.matrix(),
+            };
+            for (i, arc) in self.plasma.arcs.iter().enumerate() {
+                jobs.push(Job::Plasma(
+                    arc.shader(shared.time, SPHERE_RADIUS),
+                    transform,
+                ));
+                let tag = (jobs.len() - 1) as u32;
+                scratch.rasterize(
+                    framebuffer,
+                    &model,
+                    self.plasma.arc_mesh(i),
+                    &shared.projection,
+                    mode,
+                    plasma_options(options.threads),
+                    tag,
+                )?;
+            }
+        }
         if self.sphere_in_view(self.ship.position, self.ship.radius(), w, h) {
             jobs.push(Job::Ship(ship_light(&self.ship, self.ship_light())));
             let model = Uniforms {
@@ -399,6 +494,9 @@ impl SolarScene {
         }
         scratch.shade_batch(options.threads, |tag, s, v| match &jobs[tag as usize] {
             Job::Body(prepared, transform) => shade_instance(prepared, transform, s, v),
+            Job::Plasma(arc, transform) => {
+                arc.shade(s.object_position, transform.to_object_dir(v.view_direction))
+            }
             Job::Ship(light) => ship_color(light, s),
         });
         scratch.resolve(framebuffer);
@@ -518,7 +616,10 @@ impl SolarScene {
 
 /// One shading job of a frame batch: what a tagged sample is shaded with.
 enum Job {
-    /// Boxed: a prepared shader is large and at most four jobs exist.
+    /// Boxed: a prepared shader is large and a frame has only a few jobs
+    /// (at most the bodies, the star's arcs and the spacecraft).
     Body(Box<PreparedShader>, Transform),
+    /// One plasma arc and the transform of the star it rises from.
+    Plasma(ArcShader, Transform),
     Ship(DirectionalLight),
 }

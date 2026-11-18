@@ -651,6 +651,7 @@ fn the_frame_batch_matches_drawing_the_instances_one_by_one() {
         rust_software_renderer::solar::nebula::draw_nebula(&mut fb, &s.nebula, &sky);
         rust_software_renderer::solar::skybox::draw_stars(&mut fb, &s.stars, &sky);
         s.render_objects_without_clear(&mut fb, mode, opts).unwrap();
+        s.render_plasma_without_clear(&mut fb, mode, opts).unwrap();
         s.render_ship_without_clear(&mut fb, mode, opts).unwrap();
         fnv(&fb)
     };
@@ -695,11 +696,18 @@ fn the_batch_shades_no_more_fragments_than_one_by_one_and_wireframe_still_draws(
     let bodies = s
         .render_objects_without_clear(&mut one, TriangleMode::FilledScanline, options())
         .unwrap();
+    let plasma = s
+        .render_plasma_without_clear(&mut one, TriangleMode::FilledScanline, options())
+        .unwrap();
     let ship = s
         .render_ship_without_clear(&mut one, TriangleMode::FilledScanline, options())
         .unwrap();
-    let separate: usize =
-        bodies.iter().map(|b| b.fragments_shaded).sum::<usize>() + ship.fragments_shaded;
+    let separate: usize = bodies
+        .iter()
+        .chain(&plasma)
+        .map(|b| b.fragments_shaded)
+        .sum::<usize>()
+        + ship.fragments_shaded;
     assert!(
         batched > 0 && batched <= separate,
         "{batched} vs {separate}"
