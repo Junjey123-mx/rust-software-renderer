@@ -5,15 +5,27 @@
 //! geometry, described here in the star's object space so they can be
 //! built once and drawn with the star's own transform.
 
+use crate::geometry::Vertex;
 use crate::pipeline::direction_from_angles;
+use crate::shading::math::hex;
 use crate::shading::sphere::east_north;
+use crate::solar::SPHERE_RADIUS;
 use raylib::math::Vector3;
-use std::f32::consts::PI;
+use std::f32::consts::{PI, TAU};
+use std::sync::Arc;
 
 /// Quads along each arc and around its tube: few enough that the crown's
 /// arcs together cost about as much to transform as one small body.
 pub const SEGMENTS: usize = 16;
 pub const SIDES: usize = 6;
+/// Triangle corners of one arc's tube.
+pub const VERTICES_PER_ARC: usize = SEGMENTS * SIDES * 6;
+/// Depth of the feet below the surface, in body radii: the open ends of a
+/// tube stay hidden inside the faceted sphere (its nearest vertex is at
+/// 0.97 of the radius).
+pub const FOOT_DEPTH: f32 = 0.12;
+/// Corner color of the tubes, seen only in wireframe: the crown's gold.
+pub const WIRE_COLOR: Vector3 = hex(0xFFC63A);
 
 /// One magnetic arc. Directions are on the unit sphere of the star's object
 /// space; heights and widths are in body radii.
@@ -53,6 +65,128 @@ impl PlasmaArc {
         let chord = east * self.tilt.cos() + north * self.tilt.sin();
         let (s, k) = (self.span / 2.0).sin_cos();
         [c * k - chord * s, c * k + chord * s]
+    }
+
+    /// The arc's plane, which passes through the star's center: the whole
+    /// centerline lies in it.
+    pub fn basis(&self) -> ArcBasis {
+        let [start, end] = self.feet();
+        let normal = start.cross(end).normalized();
+        ArcBasis {
+            start,
+            side: normal.cross(start),
+            normal,
+        }
+    }
+
+    /// Distance of the centerline from the star's center at `t` (0 and 1
+    /// at the buried feet, the apex at 0.5), in body radii.
+    pub fn lift(&self, t: f32) -> f32 {
+        1.0 - FOOT_DEPTH + (FOOT_DEPTH + self.height) * (PI * t).sin()
+    }
+
+    /// Tube radius at `t`, in body radii: thinner at the feet.
+    pub fn width_at(&self, t: f32) -> f32 {
+        self.width * (0.65 + 0.35 * (PI * t).sin())
+    }
+
+    /// Centerline point at `t` in the object space of a body of `radius`:
+    /// the great circle between the feet, raised by `lift`.
+    pub fn point(&self, t: f32, radius: f32) -> Vector3 {
+        self.basis().direction(self.span * t) * (radius * self.lift(t))
+    }
+
+    /// The tube around the centerline for a body of `radius`: `SEGMENTS`
+    /// rings of `SIDES` corners, perpendicular to the curve, joined by
+    /// outward-facing triangles (one `Vertex` per corner). The ends stay
+    /// open, buried in the star.
+    pub fn tube(&self, radius: f32) -> Vec<Vertex> {
+        let basis = self.basis();
+        let rise = (FOOT_DEPTH + self.height) * PI;
+        let rings: Vec<[Vector3; SIDES]> = (0..=SEGMENTS)
+            .map(|i| {
+                let t = i as f32 / SEGMENTS as f32;
+                let angle = self.span * t;
+                let (dir, across) = (basis.direction(angle), basis.direction(angle + PI / 2.0));
+                let center = dir * (radius * self.lift(t));
+                // Derivative of `point`; the ring spans the plane normal
+                // and the in-plane normal of the curve.
+                let tangent = across * (self.span * self.lift(t)) + dir * (rise * (PI * t).cos());
+                let out = basis.normal.cross(tangent).normalized();
+                let w = radius * self.width_at(t);
+                std::array::from_fn(|j| {
+                    let (s, c) = (TAU * j as f32 / SIDES as f32).sin_cos();
+                    center + (out * c + basis.normal * s) * w
+                })
+            })
+            .collect();
+        let mut mesh = Vec::with_capacity(VERTICES_PER_ARC);
+        for pair in rings.windows(2) {
+            for j in 0..SIDES {
+                let k = (j + 1) % SIDES;
+                let (a, b, c, d) = (pair[0][j], pair[0][k], pair[1][k], pair[1][j]);
+                for p in [a, b, c, a, c, d] {
+                    mesh.push(Vertex::new_with_color(p, WIRE_COLOR));
+                }
+            }
+        }
+        mesh
+    }
+}
+
+/// Orthonormal basis of an arc's plane: `start` is the first foot, `side`
+/// the in-plane direction a quarter turn towards the second foot and
+/// `normal` the plane normal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArcBasis {
+    pub start: Vector3,
+    pub side: Vector3,
+    pub normal: Vector3,
+}
+
+impl ArcBasis {
+    /// Unit direction `angle` radians from the first foot towards the
+    /// second.
+    pub fn direction(&self, angle: f32) -> Vector3 {
+        let (s, c) = angle.sin_cos();
+        self.start * c + self.side * s
+    }
+}
+
+/// A star's arcs and their tubes, built once for the course sphere
+/// (`SPHERE_RADIUS`) and shared by every clone of the scene.
+#[derive(Debug, Clone)]
+pub struct PlasmaLoops {
+    pub arcs: Vec<PlasmaArc>,
+    /// `VERTICES_PER_ARC` corners per arc, in arc order.
+    pub mesh: Arc<Vec<Vertex>>,
+}
+
+impl PlasmaLoops {
+    pub fn new(arcs: &[PlasmaArc]) -> Self {
+        Self {
+            arcs: arcs.to_vec(),
+            mesh: Arc::new(arcs.iter().flat_map(|a| a.tube(SPHERE_RADIUS)).collect()),
+        }
+    }
+
+    /// The King's Crown's arcs.
+    pub fn crown() -> Self {
+        Self::new(&CROWN_ARCS)
+    }
+
+    /// Tube of arc `index`.
+    pub fn arc_mesh(&self, index: usize) -> &[Vertex] {
+        &self.mesh[index * VERTICES_PER_ARC..(index + 1) * VERTICES_PER_ARC]
+    }
+
+    /// Farthest reach of any tube from the star's center, in body radii (1
+    /// without arcs): the bounding sphere of the star with its loops.
+    pub fn extent(&self) -> f32 {
+        self.arcs
+            .iter()
+            .map(|a| 1.0 + a.height + a.width)
+            .fold(1.0, f32::max)
     }
 }
 
