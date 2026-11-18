@@ -1,7 +1,7 @@
 //! External plasma loops of The King's Crown in the solar scene.
 
 use raylib::math::Vector3;
-use rust_software_renderer::celestial::Body;
+use rust_software_renderer::celestial::{Body, CelestialMaterial};
 use rust_software_renderer::pipeline::{
     OrbitCamera, OrbitView, ShadedOptions, Transform, ViewPreset, Viewport, face_normal,
 };
@@ -271,4 +271,23 @@ fn a_scene_without_the_crown_or_without_arcs_draws_no_loops() {
             .is_empty()
     );
     assert_eq!(without_loops(star_scene(0.05, 6.0)).plasma_host(), None);
+}
+
+#[test]
+fn the_solar_crown_hands_its_surface_loops_to_the_external_arcs() {
+    let lab6 = CelestialMaterial::for_body(Body::KingsCrown);
+    assert_eq!(lab6.get("loops"), Some(1.0), "laboratory six unchanged");
+    let s = star_scene(0.05, 0.0);
+    let mut solar = SolarScene::default_system(
+        SolarMeshes::load().unwrap(),
+        s.view,
+        Vector3::new(0.0, 1.0, 0.0),
+    )
+    .unwrap();
+    assert_eq!(solar.bodies[0].material.get("loops"), Some(0.0));
+    assert_eq!(solar.plasma_host(), Some(0));
+    solar
+        .apply_overrides(&[("crown.loops".to_string(), 1.0)])
+        .unwrap();
+    assert_eq!(solar.bodies[0].material.get("loops"), Some(1.0));
 }

@@ -134,7 +134,7 @@ impl SolarScene {
     }
 
     /// The default system: The King's Crown at the center (scale 1.3 of the
-    /// course sphere, radius 1.13), Crimson Entrance at scale 0.6 on a 3.0
+    /// course sphere, radius 1.13, its loops drawn as external arcs), Crimson Entrance at scale 0.6 on a 3.0
     /// orbit and House of Cards at scale 0.9 on a 6.2 orbit, placed for time
     /// 0. The gap between the two orbits leaves room for a future ring of
     /// up to 2.2 radii around the gas giant, about one unit clear of
@@ -145,8 +145,15 @@ impl SolarScene {
         light_world: Vector3,
     ) -> Result<Self, String> {
         let mut scene = Self::new(meshes, view, light_world);
+        // The star's loops are external geometry here (`plasma`): its
+        // surface shader keeps the plasma, spots, corona and eclipse, and
+        // stops painting loops inside the disk (`--set crown.loops=1` brings
+        // them back).
+        let mut crown =
+            BodyInstance::new(Body::KingsCrown, Transform::new(Vector3::zero(), 1.3), 0.05);
+        crown.material.set("loops", 0.0)?;
         scene.bodies = vec![
-            BodyInstance::new(Body::KingsCrown, Transform::new(Vector3::zero(), 1.3), 0.05),
+            crown,
             BodyInstance::new(
                 Body::CrimsonEntrance,
                 Transform::new(Vector3::zero(), 0.6),
