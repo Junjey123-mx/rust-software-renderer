@@ -134,9 +134,9 @@ impl SolarScene {
     }
 
     /// The default system: The King's Crown at the center (scale 1.3 of the
-    /// course sphere, radius 1.13, its loops drawn as external arcs), Crimson Entrance at scale 0.6 on a 3.0
-    /// orbit and House of Cards at scale 0.9 on a 6.2 orbit, placed for time
-    /// 0. The gap between the two orbits leaves room for a future ring of
+    /// course sphere, radius 1.13, its loops drawn as external arcs),
+    /// Crimson Entrance at scale 0.6 on a 3.0 orbit and House of Cards at
+    /// scale 0.9 on a 6.2 orbit, placed for time 0. The gap between the two orbits leaves room for a future ring of
     /// up to 2.2 radii around the gas giant, about one unit clear of
     /// Crimson Entrance.
     pub fn default_system(

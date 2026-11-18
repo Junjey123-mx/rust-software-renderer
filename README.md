@@ -263,6 +263,7 @@ cargo run --release -- --benchmark-solar                   # escenarios A-J -> d
 - **Cuadro:** se limpia una sola vez, el cielo escribe solo color y todos los objetos comparten la profundidad.
 - **Cielo:** la nebulosa se pinta una vez en un mapa de 256×128 con la paleta del mundo Red-Black y se muestrea cada 8 píxeles. Las estrellas tienen cinco clases espectrales, con cruces y destellos para las más brillantes, y hay doce cometas tenues. Todo sale de una sola semilla.
 - **Órbitas:** Crimson Entrance a 3.0 y House of Cards a 6.2, que deja espacio para un futuro anillo del gigante gaseoso.
+- **Lazos de plasma:** seis arcos de geometría real salen de The King's Crown, se arquean en el espacio y vuelven a entrar. Giran con la estrella, respetan la profundidad y laten con hebras, grano y nudos que fluyen de un pie al otro; cuestan entre 0.2 y 0.7 ms por cuadro ([detalle](docs/preproyecto3.md#10-lazos-de-plasma-externos-de-the-kings-crown)).
 - **Perspectiva:** recorta contra el plano cercano antes de dividir, interpola de forma correcta en perspectiva y da a Fresnel, especular y parallax la dirección al ojo de cada fragmento.
 - **Nave:** usa una base `forward/up` girada con Rodrigues. El vuelo local recorre círculos máximos y acompaña el desplazamiento orbital, sin gravedad ni colisiones.
 
@@ -270,7 +271,7 @@ cargo run --release -- --benchmark-solar                   # escenarios A-J -> d
 - sombrear todo el cuadro con un solo grupo de hilos, que da un −26 % en la vista del sistema con imágenes idénticas ([estudio](docs/results/preproject3/thread_scheduler_study.md));
 - descartar los cuerpos fuera de cámara.
 
-La calidad adaptativa es opcional (`--solar-quality adaptive`). `cargo test` suma 162 pruebas nuevas, entre ellas los oráculos de los cuerpos del Laboratorio 6, y los medios se regeneran con [`docs/videos/preproject3/encode.sh`](docs/videos/preproject3/encode.sh).
+La calidad adaptativa es opcional (`--solar-quality adaptive`). `cargo test` suma 172 pruebas nuevas, entre ellas los oráculos de los cuerpos del Laboratorio 6, y los medios se regeneran con [`docs/videos/preproject3/encode.sh`](docs/videos/preproject3/encode.sh).
 
 ---
 
@@ -604,7 +605,7 @@ Una ruta inexistente, un OBJ inválido o un argumento desconocido terminan con m
 ### Pruebas y validación
 
 ```bash
-cargo test                                   # 564 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 195 del Lab 6 + 162 del Camino al Proyecto 3)
+cargo test                                   # 574 pruebas (156 de los Labs 4-5 + 51 de la vista interactiva + 195 del Lab 6 + 172 del Camino al Proyecto 3)
 cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings

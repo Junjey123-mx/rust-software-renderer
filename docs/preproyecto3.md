@@ -61,6 +61,7 @@ Una infraestructura de render compartida, una escena plana de instancias y módu
 | `src/solar/scene.rs` | `SolarScene`: disposición, luz desde la estrella, cámaras, descarte, cuadro por lotes |
 | `src/solar/ship.rs`, `flight.rs`, `camera.rs`, `input.rs` | Nave con base ortonormal, vuelo espacial y local, rigs Follow/Orbit, teclado propio |
 | `src/solar/skybox.rs`, `nebula.rs`, `travel.rs` | Estrellas y cometas deterministas, nebulosa precalculada y viaje rápido |
+| `src/solar/plasma_loops.rs` | Lazos de plasma externos de The King's Crown: arcos, tubos precalculados y sombreado emisivo (sección 10) |
 | `src/solar/viewer.rs`, `record.rs` | Ventana y grabación sin ventana |
 | `src/benchmark/solar.rs` | Escenarios A–J |
 
@@ -119,7 +120,7 @@ El peor caso es J, el vuelo a la altura mínima sobre Crimson Entrance: unos 52 
 
 ## 5. Pruebas
 
-`cargo test` ejecuta **564 pruebas**: las 402 de los laboratorios, sin modificar, y 162 de esta etapa en 18 archivos `tests/preproject3_*.rs` y `tests/solar_*.rs`. Destacan:
+`cargo test` ejecuta **574 pruebas**: las 402 de los laboratorios, sin modificar, y 172 de esta etapa en 19 archivos `tests/preproject3_*.rs` y `tests/solar_*.rs`. Destacan:
 
 - `preproject3_oracle_tests`: huellas FNV de los tres cuerpos del Laboratorio 6, fijadas antes de tocar el pipeline.
 - `solar_perspective_tests`: proyección, recorte en todos los casos, pesos en perspectiva y profundidad real; la ruta orbital por `render_shaded_with` es bit a bit igual a `render_shaded`.
@@ -127,6 +128,7 @@ El peor caso es J, el vuelo a la altura mínima sobre Crimson Entrance: unos 52 
 - `solar_flight_tests`: independencia de los FPS, distancia constante en media vuelta, seguimiento orbital, holgura y estabilidad en los polos.
 - `solar_contract_tests`: sin dibujo 3D, carga de modelos ni texturas de raylib; dependencias y OBJ intactos.
 - `solar_nebula_tests` y `solar_skybox_tests`: paleta acotada, fidelidad del mapa, invariancia ante la traslación de la cámara, escritura solo de color, clases espectrales, tamaños y cometas.
+- `solar_plasma_tests`: pies enterrados y ápice fuera de la silueta, tubos orientados hacia afuera, oclusión por la estrella, colores cálidos y geometría estable que gira con la estrella (sección 10).
 
 ## 6. Evidencias
 
@@ -192,3 +194,45 @@ El cielo negro con 2000 puntos blancos se sentía vacío, y el sistema estaba ap
 
 El escenario I del benchmark quita ahora todo el cielo, para medirlo como H − I.
 
+## 10. Lazos de plasma externos de The King's Crown
+
+En el Laboratorio 6 los lazos de la estrella son trazos luminosos que el shader pinta dentro del disco. En el sistema solar ahora son geometría: seis arcos magnéticos que nacen en un pie, salen de la silueta, se arquean en el espacio y vuelven a entrar por otro pie.
+
+**Superficie y fenómenos externos.**
+- La superficie sigue en `src/celestial/crown.rs` (plasma, manchas, corona del limbo y eclipse) y no cambió: los oráculos siguen congelando las imágenes de `--scene crown`.
+- Los fenómenos externos viven en `src/solar/plasma_loops.rs`, que solo usa la escena solar.
+- En `--scene solar` el shader de superficie deja de pintar sus lazos (`loops = 0`) para no tener dos versiones del mismo fenómeno; `--set crown.loops=1` los recupera.
+
+**Datos** (`PlasmaArc`, `CROWN_ARCS`).
+- Cada arco guarda su punto medio (longitud y latitud), la inclinación y la separación angular de sus pies, la altura del ápice y el grosor del tubo en radios del cuerpo, un desplazamiento en la rampa de color, su intensidad y su fase.
+- Los seis arcos se reparten cada 60° de longitud en cinturones activos alternos: desde cualquier lado, unos dos quedan cerca del limbo y muestran el arco completo contra el cielo.
+
+**Geometría.**
+- El eje sigue el círculo máximo entre los pies y se eleva con un seno, desde pies enterrados al 88 % del radio hasta un ápice fuera de la silueta. Todo el eje queda en un plano que pasa por el centro de la estrella.
+- Un tubo de 14 segmentos y 5 lados por arco (840 triángulos en total; la esfera tiene 192) se construye una sola vez en espacio de objeto y se comparte con `Arc`.
+- Se dibuja con la transformación de la estrella, así que gira con ella, y comparte el búfer de profundidad: la estrella oculta la parte trasera de los arcos, y los planetas y la nave los tapan.
+
+**Integración.**
+- Cada arco es un `Job::Plasma` con su propia etiqueta en el lote por cuadro.
+- También se dibuja por instancia (`render_plasma_without_clear`) y en wireframe, en dorado; la prueba de equivalencia del lote lo incluye.
+- El descarte usa la esfera de la estrella agrandada por el alcance de los lazos.
+
+**Sombreado emisivo y animado** (`ArcShader::shade`).
+- **Normal suave:** el punto del eje más cercano a cada fragmento (ángulo en el plano del arco y un paso de Newton) da la normal del tubo, sin importar las facetas.
+- **Color:** el núcleo que mira al ojo arde de dorado a blanco caliente y el borde se enfría a vino y carmesí, con la rampa de plasma de la propia estrella.
+- **Vida:** hebras torcidas como una cuerda de flujo magnético, grano de ruido y nudos brillantes que corren de un pie al otro, pies más calientes y un pulso de 5 s con fase propia por arco.
+- **Estabilidad:** la geometría no cambia con el tiempo, solo el color; una prueba lo comprueba con la profundidad.
+
+**Costo medido** (A/B intercalado contra `6a73efa`, cuatro corridas por lado, la misma laptop con perfil `quiet`):
+- Con la estrella a la vista (escenarios C, D, H e I) los lazos suman entre 0.2 y 0.7 ms por cuadro (+1 % a +5 %).
+- En proceso, el escenario I con y sin arcos difiere en unos 0.4 ms. La mayor parte es rasterizar triángulos pequeños, que va en un solo hilo; el sombreado se reparte en el grupo de hilos del lote.
+- Los escenarios sin la estrella sombrean los mismos fragmentos y sus diferencias son ruido.
+
+Las capturas y el video de la sección 6 son anteriores a los lazos.
+
+**Cómo escalar** (no implementado):
+- **Corona 3D:** una cáscara alrededor de la estrella necesita mezcla aditiva o alfa, que el framebuffer todavía no tiene. El lote ya admite otro tipo de `Job`.
+- **Fulguraciones:** animar la altura de un arco regenerando solo su tubo (140 triángulos) en el cuadro en que cambia.
+- **Eyección de partículas:** puntos en el espacio de objeto de la estrella, proyectados como las estrellas del cielo pero con profundidad.
+- **Halos y bloom:** un posproceso sobre el framebuffer en flotante, donde los colores ya pueden pasar de 1.
+- **Detalle por distancia:** un tubo más simple cuando la estrella es pequeña en pantalla.
