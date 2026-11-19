@@ -14,35 +14,8 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::SolarScene;
+use crate::solar::royal_crown::{CrownPart, CrownShader};
 use raylib::math::Vector3;
-
-/// Which part of the crown a draw holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CrownPart {
-    Gold,
-    Jewels,
-}
-
-/// Shading of one crown part in a frame.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CrownShader {
-    pub part: CrownPart,
-    /// The crown's transform (the star's, plus its own spin).
-    pub transform: Transform,
-    pub time: f32,
-}
-
-impl CrownShader {
-    /// Lit from inside by the star: faces turned towards the center glow.
-    pub fn shade(&self, s: &SurfaceSample, _view: &FragmentView) -> Vector3 {
-        let base = match self.part {
-            CrownPart::Gold => crate::solar::royal_crown::GOLD_WIRE,
-            CrownPart::Jewels => crate::solar::royal_crown::JEWEL_WIRE,
-        };
-        let to_star = -s.object_position.normalized();
-        base * (0.35 + 0.65 * s.face_normal.normalized().dot(to_star).max(0.0))
-    }
-}
 
 /// What a draw is shaded with.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -53,7 +26,7 @@ pub enum EffectShader {
 impl EffectShader {
     pub fn shade(&self, s: &SurfaceSample, view: &FragmentView) -> Vector3 {
         match self {
-            Self::Crown(c) => c.shade(s, view),
+            Self::Crown(c) => c.shade(s.object_position, s.face_normal, view.view_direction),
         }
     }
 }
@@ -113,11 +86,7 @@ impl SolarScene {
                         mesh,
                         model,
                         options: solid_options(threads),
-                        shader: EffectShader::Crown(CrownShader {
-                            part,
-                            transform,
-                            time: self.clock.time,
-                        }),
+                        shader: EffectShader::Crown(crown.shader(part, transform, self.clock.time)),
                     });
                 }
             }

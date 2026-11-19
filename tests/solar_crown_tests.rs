@@ -459,3 +459,110 @@ fn the_crown_keeps_clear_of_the_plasma_loops_and_both_are_drawn() {
         .count();
     assert!(changed > 200, "{changed}");
 }
+
+// ---------------------------------------------------------------------------
+// Materials
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::solar::royal_crown::CrownPart;
+
+fn luminance(c: Vector3) -> f32 {
+    0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z
+}
+
+fn is_gold(c: Vector3) -> bool {
+    c.x > 0.3 && c.y > 0.45 * c.x && c.z < 0.8 * c.y
+}
+
+fn is_red(c: Vector3) -> bool {
+    c.x > 0.2 && c.x > 2.2 * c.y && c.x > 1.5 * c.z
+}
+
+#[test]
+fn the_crown_reads_as_gold_metal_with_red_jewels_against_the_sky() {
+    let s = star_scene(0.05, 4.0);
+    let fb = frame(&s);
+    let radius_px = s.radius_of(0) * s.view.scale();
+    let top = H as f32 / 2.0 - radius_px;
+    let sky: Vec<Vector3> = crown_pixels(&s)
+        .into_iter()
+        .filter(|&(_, y)| (y as f32 + 0.5) < top)
+        .map(|(x, y)| fb.get_pixel(x, y).unwrap())
+        .collect();
+    let gold = sky.iter().filter(|&&c| is_gold(c)).count();
+    let red = sky.iter().filter(|&&c| is_red(c)).count();
+    assert!(gold > sky.len() / 2, "{gold} gold of {}", sky.len());
+    assert!(red > 15 && red < gold, "{red} red, {gold} gold");
+}
+
+#[test]
+fn the_band_wears_a_corinto_enamel_stripe_between_gold_edges() {
+    let crown = RoyalCrown::royal();
+    let band = crown.spec.band;
+    let shader = crown.shader(CrownPart::Gold, Transform::default(), 0.0);
+    let eye = Vector3::new(0.0, 0.0, 1.0);
+    let normal = outward(0.0);
+    let stripe = shader.shade(band.outer_face(0.0) * SPHERE_RADIUS, normal, eye);
+    let y = band.top() - 0.01;
+    let edge = (outward(0.0) * (band.radius_at(y) + band.thickness / 2.0)
+        + Vector3::new(0.0, y, 0.0))
+        * SPHERE_RADIUS;
+    let edge = shader.shade(edge, normal, eye);
+    assert!(is_red(stripe) && stripe.x < 0.9, "corinto: {stripe:?}");
+    assert!(is_gold(edge), "gold: {edge:?}");
+    // The inner face of a point mirrors the star: brighter than its back.
+    let point = crown.spec.main_spikes().next().unwrap();
+    let mid = (point.base(&band) + point.tip(&band)) / 2.0 * SPHERE_RADIUS;
+    let inward = shader.shade(mid, -outward(0.0), -eye);
+    let outer = shader.shade(mid, outward(0.0), eye);
+    assert!(
+        luminance(inward) > luminance(outer),
+        "{inward:?} vs {outer:?}"
+    );
+}
+
+#[test]
+fn gems_and_finials_are_different_stones_that_shimmer_while_gold_holds_still() {
+    let crown = RoyalCrown::royal();
+    let band = crown.spec.band;
+    let eye = Vector3::new(0.0, 0.0, 1.0);
+    let at = |part, t| crown.shader(part, Transform::default(), t);
+    let gem = crown.spec.gems[0].center(&band) * SPHERE_RADIUS + outward(0.0) * 0.01;
+    let point = crown.spec.main_spikes().next().unwrap();
+    let finial = point.tip(&band) * SPHERE_RADIUS;
+    let n = outward(0.0);
+    let (g0, g1) = (
+        at(CrownPart::Jewels, 0.0).shade(gem, n, eye),
+        at(CrownPart::Jewels, 1.0).shade(gem, n, eye),
+    );
+    let f0 = at(CrownPart::Jewels, 0.0).shade(finial, n, eye);
+    assert!(is_red(g0) && is_red(f0), "{g0:?} {f0:?}");
+    assert_ne!(g0, f0, "ruby and garnet");
+    assert_ne!(g0, g1, "the gems shimmer");
+    let gold = |t| at(CrownPart::Gold, t).shade(finial, n, eye);
+    assert_eq!(gold(0.0), gold(1.0));
+}
+
+#[test]
+fn the_crown_stays_legible_from_several_viewpoints() {
+    for preset in [
+        ViewPreset::Front,
+        ViewPreset::Side,
+        ViewPreset::Top,
+        ViewPreset::Oblique,
+    ] {
+        let mut s = star_scene(0.05, 4.0);
+        s.view.camera = OrbitCamera::new(Vector3::zero(), preset);
+        let fb = frame(&s);
+        let lum: Vec<f32> = crown_pixels(&s)
+            .into_iter()
+            .map(|(x, y)| luminance(fb.get_pixel(x, y).unwrap()))
+            .collect();
+        let n = lum.len() as f32;
+        let mean = lum.iter().sum::<f32>() / n;
+        let spread = (lum.iter().map(|l| (l - mean).powi(2)).sum::<f32>() / n).sqrt();
+        assert!(lum.len() > 300, "{preset:?}: {} pixels", lum.len());
+        assert!(mean > 0.25 && mean < 1.5, "{preset:?}: mean {mean}");
+        assert!(spread > 0.05, "{preset:?}: facets visible ({spread})");
+    }
+}

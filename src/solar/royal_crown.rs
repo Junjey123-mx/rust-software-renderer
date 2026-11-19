@@ -8,7 +8,8 @@
 //! Azimuths use the convention of `direction_from_angles` (0 faces `+Z`).
 
 use crate::geometry::{Mesh, Vertex};
-use crate::shading::math::hex;
+use crate::pipeline::Transform;
+use crate::shading::math::{hex, ramp, saturate, smoothstep};
 use crate::solar::SPHERE_RADIUS;
 use crate::solar::shapes::{End, loft, merge, octahedron, scaled};
 use raylib::math::Vector3;
@@ -309,6 +310,10 @@ pub struct RoyalCrown {
     /// Own turn of the crown around the star's axis, radians per simulated
     /// second, on top of the star's spin (0: it turns with the star).
     pub spin: f32,
+    /// Heights of the enamel stripe on the band's outer face, object units.
+    pub inlay: (f32, f32),
+    /// Height of the band's top, object units: jewels above it are finials.
+    pub rim: f32,
 }
 
 impl RoyalCrown {
@@ -320,9 +325,15 @@ impl RoyalCrown {
             .chain(&jewels.vertices)
             .map(|p| p.length())
             .fold(1.0, f32::max);
+        let (middle, half) = (spec.band.latitude.sin(), INLAY * spec.band.height / 2.0);
         Self {
             gold: Arc::new(scaled(&gold, SPHERE_RADIUS).expand_vertices(GOLD_WIRE)),
             jewels: Arc::new(scaled(&jewels, SPHERE_RADIUS).expand_vertices(JEWEL_WIRE)),
+            inlay: (
+                (middle - half) * SPHERE_RADIUS,
+                (middle + half) * SPHERE_RADIUS,
+            ),
+            rim: spec.band.top() * SPHERE_RADIUS,
             spec,
             extent,
             spin: 0.0,
@@ -335,5 +346,112 @@ impl RoyalCrown {
 
     pub fn triangle_count(&self) -> usize {
         (self.gold.len() + self.jewels.len()) / 3
+    }
+
+    /// Shading of one part in a frame, with the crown's `transform`.
+    pub fn shader(&self, part: CrownPart, transform: Transform, time: f32) -> CrownShader {
+        CrownShader {
+            part,
+            transform,
+            time,
+            inlay: self.inlay,
+            rim: self.rim,
+        }
+    }
+}
+
+/// Share of the band's height covered by the enamel stripe.
+pub const INLAY: f32 = 0.56;
+
+/// What the space around the crown looks like in its polished gold, from
+/// the dark sky to the star's fire.
+pub const GOLD_REFLECTION: [(f32, Vector3); 4] = [
+    (0.0, hex(0x3A1208)),
+    (0.45, hex(0x9A5A14)),
+    (0.75, hex(0xF0A030)),
+    (1.0, hex(0xFFE9A8)),
+];
+/// Gems of the band.
+pub const RUBY: [(f32, Vector3); 5] = [
+    (0.0, hex(0x2A0410)),
+    (0.35, hex(0x7A0A1E)),
+    (0.65, hex(0xD21F2B)),
+    (0.9, hex(0xFF5A5A)),
+    (1.0, hex(0xFFD0C8)),
+];
+/// Finials on the points: darker, towards wine.
+pub const GARNET: [(f32, Vector3); 4] = [
+    (0.0, hex(0x1E0208)),
+    (0.4, hex(0x5A0A1C)),
+    (0.75, hex(0xA0142C)),
+    (1.0, hex(0xFF6A7A)),
+];
+pub const GOLD: Vector3 = hex(0xE8B04A);
+pub const ENAMEL: Vector3 = hex(0x5A0A1C);
+pub const IVORY: Vector3 = hex(0xFFF2C4);
+
+/// Which part of the crown a draw holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrownPart {
+    Gold,
+    Jewels,
+}
+
+/// Procedural materials of the crown, lit by the star it sits on: polished
+/// gold that mirrors the star's fire where its faces turn towards it, a
+/// corinto enamel stripe on the band, rubies set in the band and garnet
+/// finials on the points, both slowly shimmering.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CrownShader {
+    pub part: CrownPart,
+    /// The crown's transform (the star's, plus its own spin).
+    pub transform: Transform,
+    pub time: f32,
+    pub inlay: (f32, f32),
+    pub rim: f32,
+}
+
+impl CrownShader {
+    /// Color at object-space point `p` of a face with object-space normal
+    /// `face_normal`, seen along the unit world direction to the eye.
+    pub fn shade(&self, p: Vector3, face_normal: Vector3, view_world: Vector3) -> Vector3 {
+        let n = face_normal.normalized();
+        let v = self.transform.to_object_dir(view_world);
+        let to_star = -p.normalized();
+        let lit = n.dot(to_star).max(0.0);
+        // The eye ray mirrored by the face: towards the star it shows fire.
+        let mirrored = (n * (2.0 * n.dot(v)) - v).dot(to_star);
+        let glow = smoothstep(-0.1, 0.8, mirrored);
+        let fresnel = (1.0 - n.dot(v).abs()).powi(4);
+        let sky = 0.5 + 0.5 * n.y;
+        match self.part {
+            CrownPart::Gold => {
+                let radial = Vector3::new(p.x, 0.0, p.z).normalized();
+                let on_stripe = p.y > self.inlay.0 && p.y < self.inlay.1 && n.dot(radial) > 0.6;
+                if on_stripe {
+                    ENAMEL * (0.55 + 0.6 * lit + 0.35 * sky)
+                        + hex(0xFF7A5A) * (0.45 * glow.powi(3))
+                        + IVORY * (0.3 * fresnel)
+                } else {
+                    let sheen = n.dot(v).max(0.0).powi(2);
+                    GOLD * (0.15 + 0.4 * lit + 0.2 * sky + 0.45 * sheen)
+                        + ramp(&GOLD_REFLECTION, glow) * 0.85
+                        + IVORY * (0.45 * fresnel)
+                }
+            }
+            CrownPart::Jewels => {
+                let phase = 7.0 * (p.x + p.z) + 3.0 * p.y;
+                let shimmer = 0.88 + 0.12 * (2.0 * self.time + phase).sin();
+                let facet = saturate((0.3 + 0.5 * lit + 0.35 * glow + 0.2 * sky) * shimmer);
+                let stone = if p.y > self.rim {
+                    ramp(&GARNET, facet)
+                } else {
+                    ramp(&RUBY, facet)
+                };
+                stone
+                    + IVORY * (0.8 * smoothstep(0.92, 0.99, mirrored))
+                    + RUBY[3].1 * (0.3 * fresnel)
+            }
+        }
     }
 }
