@@ -7,10 +7,13 @@
 //!
 //! Azimuths use the convention of `direction_from_angles` (0 faces `+Z`).
 
-use crate::geometry::Mesh;
-use crate::solar::shapes::{End, loft, octahedron};
+use crate::geometry::{Mesh, Vertex};
+use crate::shading::math::hex;
+use crate::solar::SPHERE_RADIUS;
+use crate::solar::shapes::{End, loft, merge, octahedron, scaled};
 use raylib::math::Vector3;
 use std::f32::consts::TAU;
+use std::sync::Arc;
 
 const UP: Vector3 = Vector3 {
     x: 0.0,
@@ -266,5 +269,67 @@ impl CrownSpec {
     /// Points that carry a finial.
     pub fn main_spikes(&self) -> impl Iterator<Item = &CrownSpike> {
         self.spikes.iter().filter(|s| s.finial > 0.0)
+    }
+}
+
+/// Corner colors of the two parts, seen only in wireframe.
+pub const GOLD_WIRE: Vector3 = hex(0xFFC63A);
+pub const JEWEL_WIRE: Vector3 = hex(0xD21F2B);
+
+impl CrownSpec {
+    /// Metal of the crown in body radii: the band and every point.
+    pub fn gold_mesh(&self) -> Mesh {
+        let mut parts = vec![self.band.mesh()];
+        parts.extend(self.spikes.iter().map(|s| s.mesh(&self.band)));
+        merge(&parts)
+    }
+
+    /// Stones of the crown in body radii: the finials and the gems.
+    pub fn jewel_mesh(&self) -> Mesh {
+        let mut parts: Vec<Mesh> = self
+            .spikes
+            .iter()
+            .filter_map(|s| s.finial_mesh(&self.band))
+            .collect();
+        parts.extend(self.gems.iter().map(|g| g.mesh(&self.band)));
+        merge(&parts)
+    }
+}
+
+/// The crown built once for the course sphere (`SPHERE_RADIUS`): one
+/// expanded vertex list per material, shared by every clone of the scene
+/// and drawn with the star's transform, so it never rebuilds per frame.
+#[derive(Debug, Clone)]
+pub struct RoyalCrown {
+    pub spec: CrownSpec,
+    pub gold: Arc<Vec<Vertex>>,
+    pub jewels: Arc<Vec<Vertex>>,
+    /// Farthest corner from the star's center, in body radii.
+    pub extent: f32,
+}
+
+impl RoyalCrown {
+    pub fn new(spec: CrownSpec) -> Self {
+        let (gold, jewels) = (spec.gold_mesh(), spec.jewel_mesh());
+        let extent = gold
+            .vertices
+            .iter()
+            .chain(&jewels.vertices)
+            .map(|p| p.length())
+            .fold(1.0, f32::max);
+        Self {
+            gold: Arc::new(scaled(&gold, SPHERE_RADIUS).expand_vertices(GOLD_WIRE)),
+            jewels: Arc::new(scaled(&jewels, SPHERE_RADIUS).expand_vertices(JEWEL_WIRE)),
+            spec,
+            extent,
+        }
+    }
+
+    pub fn royal() -> Self {
+        Self::new(CrownSpec::royal())
+    }
+
+    pub fn triangle_count(&self) -> usize {
+        (self.gold.len() + self.jewels.len()) / 3
     }
 }

@@ -200,3 +200,75 @@ fn open_gaps_separate_the_points_so_the_star_shows_between_them() {
         );
     }
 }
+
+use rust_software_renderer::solar::SPHERE_RADIUS;
+use rust_software_renderer::solar::royal_crown::RoyalCrown;
+
+#[test]
+fn the_crown_mesh_is_closed_per_material_and_reproducible() {
+    let spec = CrownSpec::royal();
+    for mesh in [spec.gold_mesh(), spec.jewel_mesh()] {
+        assert!(is_closed(&mesh) && is_sound(&mesh));
+    }
+    let (a, b) = (RoyalCrown::royal(), RoyalCrown::royal());
+    let positions = |v: &[rust_software_renderer::geometry::Vertex]| {
+        v.iter().map(|c| c.position).collect::<Vec<_>>()
+    };
+    assert_eq!(positions(&a.gold), positions(&b.gold));
+    assert_eq!(positions(&a.jewels), positions(&b.jewels));
+    assert_eq!(a.gold.len() % 3, 0);
+    assert_eq!(a.jewels.len() % 3, 0);
+    // A clone shares the vertex lists instead of copying them.
+    let c = a.clone();
+    assert!(std::sync::Arc::ptr_eq(&a.gold, &c.gold));
+}
+
+#[test]
+fn the_main_points_are_spread_evenly_around_the_rim() {
+    let spec = CrownSpec::royal();
+    let tips: Vec<Vector3> = spec.main_spikes().map(|s| s.tip(&spec.band)).collect();
+    let step = std::f32::consts::TAU / MAIN_POINTS as f32;
+    for (i, s) in spec.main_spikes().enumerate() {
+        assert!((s.azimuth - step * i as f32).abs() < 1e-5);
+        let t = tips[i];
+        let seen = t.x.atan2(t.z).rem_euclid(std::f32::consts::TAU);
+        assert!((seen - s.azimuth.rem_euclid(std::f32::consts::TAU)).abs() < 1e-4);
+    }
+    for (i, a) in tips.iter().enumerate() {
+        let b = tips[(i + 1) % tips.len()];
+        assert!((*a - b).length() > 0.3, "neighbouring tips apart");
+    }
+}
+
+#[test]
+fn the_built_crown_is_scaled_to_the_course_sphere_and_stays_light() {
+    let crown = RoyalCrown::royal();
+    let gold = crown.spec.gold_mesh();
+    let expected: Vec<Vector3> = gold
+        .indices
+        .iter()
+        .map(|&i| gold.vertices[i] * SPHERE_RADIUS)
+        .collect();
+    let built: Vec<Vector3> = crown.gold.iter().map(|v| v.position).collect();
+    assert_eq!(built, expected);
+    let reach = crown.extent * SPHERE_RADIUS;
+    let farthest = crown
+        .gold
+        .iter()
+        .chain(crown.jewels.iter())
+        .map(|v| v.position.length())
+        .fold(0.0, f32::max);
+    assert!((farthest - reach).abs() < 1e-5, "{farthest} vs {reach}");
+    let tallest = crown
+        .spec
+        .main_spikes()
+        .map(|s| s.tip(&crown.spec.band).length())
+        .fold(0.0, f32::max);
+    assert!(
+        crown.extent > tallest && crown.extent < 1.8,
+        "{}",
+        crown.extent
+    );
+    let n = crown.triangle_count();
+    assert!(n > 300 && n < 800, "{n} triangles");
+}
