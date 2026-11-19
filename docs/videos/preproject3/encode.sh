@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Regenerates the Camino al Proyecto 3 evidence from the renderer: the
-# scripted solar flight (MP4 + GIF) and five stills.
+# scripted solar flight (MP4 + GIF) and eight stills.
 #
 #   docs/videos/preproject3/encode.sh all      flight video and stills
 #   docs/videos/preproject3/encode.sh flight   01-solar-flight.mp4 / .gif
-#   docs/videos/preproject3/encode.sh stills   01-05 PNG captures
+#   docs/videos/preproject3/encode.sh stills   01-08 PNG captures
 #
 # Run from the repository root after `cargo build --release`. Derived from
 # docs/videos/lab6/encode.sh: frames come from `--scene solar --record`
@@ -157,6 +157,12 @@ stills() {
   record 0.04 25 "$tmp/sky.mkv" --time 14 --star-seed 7
   still 04-skybox "$tmp/sky.mkv" 0
   still 05-quick-travel "$tmp/flight.mkv" $((11 * FPS + 6))
+  # 06-08: the royal crown and its loops with idle exhaust (2.1 s), the ring
+  # of diamond cards around House of Cards (11.5 s) and the blue afterburner
+  # at the peak of the light-speed burst (1.43 s).
+  still 06-royal-crown "$tmp/flight.mkv" 63
+  still 07-diamond-ring "$tmp/flight.mkv" 345
+  still 08-afterburner "$tmp/flight.mkv" 43
 }
 
 case "${1:-all}" in

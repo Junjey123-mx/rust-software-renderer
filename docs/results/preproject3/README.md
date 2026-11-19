@@ -68,3 +68,29 @@ Desactivada por defecto (`full` no toca ningún parámetro). En `adaptive`, los 
 | E | 176, 159, ∞ | 38.28 | 39.00 | +1.9 % (ruido) | 0 % |
 
 Ganancia modesta en vistas lejanas e imagen idéntica en los acercamientos, que son el caso caro (J).
+
+## `expansion_benchmark.csv`
+
+Costo de la corona real, el anillo de cartas y los propulsores (sección 11 de `docs/preproyecto3.md`), medido el 2026-11-18 en la misma máquina.
+
+- **Método:** A/B dentro de un mismo proceso, con un arnés temporal que no forma parte del repositorio.
+  - Cada escenario de `--benchmark-solar` (800×600, t = 6 s, semilla 42, scanline) se clona en cinco variantes: `all` (todos los efectos), `none` (ninguno), `no-crown`, `no-cards` y `no-flames`.
+  - Se miden 21 rondas en orden alterno para no favorecer a ninguna variante y se toma la mediana.
+  - `triangles_base` cuenta los cuerpos, la nave y los lazos que pasan el descarte de cámara; `triangles_effects` cuenta los dibujos adjuntos del mismo cuadro.
+- **Corridas:** `1t` (1 hilo), `20t-a` y `20t-b` (20 hilos, dos corridas seguidas).
+
+| Escenario | Triángulos (none → all) | 1 hilo | 20 hilos (a / b) |
+|---|---|---:|---:|
+| A | 708 → 894 | +4.3 % | +2.7 % / +6.4 % |
+| C | 2 124 → 3 402 | +4.1 % | +10.3 % / +10.3 % |
+| D | 2 124 → 3 402 | +3.0 % | +10.9 % / +7.2 % |
+| E | 1 932 → 2 650 | +0.4 % | −19.0 % / −3.2 % (ruido) |
+| F | 1 092 → 1 558 | +3.7 % | +12.4 % / +11.4 % |
+| H | 2 124 → 3 402 | +3.0 % | +9.1 % / +7.0 % |
+| J | 1 932 → 2 650 | +0.3 % | +1.3 % / +3.5 % |
+
+- **Lectura:**
+  - con un hilo, los efectos cuestan menos del 5 %;
+  - con 20 hilos el porcentaje sube, porque los dibujos pequeños añaden trabajo fijo de rasterización que va en un solo hilo;
+  - en A y E los fragmentos bajan 331: las llamas tapan el interior de las toberas.
+- **Entre compilaciones:** `95b06e3` (antes de esta etapa) contra la actual, tres corridas alternas de `--benchmark-solar` por lado con 20 hilos. Las medianas subieron entre +4.8 % (F) y +28.3 % (G), pero la variación de esta laptop entre corridas llega a ±25 %, así que la cifra válida es la del A/B. `solar_benchmark.csv` no se regeneró y conserva la medición del Gate 10.
