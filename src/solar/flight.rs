@@ -13,6 +13,8 @@ use raylib::math::Vector3;
 pub struct FlightInput {
     /// `W` = +1, `S` = -1.
     pub throttle: f32,
+    /// `D` = +1 (towards the ship's right), `A` = -1.
+    pub strafe: f32,
     /// Scripted turn rate: +1 turns the nose left at the ship's turn speed.
     pub yaw: f32,
     /// Scripted pitch rate: +1 lifts the nose.
@@ -33,6 +35,7 @@ impl FlightInput {
         };
         Self {
             throttle: axis(SolarAction::Forward, SolarAction::Backward),
+            strafe: axis(SolarAction::StrafeRight, SolarAction::StrafeLeft),
             yaw: axis(SolarAction::YawLeft, SolarAction::YawRight),
             pitch: axis(SolarAction::PitchUp, SolarAction::PitchDown),
             radial: axis(SolarAction::Ascend, SolarAction::Descend),
@@ -71,6 +74,15 @@ pub fn steer(ship: &mut ShipState, reference_up: Vector3, yaw: f32, pitch: f32) 
     }
 }
 
+/// Direction of travel from the throttle along `forward` and the strafe
+/// along `right`, scaled down to unit length on a diagonal so `W` + `D` is
+/// no faster than `W` alone.
+pub fn travel(input: &FlightInput, forward: Vector3, right: Vector3) -> Vector3 {
+    let v = forward * input.throttle + right * input.strafe;
+    let len = v.length();
+    if len > 1.0 { v / len } else { v }
+}
+
 /// Up of space flight: the normal of the orbital plane.
 pub const SPACE_UP: Vector3 = Vector3 {
     x: 0.0,
@@ -90,9 +102,9 @@ fn clamp_dt(dt: f32) -> f32 {
 pub const BOOST: f32 = 8.0;
 
 /// Space flight: turn (yaw around the orbital plane's normal, pitch within
-/// the limits), then move along the nose by `throttle * move_speed * dt`,
-/// times `BOOST` while boosting. No inertia and no collisions: a boosted
-/// ship can pass through a body.
+/// the limits), then move along the nose and sideways by `travel *
+/// move_speed * dt`, times `BOOST` while boosting. No inertia and no
+/// collisions: a boosted ship can pass through a body.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
     let turn = ship.turn_speed * dt;
@@ -103,8 +115,7 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
         input.pitch * turn + input.look.pitch,
     );
     let boost = if input.boost { BOOST } else { 1.0 };
-    let step = input.throttle * ship.move_speed * boost * dt;
-    ship.position += ship.forward * step;
+    ship.position += travel(input, ship.forward, ship.right()) * (ship.move_speed * boost * dt);
 }
 
 /// Radial frame of the spacecraft around a planet treated as an ideal
@@ -236,7 +247,8 @@ pub const RADIAL_SPEED: f32 = 0.4;
 ///    difference, never scaled by `dt`);
 /// 2. turn around the radial up (left/right) and the ship's right (up/down,
 ///    within the pitch limits) without changing the altitude;
-/// 3. move along a great-circle arc of the current distance, rotating the
+/// 3. move along a great-circle arc of the current distance (ahead with
+///    `W`/`S`, sideways with `A`/`D`, diagonals no faster), rotating the
 ///    ship basis by the same rotation so its tilt to the local up is kept;
 /// 4. change the distance with `E`/`Q`, never below `radius + CLEARANCE`.
 ///
@@ -274,9 +286,11 @@ pub fn local_step(
         return;
     };
     let mut normal = frame.normal;
-    let arc = input.throttle * LOCAL_SPEED * dt;
+    let side = frame.tangent.cross(frame.normal);
+    let way = travel(input, frame.tangent, side);
+    let arc = way.length() * LOCAL_SPEED * dt;
     if arc != 0.0
-        && let Some(axis) = unit_or_none(frame.normal.cross(frame.tangent))
+        && let Some(axis) = unit_or_none(frame.normal.cross(way))
     {
         let angle = arc / frame.distance;
         normal = rotate_axis(frame.normal, axis, angle).normalized();

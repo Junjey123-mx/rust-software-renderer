@@ -635,3 +635,87 @@ fn mouse_steering_in_local_flight_keeps_the_altitude_and_the_local_limits() {
         assert!(nose_elevation(&s, up) <= MAX_PITCH + 1e-3);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Strafe
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_and_d_slide_sideways_without_turning() {
+    for (action, sign) in [
+        (SolarAction::StrafeRight, 1.0),
+        (SolarAction::StrafeLeft, -1.0),
+    ] {
+        let mut s = ship();
+        let start = s;
+        for _ in 0..20 {
+            space_step(&mut s, &input(&[action]), 0.05);
+        }
+        let right = start.right();
+        assert!(
+            close(s.position, right * (sign * 1.5), 1e-4),
+            "{action:?}: {:?}",
+            s.position
+        );
+        assert!(close(s.forward, start.forward, 1e-6) && close(s.up, start.up, 1e-6));
+    }
+    let both = input(&[SolarAction::StrafeLeft, SolarAction::StrafeRight]);
+    assert_eq!(both.strafe, 0.0);
+}
+
+#[test]
+fn diagonals_are_no_faster_than_a_single_key() {
+    let mut s = ship();
+    let diagonal = input(&[SolarAction::Forward, SolarAction::StrafeRight]);
+    for _ in 0..20 {
+        space_step(&mut s, &diagonal, 0.05);
+    }
+    assert!(
+        (s.position.length() - 1.5).abs() < 1e-4,
+        "{}",
+        s.position.length()
+    );
+    let d = s.position.normalized();
+    assert!(
+        (d.dot(ship().forward) - d.dot(ship().right())).abs() < 1e-5,
+        "45 degrees"
+    );
+}
+
+#[test]
+fn local_strafe_circles_sideways_at_the_same_altitude_and_diagonals_are_capped() {
+    let planet = Vector3::zero();
+    let level = || {
+        let mut s = ShipState::new(Vector3::new(0.0, 0.0, 2.0), 0.1);
+        s.pitch(std::f32::consts::FRAC_PI_2); // nose along +Y, up along +Z
+        s
+    };
+    let mut s = level();
+    let mut mode = local_at(planet);
+    let side = input(&[SolarAction::StrafeRight]);
+    for _ in 0..20 {
+        local_step(&mut s, &mut mode, planet, 1.0, &side, 0.05);
+        assert!((s.position.length() - 2.0).abs() < 1e-4);
+    }
+    let start = level();
+    let moved = s.position - start.position;
+    assert!(moved.dot(start.right()) > 0.4, "slid right: {moved:?}");
+    assert!(
+        moved.dot(start.forward).abs() < 1e-4,
+        "not ahead: {moved:?}"
+    );
+    let arc =
+        |s: &ShipState| (s.position.normalized().dot(Vector3::new(0.0, 0.0, 1.0))).acos() * 2.0;
+    assert!((arc(&s) - LOCAL_SPEED).abs() < 1e-3, "{}", arc(&s));
+    let mut d = level();
+    let mut mode = local_at(planet);
+    let diagonal = input(&[SolarAction::Forward, SolarAction::StrafeLeft]);
+    for _ in 0..20 {
+        local_step(&mut d, &mut mode, planet, 1.0, &diagonal, 0.05);
+    }
+    assert!(
+        (arc(&d) - LOCAL_SPEED).abs() < 1e-3,
+        "diagonal arc {}",
+        arc(&d)
+    );
+}

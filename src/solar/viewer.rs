@@ -199,7 +199,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, SHIFT light speed, L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SHIFT light speed, L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()

@@ -14,6 +14,9 @@ use raylib::math::Vector2;
 pub enum SolarAction {
     Forward,
     Backward,
+    /// Sideways along the ship's right, without turning.
+    StrafeLeft,
+    StrafeRight,
     /// Scripted turns at the ship's turn rate (recordings and tests); no
     /// key is bound to them, the mouse steers instead.
     YawLeft,
@@ -34,9 +37,11 @@ pub enum SolarAction {
 }
 
 /// Held keys and the action they produce.
-pub const HELD: [(KeyboardKey, SolarAction); 5] = [
+pub const HELD: [(KeyboardKey, SolarAction); 7] = [
     (KeyboardKey::KEY_W, SolarAction::Forward),
     (KeyboardKey::KEY_S, SolarAction::Backward),
+    (KeyboardKey::KEY_A, SolarAction::StrafeLeft),
+    (KeyboardKey::KEY_D, SolarAction::StrafeRight),
     (KeyboardKey::KEY_E, SolarAction::Ascend),
     (KeyboardKey::KEY_Q, SolarAction::Descend),
     (KeyboardKey::KEY_LEFT_SHIFT, SolarAction::Boost),
