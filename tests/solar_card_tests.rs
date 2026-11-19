@@ -8,6 +8,7 @@ use rust_software_renderer::pipeline::{
 };
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
+use rust_software_renderer::solar::SimulationClock;
 use rust_software_renderer::solar::card_ring::{
     BORDER, CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, CardRing, CardRingSpec, CardShader, CardSide,
     card_mesh, card_pattern,
@@ -311,5 +312,74 @@ fn the_ring_is_inclined_and_follows_the_planet_and_its_size() {
         assert!((moved.size - unit.size * r).abs() < 1e-6);
         let off_plane = unit.origin.dot(ring.normal()).abs();
         assert!(off_plane <= ring.spec.thickness + 1e-5);
+    }
+}
+
+#[test]
+fn the_ring_turns_with_simulated_time_and_every_card_rocks_at_its_own_pace() {
+    let ring = CardRing::diamonds();
+    let (c, r) = (Vector3::new(6.2, 0.0, 0.0), 0.78);
+    let n = ring.normal();
+    let angle_at = |i: usize, t: f32| {
+        let o = (ring.pose(i, c, r, t).origin - c).normalized();
+        let a = (ring.pose(i, c, r, 0.0).origin - c).normalized();
+        a.cross(o).dot(n).atan2(a.dot(o))
+    };
+    for i in 0..ring.slots.len() {
+        assert!((angle_at(i, 2.0) - 2.0 * ring.spec.orbit_speed).abs() < 1e-3);
+    }
+    let rock = |i: usize, t: f32| ring.pose(i, c, r, t).z.dot(n).acos();
+    let changes: Vec<f32> = (0..ring.slots.len())
+        .map(|i| rock(i, 1.0) - rock(i, 0.0))
+        .collect();
+    assert!(changes.iter().any(|d| d.abs() > 0.01), "cards do not rock");
+    assert!(
+        changes.windows(2).any(|w| (w[0] - w[1]).abs() > 0.01),
+        "every card rocks in step"
+    );
+}
+
+#[test]
+fn a_paused_clock_freezes_the_ring_and_equal_times_give_equal_cards() {
+    let ring = CardRing::diamonds();
+    let c = Vector3::new(6.2, 0.0, 0.0);
+    let mut clock = SimulationClock::new(3.5);
+    clock.toggle_pause();
+    let before: Vec<_> = (0..ring.slots.len())
+        .map(|i| ring.pose(i, c, 0.78, clock.time))
+        .collect();
+    for _ in 0..10 {
+        clock.advance(0.05);
+    }
+    let after: Vec<_> = (0..ring.slots.len())
+        .map(|i| ring.pose(i, c, 0.78, clock.time))
+        .collect();
+    assert_eq!(before, after);
+    let again = CardRing::diamonds();
+    assert!((0..ring.slots.len()).all(|i| again.pose(i, c, 0.78, 3.5) == before[i]));
+}
+
+#[test]
+fn the_cards_stay_valid_and_apart_while_the_ring_turns() {
+    let ring = CardRing::diamonds();
+    let (c, r) = (Vector3::new(6.2, 0.0, 0.0), 0.78);
+    let mesh = card_mesh();
+    let reach = CARD_WIDTH.hypot(CARD_HEIGHT) / 2.0 * ring.spec.card_size * r;
+    for step in 0..60 {
+        let t = step as f32 * 1.7;
+        let frames: Vec<_> = (0..ring.slots.len())
+            .map(|i| ring.pose(i, c, r, t))
+            .collect();
+        for (i, f) in frames.iter().enumerate() {
+            assert!(f.z.dot(ring.normal()) > 0.4, "card {i} edge-on at {t}");
+            let m = f.matrix();
+            for &p in &mesh.vertices {
+                let d = (apply(&m, p) - c).length() / r;
+                assert!(d > 1.3 && d <= ring.extent() + 1e-4, "card {i} at {t}: {d}");
+            }
+            for g in &frames[i + 1..] {
+                assert!((f.origin - g.origin).length() > 2.0 * reach);
+            }
+        }
     }
 }

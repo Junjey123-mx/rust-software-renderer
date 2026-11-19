@@ -171,6 +171,11 @@ pub struct CardRingSpec {
     /// direction of travel, radians, and its largest variation.
     pub tilt: f32,
     pub tilt_spread: f32,
+    /// Angular speed of the whole ring around the planet, radians per
+    /// simulated second: one speed for every card, so their gaps hold.
+    pub orbit_speed: f32,
+    /// Largest rock of a card about its long side, radians.
+    pub flutter: f32,
     pub seed: u32,
 }
 
@@ -188,6 +193,8 @@ impl Default for CardRingSpec {
             node: 0.6,
             tilt: 40f32.to_radians(),
             tilt_spread: 12f32.to_radians(),
+            orbit_speed: 0.25,
+            flutter: 7f32.to_radians(),
             seed: 7,
         }
     }
@@ -293,6 +300,15 @@ impl CardRing {
     pub fn extent(&self) -> f32 {
         let half = (CARD_WIDTH.hypot(CARD_HEIGHT) / 2.0) * self.spec.card_size;
         self.spec.radius + self.spec.spread + self.spec.thickness + half
+    }
+
+    /// Card `index` at simulated `time` (the scene clock's, so a paused
+    /// clock freezes the ring): carried along the ring at the ring's speed
+    /// and rocking about its long side at its own.
+    pub fn pose(&self, index: usize, center: Vector3, radius: f32, time: f32) -> CardFrame {
+        let slot = &self.slots[index];
+        let flutter = self.spec.flutter * (slot.flutter_speed * time + slot.flutter_phase).sin();
+        self.frame(index, center, radius, self.spec.orbit_speed * time, flutter)
     }
 
     /// Card `index` around a planet at `center` of `radius`, at `angle`
