@@ -283,6 +283,7 @@ use rust_software_renderer::pipeline::{
 };
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
+use rust_software_renderer::solar::effects::EffectShader;
 use rust_software_renderer::solar::plasma_loops::{CROWN_ARCS, PlasmaLoops};
 use rust_software_renderer::solar::{BodyInstance, CameraMode, SolarMeshes, SolarScene};
 
@@ -423,7 +424,12 @@ fn without_the_star_or_without_a_crown_nothing_is_attached() {
         Transform::new(Vector3::zero(), 1.3),
         0.05,
     );
-    assert!(other.effect_draws(W, H, 1).is_empty());
+    let crowns = other
+        .effect_draws(W, H, 1)
+        .iter()
+        .filter(|d| matches!(d.shader, EffectShader::Crown(_)))
+        .count();
+    assert_eq!(crowns, 0, "the gas giant wears no crown");
 }
 
 #[test]

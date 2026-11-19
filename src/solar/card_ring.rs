@@ -296,10 +296,14 @@ impl CardRing {
         )
     }
 
+    /// Farthest corner of a card from its center, planet radii.
+    pub fn card_reach(&self) -> f32 {
+        Vector3::new(CARD_WIDTH, CARD_HEIGHT, CARD_THICKNESS).length() / 2.0 * self.spec.card_size
+    }
+
     /// Farthest reach of a card from the planet's center, planet radii.
     pub fn extent(&self) -> f32 {
-        let half = (CARD_WIDTH.hypot(CARD_HEIGHT) / 2.0) * self.spec.card_size;
-        self.spec.radius + self.spec.spread + self.spec.thickness + half
+        self.spec.radius + self.spec.spread + self.spec.thickness + self.card_reach()
     }
 
     /// Card `index` at simulated `time` (the scene clock's, so a paused

@@ -1,6 +1,7 @@
 //! The ring of diamond playing cards around House of Cards.
 
 use raylib::math::{Matrix, Vector3};
+use rust_software_renderer::celestial::Body;
 use rust_software_renderer::geometry::Mesh;
 use rust_software_renderer::pipeline::{
     NormalSource, OrbitCamera, OrbitView, ShadedOptions, Transform, Uniforms, ViewPreset,
@@ -8,10 +9,14 @@ use rust_software_renderer::pipeline::{
 };
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
-use rust_software_renderer::solar::SimulationClock;
 use rust_software_renderer::solar::card_ring::{
     BORDER, CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, CardRing, CardRingSpec, CardShader, CardSide,
     card_mesh, card_pattern,
+};
+use rust_software_renderer::solar::effects::EffectShader;
+use rust_software_renderer::solar::plasma_loops::PlasmaLoops;
+use rust_software_renderer::solar::{
+    BodyInstance, CameraMode, SimulationClock, SolarMeshes, SolarScene,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -382,4 +387,154 @@ fn the_cards_stay_valid_and_apart_while_the_ring_turns() {
             }
         }
     }
+}
+
+const W: u32 = 320;
+const H: u32 = 240;
+
+/// House of Cards alone at the origin under the orthographic front camera,
+/// lit from the camera's side, framed so the whole ring fits.
+fn ring_scene(time: f32) -> SolarScene {
+    let camera = OrbitCamera::new(Vector3::zero(), ViewPreset::Front);
+    let eye = camera.eye_direction();
+    let view = OrbitView::for_world(camera, 2.0, Viewport::new(W, H, 0.1)).unwrap();
+    let mut s = SolarScene::new(SolarMeshes::load().unwrap(), view, eye);
+    s.camera_mode = CameraMode::Orbit;
+    s.bodies = vec![BodyInstance::new(
+        Body::HouseOfCards,
+        Transform::new(Vector3::zero(), 0.9),
+        0.4,
+    )];
+    s.plasma = PlasmaLoops::new(&[]);
+    s.center = eye * 20.0;
+    s.clock.time = time;
+    s.update();
+    s
+}
+
+fn card_draws(s: &SolarScene) -> Vec<[f32; 3]> {
+    s.effect_draws(W, H, 1)
+        .iter()
+        .filter(|d| matches!(d.shader, EffectShader::Card(_)))
+        .map(|d| {
+            [
+                d.model.model_matrix.m12,
+                d.model.model_matrix.m13,
+                d.model.model_matrix.m14,
+            ]
+        })
+        .collect()
+}
+
+fn frame(s: &SolarScene) -> Framebuffer {
+    let mut fb = Framebuffer::new(W, H);
+    s.render_frame(
+        &mut fb,
+        TriangleMode::FilledScanline,
+        ShadedOptions::default(),
+    )
+    .unwrap();
+    fb
+}
+
+#[test]
+fn the_scene_deals_the_ring_around_house_of_cards_only() {
+    let s = ring_scene(0.0);
+    assert_eq!(card_draws(&s).len(), s.cards.as_ref().unwrap().slots.len());
+    let mut off = s.clone();
+    off.cards = None;
+    assert!(card_draws(&off).is_empty());
+    let mut other = s.clone();
+    other.bodies[0] = BodyInstance::new(
+        Body::CrimsonEntrance,
+        Transform::new(Vector3::zero(), 0.9),
+        0.0,
+    );
+    assert!(card_draws(&other).is_empty());
+}
+
+#[test]
+fn the_ring_rides_with_its_planet_but_not_with_its_spin() {
+    let s = ring_scene(1.5);
+    let mut moved = s.clone();
+    let shift = Vector3::new(0.4, -0.2, 0.3);
+    moved.bodies[0].transform.position = shift;
+    for (a, b) in card_draws(&s).iter().zip(card_draws(&moved)) {
+        for k in 0..3 {
+            assert!((a[k] + [shift.x, shift.y, shift.z][k] - b[k]).abs() < 1e-5);
+        }
+    }
+    let mut spun = s.clone();
+    spun.bodies[0].spin_speed = 3.0;
+    spun.update();
+    assert_eq!(card_draws(&s), card_draws(&spun));
+    let later = ring_scene(4.0);
+    assert_ne!(card_draws(&s), card_draws(&later), "the ring stands still");
+}
+
+#[test]
+fn cards_off_screen_are_skipped() {
+    let s = ring_scene(0.0);
+    let mut far = s.clone();
+    far.view.camera.target = Vector3::new(40.0, 0.0, 0.0);
+    assert!(card_draws(&far).is_empty());
+    let mut half = s.clone();
+    half.view.camera.target = Vector3::new(3.0, 0.0, 0.0);
+    let n = card_draws(&half).len();
+    assert!(
+        n > 0 && n < card_draws(&s).len(),
+        "{n} cards on a half view"
+    );
+}
+
+#[test]
+fn the_planet_and_the_cards_share_one_depth_buffer() {
+    let s = ring_scene(0.0);
+    let full = frame(&s);
+    let mut bare = s.clone();
+    bare.cards = None;
+    let planet = frame(&bare);
+    let mut cards = Framebuffer::new(W, H);
+    s.render_effects_without_clear(
+        &mut cards,
+        TriangleMode::FilledScanline,
+        ShadedOptions::default(),
+    )
+    .unwrap();
+    let (mut front, mut hidden) = (0, 0);
+    for y in 0..H as i32 {
+        for x in 0..W as i32 {
+            let card = cards.get_depth(x, y).unwrap();
+            if !card.is_finite() {
+                continue;
+            }
+            let body = planet.get_depth(x, y).unwrap();
+            assert_eq!(full.get_depth(x, y).unwrap(), card.min(body), "({x}, {y})");
+            if body.is_finite() {
+                if card < body {
+                    front += 1;
+                } else {
+                    hidden += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        front > 20 && hidden > 20,
+        "{front} card pixels over the disk, {hidden} behind it"
+    );
+}
+
+#[test]
+fn the_diamonds_show_neon_against_the_sky() {
+    let s = ring_scene(0.0);
+    let mut bare = s.clone();
+    bare.cards = None;
+    let (with, without) = (frame(&s), frame(&bare));
+    let neon = (0..H as i32)
+        .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
+        .filter(|&(x, y)| with.get_depth(x, y) != without.get_depth(x, y))
+        .filter(|&(x, y)| is_neon(with.get_pixel(x, y).unwrap()))
+        .count();
+    assert!(neon > 30, "{neon} neon pixels");
 }

@@ -1,9 +1,9 @@
 //! Extra geometry of the solar scene attached to its bodies (the royal
-//! crown on The King's Crown), drawn through the shared CPU pipeline and
-//! depth buffer. Each effect lists its draws (a prebuilt mesh, the model
-//! matrix of the body it rides on and a shader), so the frame batch and the
-//! one-by-one path draw exactly the same thing and `scene.rs` stays a thin
-//! dispatcher.
+//! crown on The King's Crown, the diamond cards around House of Cards),
+//! drawn through the shared CPU pipeline and depth buffer. Each effect
+//! lists its draws (a prebuilt mesh, the model matrix of the body or card
+//! it rides on and a shader), so the frame batch and the one-by-one path
+//! draw exactly the same thing and `scene.rs` stays a thin dispatcher.
 
 use crate::celestial::Body;
 use crate::geometry::Vertex;
@@ -14,6 +14,7 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::SolarScene;
+use crate::solar::card_ring::CardShader;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
 use raylib::math::Vector3;
 
@@ -21,12 +22,14 @@ use raylib::math::Vector3;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EffectShader {
     Crown(CrownShader),
+    Card(CardShader),
 }
 
 impl EffectShader {
     pub fn shade(&self, s: &SurfaceSample, view: &FragmentView) -> Vector3 {
         match self {
             Self::Crown(c) => c.shade(s.object_position, s.face_normal, view.view_direction),
+            Self::Card(c) => c.shade(s.object_position, s.face_normal),
         }
     }
 }
@@ -58,6 +61,14 @@ impl SolarScene {
             .position(|b| b.body() == Body::KingsCrown)
     }
 
+    /// The body the card ring circles, when the scene has both.
+    pub fn card_host(&self) -> Option<usize> {
+        self.cards.as_ref()?;
+        self.bodies
+            .iter()
+            .position(|b| b.body() == Body::HouseOfCards)
+    }
+
     /// The crown's transform: the star's, turned by the crown's own spin.
     pub fn crown_transform(&self, host: usize) -> Transform {
         let star = self.bodies[host].transform;
@@ -87,6 +98,27 @@ impl SolarScene {
                         model,
                         options: solid_options(threads),
                         shader: EffectShader::Crown(crown.shader(part, transform, self.clock.time)),
+                    });
+                }
+            }
+        }
+        if let (Some(host), Some(ring)) = (self.card_host(), &self.cards) {
+            let (center, radius) = (self.bodies[host].transform.position, self.radius_of(host));
+            if self.sphere_in_view(center, radius * ring.extent(), width, height) {
+                let reach = radius * ring.card_reach();
+                for i in 0..ring.slots.len() {
+                    let card = ring.pose(i, center, radius, self.clock.time);
+                    if !self.sphere_in_view(card.origin, reach, width, height) {
+                        continue;
+                    }
+                    let light = card.to_card_dir(self.light_at(card.origin));
+                    draws.push(EffectDraw {
+                        mesh: &ring.mesh,
+                        model: Uniforms {
+                            model_matrix: card.matrix(),
+                        },
+                        options: solid_options(threads),
+                        shader: EffectShader::Card(CardShader { light }),
                     });
                 }
             }

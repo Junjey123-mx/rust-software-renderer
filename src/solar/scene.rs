@@ -15,6 +15,7 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
+use crate::solar::card_ring::CardRing;
 use crate::solar::effects::EffectShader;
 use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
 use crate::solar::instance::{
@@ -103,6 +104,8 @@ pub struct SolarScene {
     pub plasma: PlasmaLoops,
     /// Royal crown worn by The King's Crown (`None`: no crown).
     pub crown: Option<RoyalCrown>,
+    /// Ring of diamond cards around House of Cards (`None`: no ring).
+    pub cards: Option<CardRing>,
     /// Shader quality policy (full by default).
     pub quality: Quality,
     /// Shaded-stage buffers reused by every draw of this scene.
@@ -130,6 +133,7 @@ impl SolarScene {
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
+            cards: Some(CardRing::diamonds()),
             scratch: RefCell::new(RenderScratch::new()),
             quality: Quality::Full,
             clock: SimulationClock::default(),
@@ -143,7 +147,8 @@ impl SolarScene {
     /// as external arcs), Crimson Entrance at scale 0.6 on a 3.0 orbit and
     /// House of Cards at scale 0.9 on a 6.2 orbit, placed for time 0. The
     /// gap between the two orbits leaves room for a ring of up to 2.2 radii
-    /// around the gas giant, about one unit clear of Crimson Entrance.
+    /// around the gas giant (its diamond cards reach 2.13), about one unit
+    /// clear of Crimson Entrance.
     pub fn default_system(
         meshes: SolarMeshes,
         view: OrbitView,
@@ -308,13 +313,7 @@ impl SolarScene {
     /// Direction from the spacecraft towards the star (scene light when the
     /// ship sits on the center).
     pub fn ship_light(&self) -> Vector3 {
-        let d = self.center - self.ship.position;
-        let len = d.length();
-        if len.is_finite() && len > 1e-6 {
-            d / len
-        } else {
-            self.light_world
-        }
+        self.light_at(self.ship.position)
     }
 
     /// Draws the spacecraft without clearing.
@@ -564,7 +563,13 @@ impl SolarScene {
     /// the scene center (the star). A body sitting at the center (the star
     /// itself, emissive) keeps the scene light.
     pub fn light_for(&self, body: &BodyInstance) -> Vector3 {
-        let to_star = self.center - body.transform.position;
+        self.light_at(body.transform.position)
+    }
+
+    /// Unit direction from world point `p` towards the star (the scene
+    /// light at the center itself).
+    pub fn light_at(&self, p: Vector3) -> Vector3 {
+        let to_star = self.center - p;
         let len = to_star.length();
         if len.is_finite() && len > 1e-6 {
             to_star / len
