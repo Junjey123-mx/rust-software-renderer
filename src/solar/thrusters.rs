@@ -160,6 +160,19 @@ pub const AFTER_CYAN: Vector3 = hex(0x3FE3FF);
 pub const AFTER_BLUE: Vector3 = hex(0x2A6BFF);
 pub const AFTER_TIP: Vector3 = hex(0x4A1EB4);
 
+/// The exhaust `boost` of the way from `warm` to `blue`, channel by
+/// channel: blue rises first, green in the middle and red fades last, so
+/// the flame passes through peach and lavender-white instead of the green
+/// a straight mix of amber and cyan gives.
+pub fn afterburner_mix(warm: Vector3, blue: Vector3, boost: f32) -> Vector3 {
+    let lerp = |a: f32, b: f32, k: f32| a + (b - a) * k;
+    Vector3::new(
+        lerp(warm.x, blue.x, smoothstep(0.5, 1.0, boost)),
+        lerp(warm.y, blue.y, smoothstep(0.25, 0.75, boost)),
+        lerp(warm.z, blue.z, smoothstep(0.0, 0.5, boost)),
+    )
+}
+
 /// Color `t` of the way down a flame through four stops.
 fn gradient(stops: [Vector3; 4], t: f32) -> Vector3 {
     if t < 0.3 {
@@ -211,7 +224,7 @@ impl FlameShader {
         let t = p.z.clamp(0.0, 1.0);
         let warm = gradient([FLAME_CORE, FLAME_AMBER, FLAME_ORANGE, FLAME_TIP], t);
         let blue = gradient([AFTER_CORE, AFTER_CYAN, AFTER_BLUE, AFTER_TIP], t);
-        let color = mix3(warm, blue, self.boost);
+        let color = afterburner_mix(warm, blue, self.boost);
         let pulse = 1.0 + 0.15 * (18.0 * t - 22.0 * self.time + self.phase).sin();
         color * ((0.55 + 0.65 * facing) * pulse * (1.0 + BOOST_GLOW * self.boost))
     }

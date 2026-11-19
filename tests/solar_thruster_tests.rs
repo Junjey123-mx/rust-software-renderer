@@ -16,7 +16,7 @@ use rust_software_renderer::solar::input::{Look, SolarAction};
 use rust_software_renderer::solar::plasma_loops::PlasmaLoops;
 use rust_software_renderer::solar::thrusters::{
     BOOST_STRETCH, FlameShader, IDLE_LENGTH, INSET, NOZZLES, POD_SHARE, THRUST_LENGTH, Thrusters,
-    flame_length, flame_matrix, flame_mesh,
+    afterburner_mix, flame_length, flame_matrix, flame_mesh,
 };
 use rust_software_renderer::solar::viewer::step;
 use rust_software_renderer::solar::{CameraMode, ShipState, SolarMeshes, SolarScene};
@@ -433,4 +433,26 @@ fn local_flight_keeps_the_exhaust_orange_even_with_the_space_bar_held() {
         Vector3::new(1.0, 0.0, 0.0),
     );
     assert!(c.x > c.z, "orange: {c:?}");
+}
+
+#[test]
+fn the_afterburner_blend_never_turns_green() {
+    let mut s = ShipState::new(Vector3::zero(), 0.08);
+    let normal = Vector3::new(1.0, 0.0, 0.0);
+    for b in 0..=20 {
+        s.boost = b as f32 / 20.0;
+        for k in 0..=20 {
+            let p = Vector3::new(0.5, 0.0, k as f32 / 20.0);
+            let c = FlameShader::new(&s, 0, 1.5, 0.0).shade(p, normal, normal);
+            assert!(
+                c.y <= c.x.max(c.z) + 1e-5,
+                "green at boost {} z {}: {c:?}",
+                s.boost,
+                p.z
+            );
+        }
+    }
+    let (w, b) = (Vector3::new(1.0, 0.7, 0.2), Vector3::new(0.2, 0.9, 1.0));
+    assert!(close(afterburner_mix(w, b, 0.0), w, 1e-6));
+    assert!(close(afterburner_mix(w, b, 1.0), b, 1e-6));
 }
