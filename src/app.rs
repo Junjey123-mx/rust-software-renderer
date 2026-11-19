@@ -77,6 +77,7 @@ Usage: rust-software-renderer [options]
   --stars <n> --star-seed <s> --star-density uniform|clustered   solar star field (--stars 0 disables it)
   --nebula <0-1>                 solar nebula backdrop intensity (default 1; 0 keeps the black sky)
   --solar-quality full|adaptive  solar shader detail (default full; adaptive lowers it on small bodies)
+  --mouse-sensitivity <x>[,<y>] [--invert-mouse]   solar mouse steering, radians per pixel (default 0.003,0.0025)
   --scene solar --record <s> [--fps n] [--timeline flight]   scripted solar flight as raw rgb24 on stdout
   --benchmark-solar [--benchmark-output <dir>]   headless solar scenarios A-J (default docs/results/preproject3)
 Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit

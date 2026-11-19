@@ -9,7 +9,7 @@ use rust_software_renderer::pipeline::{
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
 use rust_software_renderer::solar::camera::CameraRig;
-use rust_software_renderer::solar::input::SolarAction;
+use rust_software_renderer::solar::input::{Look, SolarAction};
 use rust_software_renderer::solar::viewer::step;
 use rust_software_renderer::solar::{BodyInstance, CameraMode, Orbit, SolarMeshes, SolarScene};
 
@@ -412,7 +412,7 @@ fn follow_controls_fly_the_ship_and_the_camera_follows_while_orbit_rig_moves_the
     let mut s = flying_scene();
     let start = s.ship.position;
     for _ in 0..20 {
-        step(&mut s, &[SolarAction::Forward], &[], 0.05);
+        step(&mut s, &[SolarAction::Forward], &[], Look::default(), 0.05);
     }
     assert!((s.ship.position - start).length() > 1.0, "flew forward");
     let cam_eye = match s.projection() {
@@ -426,30 +426,42 @@ fn follow_controls_fly_the_ship_and_the_camera_follows_while_orbit_rig_moves_the
             < 1e-4
     );
 
-    // V switches to the orbit rig: thrust no longer moves the ship, arrows
-    // (camera actions) orbit the camera instead.
-    step(&mut s, &[SolarAction::ToggleCamera], &[], 0.0);
-    assert_eq!(s.rig, CameraRig::Orbit);
-    let parked = s.ship.position;
-    let az = s.view.camera.azimuth;
+    // V switches to the orbit rig: thrust no longer moves the ship, the
+    // mouse orbits the camera instead.
     step(
         &mut s,
-        &[SolarAction::Forward],
-        &[rust_software_renderer::app::CameraAction::OrbitLeft],
-        0.05,
+        &[SolarAction::ToggleCamera],
+        &[],
+        Look::default(),
+        0.0,
     );
+    assert_eq!(s.rig, CameraRig::Orbit);
+    let parked = s.ship.position;
+    let (az, el) = (s.view.camera.azimuth, s.view.camera.elevation);
+    let look = Look {
+        yaw: 0.1,
+        pitch: 0.05,
+    };
+    step(&mut s, &[SolarAction::Forward], &[], look, 0.05);
     assert_eq!(s.ship.position, parked);
     assert_ne!(s.view.camera.azimuth, az);
+    assert_ne!(s.view.camera.elevation, el);
 }
 
 #[test]
 fn flight_keeps_working_while_the_simulation_is_paused() {
     let mut s = flying_scene();
-    step(&mut s, &[SolarAction::TogglePause], &[], 0.0);
+    step(
+        &mut s,
+        &[SolarAction::TogglePause],
+        &[],
+        Look::default(),
+        0.0,
+    );
     let planets: Vec<_> = s.bodies.iter().map(|b| b.transform).collect();
     let start = s.ship.position;
     for _ in 0..5 {
-        step(&mut s, &[SolarAction::Forward], &[], 0.05);
+        step(&mut s, &[SolarAction::Forward], &[], Look::default(), 0.05);
     }
     assert_eq!(
         planets,

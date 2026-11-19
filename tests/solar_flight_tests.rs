@@ -1,9 +1,15 @@
 //! Spacecraft flight controllers and the solar input map.
 
+use raylib::consts::KeyboardKey;
+use raylib::math::Vector2;
 use raylib::math::Vector3;
 use rust_software_renderer::solar::ShipState;
-use rust_software_renderer::solar::flight::{FlightInput, space_step};
-use rust_software_renderer::solar::input::{HELD, PRESSED, SolarAction};
+use rust_software_renderer::solar::flight::{
+    FlightInput, MAX_PITCH, MIN_PITCH, SPACE_UP, nose_elevation, space_step, steer,
+};
+use rust_software_renderer::solar::input::{
+    CAPTURE_KEY, HELD, Look, MouseCapture, MouseLook, PRESSED, RELEASE_KEY, SolarAction,
+};
 
 fn close(a: Vector3, b: Vector3, tol: f32) -> bool {
     (a - b).length() < tol
@@ -115,6 +121,7 @@ fn backward_retreats_along_the_nose_and_yaw_left_turns_towards_minus_x() {
 fn the_input_map_uses_distinct_keys() {
     let mut keys: Vec<_> = HELD.iter().map(|(k, _)| *k as i32).collect();
     keys.extend(PRESSED.iter().map(|(k, _)| *k as i32));
+    keys.extend([CAPTURE_KEY as i32, RELEASE_KEY as i32]);
     let n = keys.len();
     keys.sort();
     keys.dedup();
@@ -487,4 +494,144 @@ fn boost_never_changes_local_flight_speed_or_the_orbits() {
         0.05,
     );
     assert_eq!(a, b);
+}
+
+// ---------------------------------------------------------------------------
+// Mouse steering
+// ---------------------------------------------------------------------------
+
+fn look(yaw: f32, pitch: f32) -> FlightInput {
+    FlightInput {
+        look: Look { yaw, pitch },
+        ..FlightInput::default()
+    }
+}
+
+#[test]
+fn the_arrows_are_free_so_they_never_compete_with_the_mouse() {
+    let arrows = [
+        KeyboardKey::KEY_LEFT,
+        KeyboardKey::KEY_RIGHT,
+        KeyboardKey::KEY_UP,
+        KeyboardKey::KEY_DOWN,
+    ];
+    let bound: Vec<_> = HELD.iter().chain(PRESSED.iter()).map(|(k, _)| *k).collect();
+    assert!(arrows.iter().all(|a| !bound.contains(a)));
+    let turns = [
+        SolarAction::YawLeft,
+        SolarAction::YawRight,
+        SolarAction::PitchUp,
+        SolarAction::PitchDown,
+    ];
+    assert!(
+        HELD.iter().all(|(_, a)| !turns.contains(a)),
+        "no key turns the ship"
+    );
+}
+
+#[test]
+fn the_mouse_turns_by_pixels_times_each_axis_sensitivity() {
+    let m = MouseLook {
+        sensitivity_x: 0.004,
+        sensitivity_y: 0.002,
+        invert_y: false,
+    };
+    let t = m.turn(Vector2::new(10.0, -5.0));
+    assert!((t.yaw + 0.04).abs() < 1e-7, "right turns right: {t:?}");
+    assert!((t.pitch - 0.01).abs() < 1e-7, "up lifts the nose: {t:?}");
+    let inverted = MouseLook {
+        invert_y: true,
+        ..m
+    }
+    .turn(Vector2::new(10.0, -5.0));
+    assert_eq!(inverted.yaw, t.yaw);
+    assert_eq!(inverted.pitch, -t.pitch);
+    assert_eq!(m.turn(Vector2::new(f32::NAN, 1.0)), Look::default());
+}
+
+#[test]
+fn a_mouse_turn_does_not_depend_on_the_frame_time() {
+    let turn = look(0.3, 0.2);
+    let (mut a, mut b) = (ship(), ship());
+    space_step(&mut a, &turn, 1.0 / 30.0);
+    space_step(&mut b, &turn, 1.0 / 144.0);
+    assert!(close(a.forward, b.forward, 1e-6) && close(a.up, b.up, 1e-6));
+    assert!((nose_elevation(&a, SPACE_UP) - 0.2).abs() < 1e-5);
+}
+
+#[test]
+fn the_capture_drops_the_jump_after_capturing_and_after_regaining_focus() {
+    let m = MouseLook::default();
+    let d = Vector2::new(40.0, 0.0);
+    let mut c = MouseCapture::default();
+    assert!(!c.captured());
+    assert_eq!(
+        c.turn(d, true, &m),
+        Look::default(),
+        "a free mouse does not steer"
+    );
+    assert!(c.toggle());
+    assert_eq!(
+        c.turn(Vector2::new(900.0, 700.0), true, &m),
+        Look::default()
+    );
+    assert_eq!(c.turn(d, true, &m), m.turn(d));
+    assert_eq!(c.turn(d, false, &m), Look::default(), "unfocused");
+    assert_eq!(
+        c.turn(Vector2::new(-600.0, 300.0), true, &m),
+        Look::default()
+    );
+    assert_eq!(c.turn(d, true, &m), m.turn(d));
+    assert!(c.release());
+    assert_eq!(c.turn(d, true, &m), Look::default());
+    assert!(!c.release(), "a second ESC finds the mouse free");
+    assert!(c.toggle());
+    assert_eq!(c.turn(d, true, &m), Look::default(), "settles again");
+}
+
+#[test]
+fn the_nose_stops_at_the_pitch_limits_and_never_jumps_back() {
+    let mut s = ship();
+    space_step(&mut s, &look(0.0, 3.0), 0.016);
+    assert!((nose_elevation(&s, SPACE_UP) - MAX_PITCH).abs() < 1e-4);
+    space_step(&mut s, &look(0.0, -5.0), 0.016);
+    assert!((nose_elevation(&s, SPACE_UP) - MIN_PITCH).abs() < 1e-4);
+    let mut steep = ship();
+    steep.pitch(85f32.to_radians());
+    let before = steep;
+    steer(&mut steep, SPACE_UP, 0.0, 0.1);
+    assert!(close(steep.forward, before.forward, 1e-6), "pushed further");
+    steer(&mut steep, SPACE_UP, 0.0, -0.1);
+    let e = nose_elevation(&steep, SPACE_UP);
+    assert!((e - (85f32.to_radians() - 0.1)).abs() < 1e-4, "{e}");
+}
+
+#[test]
+fn mouse_steering_keeps_the_horizon_level() {
+    let mut s = ship();
+    for i in 0..200 {
+        let t = i as f32 * 0.37;
+        space_step(&mut s, &look(0.05 * t.sin(), 0.04 * (1.3 * t).cos()), 0.016);
+        assert!(s.right().dot(SPACE_UP).abs() < 1e-4, "rolled at {i}");
+        let e = nose_elevation(&s, SPACE_UP);
+        assert!((MIN_PITCH - 1e-4..=MAX_PITCH + 1e-4).contains(&e));
+    }
+}
+
+#[test]
+fn mouse_steering_in_local_flight_keeps_the_altitude_and_the_local_limits() {
+    let planet = Vector3::new(3.0, 0.0, 0.0);
+    let mut s = ShipState::new(planet + Vector3::new(0.0, 0.0, 2.0), 0.1);
+    let mut mode = FlightMode::Local {
+        planet: 0,
+        previous_planet_position: planet,
+    };
+    for _ in 0..50 {
+        let mut input = look(0.07, 0.09);
+        input.throttle = 1.0;
+        local_step(&mut s, &mut mode, planet, 1.0, &input, 0.05);
+        assert!(((s.position - planet).length() - 2.0).abs() < 1e-3);
+        let up = (s.position - planet).normalized();
+        assert!(nose_elevation(&s, up) <= MAX_PITCH + 1e-3);
+    }
 }

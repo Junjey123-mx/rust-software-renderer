@@ -1,5 +1,6 @@
 //! Window viewer of the solar scene. Raylib only owns the window, reads the
-//! keyboard and presents the CPU framebuffer as a texture.
+//! keyboard and the relative mouse and presents the CPU framebuffer as a
+//! texture.
 
 use crate::app::{CameraAction, CliArgs, apply_input, poll_input, save_screenshot};
 use crate::celestial::cli::CelestialArgs;
@@ -10,7 +11,9 @@ use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
 use crate::solar::flight::{FlightInput, FlightMode, space_step};
-use crate::solar::input::{SolarAction, poll_solar};
+use crate::solar::input::{
+    CAPTURE_KEY, Look, MouseCapture, MouseLook, RELEASE_KEY, SolarAction, poll_solar,
+};
 use crate::solar::nebula::Nebula;
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField};
 use crate::solar::travel::warp_to;
@@ -139,22 +142,30 @@ pub fn apply_toggles(scene: &mut SolarScene, actions: &[SolarAction]) -> Vec<Str
 }
 
 /// Runs the active controller for `dt` real seconds: the spacecraft under
-/// the follow rig (space or local flight), the orbit camera otherwise.
+/// the follow rig (space or local flight), the orbit camera otherwise. The
+/// mouse `look` of the frame turns whichever is active, unscaled by `dt`.
 pub fn fly(
     scene: &mut SolarScene,
     actions: &[SolarAction],
     camera_actions: &[CameraAction],
+    look: Look,
     dt: f32,
 ) {
     match scene.rig {
         CameraRig::Follow => {
-            let input = FlightInput::from_actions(actions);
+            let input = FlightInput {
+                look,
+                ..FlightInput::from_actions(actions)
+            };
             match scene.flight {
                 FlightMode::Space => space_step(&mut scene.ship, &input, dt),
                 FlightMode::Local { .. } => scene.local_step(&input, dt),
             }
         }
         CameraRig::Orbit => {
+            // Same senses as the orbit and tilt keys of the earlier scenes.
+            scene.view.camera.orbit(-look.yaw);
+            scene.view.camera.tilt(look.pitch);
             for &action in camera_actions {
                 apply_input(&mut scene.view.camera, action, dt);
             }
@@ -170,12 +181,13 @@ pub fn step(
     scene: &mut SolarScene,
     actions: &[SolarAction],
     camera_actions: &[CameraAction],
+    look: Look,
     real_dt: f32,
 ) -> Vec<String> {
     let messages = apply_toggles(scene, actions);
     scene.advance(real_dt);
     let dt = scene.clock.real_delta;
-    fly(scene, actions, camera_actions, dt);
+    fly(scene, actions, camera_actions, look, dt);
     messages
 }
 
@@ -187,7 +199,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: W/S thrust, SHIFT light speed, arrows turn (follow) or orbit (orbit rig), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC quit",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, SHIFT light speed, L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
@@ -197,6 +209,12 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         .title(TITLE)
         .build();
     rl.set_target_fps(60);
+    // ESC frees the mouse first; only a second ESC quits.
+    rl.set_exit_key(None);
+    let mouse = mouse_look(lab6);
+    let mut capture = MouseCapture::default();
+    capture.toggle();
+    rl.disable_cursor();
     let mut framebuffer = Framebuffer::new(WIDTH, HEIGHT);
     framebuffer.set_background_color(hex(0x05030a));
     let mut presenter = Presenter::new(&mut rl, &thread, &framebuffer)?;
@@ -205,8 +223,29 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
+        if rl.is_key_pressed(CAPTURE_KEY) {
+            let captured = capture.toggle();
+            set_cursor(&mut rl, captured);
+        }
+        if rl.is_key_pressed(RELEASE_KEY) {
+            if !capture.release() {
+                break;
+            }
+            set_cursor(&mut rl, false);
+        }
+        let look = capture.turn(rl.get_mouse_delta(), rl.is_window_focused(), &mouse);
         let actions = poll_solar(&rl);
-        let (camera_actions, new_mode) = poll_input(&rl);
+        let (mut camera_actions, new_mode) = poll_input(&rl);
+        // The mouse orbits this scene's camera; the arrows would compete.
+        camera_actions.retain(|a| {
+            !matches!(
+                a,
+                CameraAction::OrbitLeft
+                    | CameraAction::OrbitRight
+                    | CameraAction::TiltUp
+                    | CameraAction::TiltDown
+            )
+        });
         if let Some(m) = new_mode
             && m != mode
         {
@@ -215,7 +254,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         }
         let before = scene.ship.position;
         let mode_before = scene.flight;
-        for message in step(&mut scene, &actions, &camera_actions, dt) {
+        for message in step(&mut scene, &actions, &camera_actions, look, dt) {
             println!("{message}");
         }
         title_timer += dt;
@@ -245,4 +284,29 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         }
     }
     Ok(())
+}
+
+/// Mouse steering of the command line: the default sensitivities unless
+/// `--mouse-sensitivity` was given, inverted with `--invert-mouse`.
+pub fn mouse_look(lab6: &CelestialArgs) -> MouseLook {
+    let defaults = MouseLook::default();
+    let (sensitivity_x, sensitivity_y) = lab6
+        .mouse_sensitivity
+        .unwrap_or((defaults.sensitivity_x, defaults.sensitivity_y));
+    MouseLook {
+        sensitivity_x,
+        sensitivity_y,
+        invert_y: lab6.invert_mouse,
+    }
+}
+
+/// Hides and locks the cursor while the mouse steers; shows it otherwise.
+fn set_cursor(rl: &mut raylib::RaylibHandle, captured: bool) {
+    if captured {
+        rl.disable_cursor();
+        println!("Mouse captured: it steers (TAB or ESC frees it)");
+    } else {
+        rl.enable_cursor();
+        println!("Mouse free (TAB captures it, ESC quits)");
+    }
 }

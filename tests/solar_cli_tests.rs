@@ -262,3 +262,26 @@ fn nebula_option_is_solar_only_and_sets_the_backdrop_intensity() {
     );
     assert!(USAGE.contains("--nebula"));
 }
+
+#[test]
+fn solar_takes_the_mouse_sensitivity_and_inversion() {
+    use rust_software_renderer::solar::viewer::mouse_look;
+    let (_, lab6) = parse("--scene solar").unwrap();
+    assert_eq!(mouse_look(&lab6), Default::default());
+    let (_, lab6) = parse("--scene solar --mouse-sensitivity 0.005 --invert-mouse").unwrap();
+    let m = mouse_look(&lab6);
+    assert_eq!(
+        (m.sensitivity_x, m.sensitivity_y, m.invert_y),
+        (0.005, 0.005, true)
+    );
+    let (_, lab6) = parse("--scene solar --mouse-sensitivity 0.004,0.001").unwrap();
+    let m = mouse_look(&lab6);
+    assert_eq!((m.sensitivity_x, m.sensitivity_y), (0.004, 0.001));
+    for bad in ["0", "-1", "a", "0.1,0", "0.1,x"] {
+        let line = format!("--scene solar --mouse-sensitivity {bad}");
+        assert!(parse(&line).is_err(), "{bad}");
+    }
+    assert!(parse("--scene crown --invert-mouse").is_err());
+    assert!(parse("--mouse-sensitivity 0.01").is_err());
+    assert!(USAGE.contains("--mouse-sensitivity") && USAGE.contains("--invert-mouse"));
+}

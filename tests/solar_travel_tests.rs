@@ -3,7 +3,7 @@
 use raylib::math::Vector3;
 use rust_software_renderer::pipeline::{OrbitCamera, OrbitView, ViewPreset, Viewport};
 use rust_software_renderer::solar::flight::{CLEARANCE, FlightMode};
-use rust_software_renderer::solar::input::SolarAction;
+use rust_software_renderer::solar::input::{Look, SolarAction};
 use rust_software_renderer::solar::travel::{WARP_MARGIN, arrival_point, warp_to};
 use rust_software_renderer::solar::viewer::step;
 use rust_software_renderer::solar::{SolarMeshes, SolarScene};
@@ -110,8 +110,8 @@ fn a_blocked_approach_side_picks_another_clear_arrival_point() {
 fn function_keys_warp_through_the_viewer_step_deterministically() {
     let mut a = scene();
     let mut b = scene();
-    step(&mut a, &[SolarAction::Warp(2)], &[], 0.0);
-    step(&mut b, &[SolarAction::Warp(2)], &[], 0.0);
+    step(&mut a, &[SolarAction::Warp(2)], &[], Look::default(), 0.0);
+    step(&mut b, &[SolarAction::Warp(2)], &[], Look::default(), 0.0);
     assert_eq!(a.ship, b.ship);
     let target = a.bodies[2].transform.position;
     assert!(((a.ship.position - target).length() - (a.radius_of(2) + WARP_MARGIN)).abs() < 1e-4);

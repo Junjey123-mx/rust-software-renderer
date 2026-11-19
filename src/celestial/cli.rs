@@ -48,6 +48,11 @@ pub struct CelestialArgs {
     pub solar_quality: Option<Quality>,
     /// `--timeline flight` of a solar recording.
     pub solar_timeline: Option<SolarTimeline>,
+    /// `--mouse-sensitivity <x>[,<y>]`: radians per pixel of the solar
+    /// scene's mouse steering (one value sets both axes).
+    pub mouse_sensitivity: Option<(f32, f32)>,
+    /// `--invert-mouse`: moving the mouse up lowers the nose.
+    pub invert_mouse: bool,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -193,6 +198,19 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
             "--solar-quality" => {
                 out.solar_quality = Some(value(&mut it, "--solar-quality")?.parse()?);
             }
+            "--mouse-sensitivity" => {
+                let text = value(&mut it, "--mouse-sensitivity")?;
+                let (x, y) = text.split_once(',').unwrap_or((text, text));
+                let (x, y) = (
+                    number(x, "--mouse-sensitivity")?,
+                    number(y, "--mouse-sensitivity")?,
+                );
+                if x <= 0.0 || y <= 0.0 {
+                    return Err(format!("--mouse-sensitivity must be positive (got {text})"));
+                }
+                out.mouse_sensitivity = Some((x, y));
+            }
+            "--invert-mouse" => out.invert_mouse = true,
             other => {
                 if other == "--mode" {
                     out.mode_explicit = true;
@@ -229,6 +247,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     if !solar && lab6.solar_quality.is_some() {
         return Err("--solar-quality requires --scene solar".into());
     }
+    if !solar && (lab6.mouse_sensitivity.is_some() || lab6.invert_mouse) {
+        return Err("--mouse-sensitivity and --invert-mouse require --scene solar".into());
+    }
     if !solar
         && (lab6.stars.is_some()
             || lab6.star_seed.is_some()
@@ -264,6 +285,8 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         nebula: None,
         solar_quality: None,
         solar_timeline: None,
+        mouse_sensitivity: None,
+        invert_mouse: false,
         record: if solar { None } else { lab6.record },
         fps: if solar { None } else { lab6.fps },
         ..lab6.clone()

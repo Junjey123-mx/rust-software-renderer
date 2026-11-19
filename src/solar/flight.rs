@@ -5,7 +5,7 @@
 use crate::shading::sphere::rotate_axis;
 use crate::solar::ShipState;
 use crate::solar::clock::MAX_STEP;
-use crate::solar::input::SolarAction;
+use crate::solar::input::{Look, SolarAction};
 use raylib::math::Vector3;
 
 /// Signed axes of one frame, each in `[-1, 1]`.
@@ -13,10 +13,12 @@ use raylib::math::Vector3;
 pub struct FlightInput {
     /// `W` = +1, `S` = -1.
     pub throttle: f32,
-    /// Left arrow = +1 (nose towards the ship's left), right arrow = -1.
+    /// Scripted turn rate: +1 turns the nose left at the ship's turn speed.
     pub yaw: f32,
-    /// Up arrow = +1 (lift the nose), down arrow = -1.
+    /// Scripted pitch rate: +1 lifts the nose.
     pub pitch: f32,
+    /// Mouse turn of this frame, radians, added to the scripted turns.
+    pub look: Look,
     /// Local flight only: `E` = +1 (away from the planet), `Q` = -1.
     pub radial: f32,
     /// Space flight only: `LEFT_SHIFT` held multiplies the speed by `BOOST`.
@@ -35,9 +37,46 @@ impl FlightInput {
             pitch: axis(SolarAction::PitchUp, SolarAction::PitchDown),
             radial: axis(SolarAction::Ascend, SolarAction::Descend),
             boost: actions.contains(&SolarAction::Boost),
+            look: Look::default(),
         }
     }
 }
+
+/// Elevation limits of the nose above the plane normal to the reference up
+/// (the orbital plane in space flight, the tangent plane in local flight),
+/// radians: the ship never flips over the vertical.
+pub const MIN_PITCH: f32 = -80.0 * std::f32::consts::PI / 180.0;
+pub const MAX_PITCH: f32 = 80.0 * std::f32::consts::PI / 180.0;
+
+/// Elevation of the nose along the ship's own pitch: 0 when level with the
+/// plane normal to `reference_up`, positive with the nose raised.
+pub fn nose_elevation(ship: &ShipState, reference_up: Vector3) -> f32 {
+    ship.forward
+        .dot(reference_up)
+        .atan2(ship.up.dot(reference_up))
+}
+
+/// Turns `yaw` radians around `reference_up` (so the horizon stays level)
+/// and `pitch` radians around the ship's right, keeping the nose elevation
+/// within `[MIN_PITCH, MAX_PITCH]`; a nose already outside the range only
+/// moves back towards it, never jumps.
+pub fn steer(ship: &mut ShipState, reference_up: Vector3, yaw: f32, pitch: f32) {
+    if yaw.is_finite() && yaw != 0.0 {
+        ship.rotate(reference_up, yaw);
+    }
+    if pitch.is_finite() && pitch != 0.0 {
+        let e = nose_elevation(ship, reference_up);
+        let target = (e + pitch).clamp(MIN_PITCH.min(e), MAX_PITCH.max(e));
+        ship.pitch(target - e);
+    }
+}
+
+/// Up of space flight: the normal of the orbital plane.
+pub const SPACE_UP: Vector3 = Vector3 {
+    x: 0.0,
+    y: 1.0,
+    z: 0.0,
+};
 
 fn clamp_dt(dt: f32) -> f32 {
     if dt.is_finite() {
@@ -50,17 +89,19 @@ fn clamp_dt(dt: f32) -> f32 {
 /// Speed factor of light speed (space flight with the boost held).
 pub const BOOST: f32 = 8.0;
 
-/// Space flight: turn around the ship's own axes, then move along the nose
-/// by `throttle * move_speed * dt`, times `BOOST` while boosting. No
-/// inertia and no collisions: a boosted ship can pass through a body.
+/// Space flight: turn (yaw around the orbital plane's normal, pitch within
+/// the limits), then move along the nose by `throttle * move_speed * dt`,
+/// times `BOOST` while boosting. No inertia and no collisions: a boosted
+/// ship can pass through a body.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
-    if input.yaw != 0.0 {
-        ship.yaw(input.yaw * ship.turn_speed * dt);
-    }
-    if input.pitch != 0.0 {
-        ship.pitch(input.pitch * ship.turn_speed * dt);
-    }
+    let turn = ship.turn_speed * dt;
+    steer(
+        ship,
+        SPACE_UP,
+        input.yaw * turn + input.look.yaw,
+        input.pitch * turn + input.look.pitch,
+    );
     let boost = if input.boost { BOOST } else { 1.0 };
     let step = input.throttle * ship.move_speed * boost * dt;
     ship.position += ship.forward * step;
@@ -193,8 +234,8 @@ pub const RADIAL_SPEED: f32 = 0.4;
 ///
 /// 1. follow the planet's displacement since the last frame (a position
 ///    difference, never scaled by `dt`);
-/// 2. turn around the radial up (left/right) and the ship's right (up/down)
-///    without changing the altitude;
+/// 2. turn around the radial up (left/right) and the ship's right (up/down,
+///    within the pitch limits) without changing the altitude;
 /// 3. move along a great-circle arc of the current distance, rotating the
 ///    ship basis by the same rotation so its tilt to the local up is kept;
 /// 4. change the distance with `E`/`Q`, never below `radius + CLEARANCE`.
@@ -222,12 +263,13 @@ pub fn local_step(
     let Some(frame) = local_frame(ship, planet, radius) else {
         return;
     };
-    if input.yaw != 0.0 {
-        ship.rotate(frame.normal, input.yaw * ship.turn_speed * dt);
-    }
-    if input.pitch != 0.0 {
-        ship.pitch(input.pitch * ship.turn_speed * dt);
-    }
+    let turn = ship.turn_speed * dt;
+    steer(
+        ship,
+        frame.normal,
+        input.yaw * turn + input.look.yaw,
+        input.pitch * turn + input.look.pitch,
+    );
     let Some(frame) = local_frame(ship, planet, radius) else {
         return;
     };

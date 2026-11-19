@@ -9,7 +9,7 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::shading::math::hex;
 use crate::solar::SolarScene;
-use crate::solar::input::SolarAction;
+use crate::solar::input::{Look, SolarAction};
 use crate::solar::viewer::{HEIGHT, WIDTH, apply_toggles, build_scene, fly, solar_mode};
 use std::error::Error;
 use std::io::Write;
@@ -122,7 +122,7 @@ pub fn record_solar(
         s.clock.time = sim;
         s.clock.real_delta = dt;
         s.update();
-        fly(&mut s, &actions, &[], dt);
+        fly(&mut s, &actions, &[], Look::default(), dt);
         s.render_frame(&mut framebuffer, settings.mode, settings.options)?;
         rgb.clear();
         for px in framebuffer.to_rgba_bytes().chunks_exact(4) {
