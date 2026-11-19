@@ -1,9 +1,10 @@
 //! Extra geometry of the solar scene attached to its bodies (the royal
-//! crown on The King's Crown, the diamond cards around House of Cards),
-//! drawn through the shared CPU pipeline and depth buffer. Each effect
-//! lists its draws (a prebuilt mesh, the model matrix of the body or card
-//! it rides on and a shader), so the frame batch and the one-by-one path
-//! draw exactly the same thing and `scene.rs` stays a thin dispatcher.
+//! crown on The King's Crown, the diamond cards around House of Cards) and
+//! to the spacecraft (the exhaust of its three nozzles), drawn through the
+//! shared CPU pipeline and depth buffer. Each effect lists its draws (a
+//! prebuilt mesh, the model matrix of what it rides on and a shader), so
+//! the frame batch and the one-by-one path draw exactly the same thing and
+//! `scene.rs` stays a thin dispatcher.
 
 use crate::celestial::Body;
 use crate::geometry::Vertex;
@@ -16,6 +17,7 @@ use crate::rendering::Framebuffer;
 use crate::solar::SolarScene;
 use crate::solar::card_ring::CardShader;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
+use crate::solar::thrusters::{FlameShader, NOZZLES, flame_length, flame_matrix};
 use raylib::math::Vector3;
 
 /// What a draw is shaded with.
@@ -23,6 +25,7 @@ use raylib::math::Vector3;
 pub enum EffectShader {
     Crown(CrownShader),
     Card(CardShader),
+    Flame(FlameShader),
 }
 
 impl EffectShader {
@@ -30,6 +33,7 @@ impl EffectShader {
         match self {
             Self::Crown(c) => c.shade(s.object_position, s.face_normal, view.view_direction),
             Self::Card(c) => c.shade(s.object_position, s.face_normal),
+            Self::Flame(f) => f.shade(s.object_position, s.face_normal, view.view_direction),
         }
     }
 }
@@ -119,6 +123,25 @@ impl SolarScene {
                         },
                         options: solid_options(threads),
                         shader: EffectShader::Card(CardShader { light }),
+                    });
+                }
+            }
+        }
+        if let Some(thrusters) = &self.thrusters {
+            let ship = &self.ship;
+            let time = self.clock.time;
+            let lengths = [0, 1, 2].map(|i| flame_length(ship, i, time));
+            let longest = lengths.iter().fold(0.0f32, |a, &b| a.max(b));
+            let reach = ship.radius() + longest * ship.scale;
+            if self.sphere_in_view(ship.position, reach, width, height) {
+                for (i, (nozzle, length)) in NOZZLES.iter().zip(lengths).enumerate() {
+                    draws.push(EffectDraw {
+                        mesh: &thrusters.mesh,
+                        model: Uniforms {
+                            model_matrix: flame_matrix(ship, nozzle, length),
+                        },
+                        options: solid_options(threads),
+                        shader: EffectShader::Flame(FlameShader::new(ship, i, length, time)),
                     });
                 }
             }

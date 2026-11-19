@@ -106,16 +106,33 @@ pub const BOOST: f32 = 8.0;
 pub const BOOST_RISE: f32 = 0.4;
 pub const BOOST_FALL: f32 = 0.6;
 
+/// Seconds for the engines to spool between idle and full thrust.
+pub const THRUST_EASE: f32 = 0.25;
+
+/// `level` moved towards `target` by at most `dt / rise` going up and
+/// `dt / fall` going down.
+fn approach(level: f32, target: f32, rise: f32, fall: f32, dt: f32) -> f32 {
+    if target > level {
+        (level + dt / rise).min(target)
+    } else {
+        (level - dt / fall).max(target)
+    }
+}
+
 /// Moves the ship's boost level towards 1 while `held` and towards 0
 /// otherwise, at the rise and fall rates. Runs on the real delta, so it
 /// never touches the simulation clock and works while paused.
 pub fn ramp_boost(ship: &mut ShipState, held: bool, dt: f32) {
     let dt = clamp_dt(dt);
-    ship.boost = if held {
-        (ship.boost + dt / BOOST_RISE).min(1.0)
-    } else {
-        (ship.boost - dt / BOOST_FALL).max(0.0)
-    };
+    ship.boost = approach(ship.boost, held as i32 as f32, BOOST_RISE, BOOST_FALL, dt);
+}
+
+/// Eases the engine level towards `target` (the length of this frame's
+/// travel input, 0 when parked).
+pub fn ease_thrust(ship: &mut ShipState, target: f32, dt: f32) {
+    let dt = clamp_dt(dt);
+    let target = target.clamp(0.0, 1.0);
+    ship.thrust = approach(ship.thrust, target, THRUST_EASE, THRUST_EASE, dt);
 }
 
 /// Space flight: turn (yaw around the orbital plane's normal, pitch within
@@ -133,7 +150,9 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     );
     ramp_boost(ship, input.boost, dt);
     let boost = 1.0 + (BOOST - 1.0) * ship.boost;
-    ship.position += travel(input, ship.forward, ship.right()) * (ship.move_speed * boost * dt);
+    let way = travel(input, ship.forward, ship.right());
+    ease_thrust(ship, way.length(), dt);
+    ship.position += way * (ship.move_speed * boost * dt);
 }
 
 /// Radial frame of the spacecraft around a planet treated as an ideal
@@ -309,6 +328,7 @@ pub fn local_step(
     let mut normal = frame.normal;
     let side = frame.tangent.cross(frame.normal);
     let way = travel(input, frame.tangent, side);
+    ease_thrust(ship, way.length(), dt);
     let arc = way.length() * LOCAL_SPEED * dt;
     if arc != 0.0
         && let Some(axis) = unit_or_none(frame.normal.cross(way))

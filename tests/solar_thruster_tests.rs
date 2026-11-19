@@ -3,10 +3,21 @@
 use raylib::math::{Matrix, Vector3};
 use rust_software_renderer::geometry::Mesh;
 use rust_software_renderer::io::obj::load_obj;
-use rust_software_renderer::solar::ShipState;
-use rust_software_renderer::solar::thrusters::{
-    INSET, NOZZLES, Thrusters, flame_matrix, flame_mesh,
+use rust_software_renderer::pipeline::{
+    OrbitCamera, OrbitView, ShadedOptions, ViewPreset, Viewport,
 };
+use rust_software_renderer::rasterization::TriangleMode;
+use rust_software_renderer::rendering::Framebuffer;
+use rust_software_renderer::solar::effects::EffectShader;
+use rust_software_renderer::solar::flight::{FlightInput, THRUST_EASE, space_step};
+use rust_software_renderer::solar::input::{Look, SolarAction};
+use rust_software_renderer::solar::plasma_loops::PlasmaLoops;
+use rust_software_renderer::solar::thrusters::{
+    FlameShader, IDLE_LENGTH, INSET, NOZZLES, POD_SHARE, THRUST_LENGTH, Thrusters, flame_length,
+    flame_matrix, flame_mesh,
+};
+use rust_software_renderer::solar::viewer::step;
+use rust_software_renderer::solar::{CameraMode, ShipState, SolarMeshes, SolarScene};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -135,4 +146,201 @@ fn each_flame_rides_on_its_nozzle_and_points_out_of_the_back() {
         flame_matrix(&moved, &NOZZLES[0], length),
     );
     assert!((b.m13 - a.m13 - 1.0).abs() < 1e-5 && (b.m12 - a.m12).abs() < 1e-6);
+}
+
+const W: u32 = 320;
+const H: u32 = 240;
+
+/// The spacecraft alone at the origin, nose along -Z, seen by the
+/// orthographic orbit camera from in front (`behind == false`, the Front
+/// preset eye) or from behind.
+fn ship_scene(behind: bool, thrust: f32) -> SolarScene {
+    let mut camera = OrbitCamera::new(Vector3::zero(), ViewPreset::Front);
+    if behind {
+        camera.azimuth += std::f32::consts::PI;
+    }
+    camera.elevation = 0.15;
+    let view = OrbitView::for_world(camera, 0.45, Viewport::new(W, H, 0.1)).unwrap();
+    let mut s = SolarScene::new(
+        SolarMeshes::load().unwrap(),
+        view,
+        Vector3::new(0.0, 1.0, 0.0),
+    );
+    s.camera_mode = CameraMode::Orbit;
+    s.bodies.clear();
+    s.plasma = PlasmaLoops::new(&[]);
+    s.ship = ShipState::new(Vector3::zero(), 0.08);
+    s.ship.thrust = thrust;
+    s.center = Vector3::new(0.0, 5.0, -5.0);
+    s
+}
+
+fn frame(s: &SolarScene) -> Framebuffer {
+    let mut fb = Framebuffer::new(W, H);
+    s.render_frame(
+        &mut fb,
+        TriangleMode::FilledScanline,
+        ShadedOptions::default(),
+    )
+    .unwrap();
+    fb
+}
+
+/// Pixels the flames change, and their colors.
+fn flame_pixels(s: &SolarScene) -> Vec<Vector3> {
+    let mut cold = s.clone();
+    cold.thrusters = None;
+    let (hot, cold) = (frame(s), frame(&cold));
+    (0..H as i32)
+        .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
+        .filter(|&(x, y)| hot.get_depth(x, y) != cold.get_depth(x, y))
+        .map(|(x, y)| hot.get_pixel(x, y).unwrap())
+        .collect()
+}
+
+fn flames(s: &SolarScene) -> usize {
+    s.effect_draws(W, H, 1)
+        .iter()
+        .filter(|d| matches!(d.shader, EffectShader::Flame(_)))
+        .count()
+}
+
+#[test]
+fn every_nozzle_keeps_an_idle_flame_and_cold_engines_draw_none() {
+    let s = ship_scene(true, 0.0);
+    assert_eq!(flames(&s), NOZZLES.len());
+    let mut cold = s.clone();
+    cold.thrusters = None;
+    assert_eq!(flames(&cold), 0);
+    let mut away = s.clone();
+    away.view.camera.target = Vector3::new(30.0, 0.0, 0.0);
+    assert_eq!(flames(&away), 0, "culled off screen");
+}
+
+#[test]
+fn thrust_stretches_the_flames_and_the_pods_burn_shorter() {
+    let mut s = ShipState::new(Vector3::zero(), 0.08);
+    let idle: Vec<f32> = (0..3).map(|i| flame_length(&s, i, 0.0)).collect();
+    s.thrust = 1.0;
+    let full: Vec<f32> = (0..3).map(|i| flame_length(&s, i, 0.0)).collect();
+    for i in 0..3 {
+        assert!(
+            full[i] > 3.0 * idle[i],
+            "nozzle {i}: {} vs {}",
+            full[i],
+            idle[i]
+        );
+    }
+    assert!(full[1] < full[0] && full[2] < full[0]);
+    for step in 0..400 {
+        let t = step as f32 * 0.013;
+        for i in 0..3 {
+            let share = if i == 0 { 1.0 } else { POD_SHARE };
+            let mean = (IDLE_LENGTH + THRUST_LENGTH) * share;
+            let l = flame_length(&s, i, t);
+            assert!(
+                (l / mean - 1.0).abs() <= 0.11 + 1e-5,
+                "flicker {l} around {mean}"
+            );
+            assert_eq!(l, flame_length(&s, i, t), "same time, same flame");
+        }
+    }
+    assert_ne!(
+        flame_length(&s, 1, 0.3),
+        flame_length(&s, 2, 0.3),
+        "pods out of step"
+    );
+}
+
+#[test]
+fn the_engines_spool_up_and_down_without_jumps() {
+    let mut s = ShipState::new(Vector3::zero(), 0.08);
+    let fwd = FlightInput::from_actions(&[SolarAction::Forward]);
+    space_step(&mut s, &fwd, 0.05);
+    assert!((s.thrust - 0.05 / THRUST_EASE).abs() < 1e-6);
+    for _ in 0..10 {
+        space_step(&mut s, &fwd, 0.05);
+    }
+    assert_eq!(s.thrust, 1.0);
+    space_step(&mut s, &FlightInput::default(), 0.05);
+    assert!((s.thrust - (1.0 - 0.05 / THRUST_EASE)).abs() < 1e-6);
+    let mut scene = ship_scene(true, 1.0);
+    step(
+        &mut scene,
+        &[SolarAction::ToggleCamera],
+        &[],
+        Look::default(),
+        0.0,
+    );
+    for _ in 0..6 {
+        step(
+            &mut scene,
+            &[SolarAction::Forward],
+            &[],
+            Look::default(),
+            0.05,
+        );
+    }
+    assert_eq!(scene.ship.thrust, 0.0, "a parked ship idles");
+}
+
+#[test]
+fn the_exhaust_glows_from_amber_to_red_and_never_blue() {
+    let s = ShipState::new(Vector3::zero(), 0.08);
+    let f = FlameShader::new(&s, 0, 1.5, 0.0);
+    let eye = Vector3::new(0.0, 0.0, 1.0);
+    let side_normal = Vector3::new(1.0, 0.0, 0.0);
+    for k in 0..=20 {
+        let z = k as f32 / 20.0;
+        let c = f.shade(
+            Vector3::new(0.5, 0.0, z),
+            side_normal,
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        assert!(c.x >= c.y && c.y >= c.z, "warm at {z}: {c:?}");
+    }
+    let near = f.shade(
+        Vector3::new(0.9, 0.0, 0.05),
+        side_normal,
+        Vector3::new(1.0, 0.0, 0.0),
+    );
+    let tip = f.shade(
+        Vector3::new(0.2, 0.0, 0.97),
+        side_normal,
+        Vector3::new(1.0, 0.0, 0.0),
+    );
+    assert!(near.y > 0.6 * near.x, "yellow at the nozzle: {near:?}");
+    assert!(tip.x > 2.5 * tip.y, "red at the tip: {tip:?}");
+    let facing = f.shade(
+        Vector3::new(0.5, 0.0, 0.5),
+        side_normal,
+        Vector3::new(1.0, 0.0, 0.0),
+    );
+    let grazing = f.shade(Vector3::new(0.5, 0.0, 0.5), side_normal, eye);
+    assert!(facing.x > grazing.x, "brightest facing the eye");
+}
+
+#[test]
+fn the_exhaust_shows_orange_behind_the_ship_and_the_hull_hides_it_from_the_front() {
+    let back = flame_pixels(&ship_scene(true, 1.0));
+    let front = flame_pixels(&ship_scene(false, 1.0));
+    let warm = |c: &&Vector3| c.x > 0.5 && c.x > c.z * 1.5 && c.y >= c.z;
+    assert!(
+        back.iter().filter(warm).count() > 150,
+        "{} warm pixels",
+        back.len()
+    );
+    assert!(
+        front.len() * 4 < back.len(),
+        "front {} vs back {}",
+        front.len(),
+        back.len()
+    );
+    let idle = flame_pixels(&ship_scene(true, 0.0));
+    assert!(
+        !idle.is_empty() && idle.len() < back.len(),
+        "idle {} full {}",
+        idle.len(),
+        back.len()
+    );
 }

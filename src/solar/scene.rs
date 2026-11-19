@@ -27,6 +27,7 @@ use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
+use crate::solar::thrusters::Thrusters;
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, SPHERE_RADIUS, ShipState, SimulationClock, SolarMeshes,
 };
@@ -106,6 +107,8 @@ pub struct SolarScene {
     pub crown: Option<RoyalCrown>,
     /// Ring of diamond cards around House of Cards (`None`: no ring).
     pub cards: Option<CardRing>,
+    /// Exhaust of the spacecraft's nozzles (`None`: cold engines).
+    pub thrusters: Option<Thrusters>,
     /// Shader quality policy (full by default).
     pub quality: Quality,
     /// Shaded-stage buffers reused by every draw of this scene.
@@ -134,6 +137,7 @@ impl SolarScene {
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
+            thrusters: Some(Thrusters::default()),
             scratch: RefCell::new(RenderScratch::new()),
             quality: Quality::Full,
             clock: SimulationClock::default(),

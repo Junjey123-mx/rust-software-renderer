@@ -41,6 +41,9 @@ pub struct ShipState {
     /// Light-speed boost level in `[0, 1]`, ramped by the flight controller
     /// while the space bar is held (it also drives the exhaust).
     pub boost: f32,
+    /// Engine level in `[0, 1]`: how hard `W`/`A`/`S`/`D` push, eased by
+    /// the flight controller (it stretches the exhaust).
+    pub thrust: f32,
 }
 
 impl ShipState {
@@ -54,6 +57,7 @@ impl ShipState {
             move_speed: 1.5,
             turn_speed: 1.0,
             boost: 0.0,
+            thrust: 0.0,
         }
     }
 

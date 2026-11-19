@@ -7,6 +7,7 @@
 //! ship's back).
 
 use crate::geometry::{Mesh, Vertex};
+use crate::shading::math::{hex, mix3, smoothstep};
 use crate::solar::ShipState;
 use crate::solar::shapes::{End, frame_matrix, loft};
 use raylib::math::{Matrix, Vector3};
@@ -119,4 +120,78 @@ pub fn flame_matrix(ship: &ShipState, nozzle: &Nozzle, length: f32) -> Matrix {
         -ship.forward * ((length + INSET) * s),
         base,
     )
+}
+
+/// Flame length, object units: the idle flame, and what full thrust adds.
+pub const IDLE_LENGTH: f32 = 0.45;
+pub const THRUST_LENGTH: f32 = 1.5;
+/// Wing pods burn shorter than the main engine.
+pub const POD_SHARE: f32 = 0.8;
+
+/// Flicker phase of nozzle `index`, so the engines never pulse in step.
+pub fn nozzle_phase(index: usize) -> f32 {
+    index as f32 * 2.1
+}
+
+/// Length of the flame at nozzle `index` for the ship's engine level at
+/// simulated `time`: idle plus thrust, flickering a few percent at its own
+/// phase (frozen with the clock, so a paused frame is stable).
+pub fn flame_length(ship: &ShipState, index: usize, time: f32) -> f32 {
+    let phase = nozzle_phase(index);
+    let flicker =
+        1.0 + 0.07 * (31.0 * time + phase).sin() + 0.04 * (57.0 * time + 2.0 * phase).sin();
+    let share = if index == 0 { 1.0 } else { POD_SHARE };
+    (IDLE_LENGTH + THRUST_LENGTH * ship.thrust) * share * flicker
+}
+
+/// Exhaust colors from the nozzle to the tip.
+pub const FLAME_CORE: Vector3 = hex(0xFFF1B8);
+pub const FLAME_AMBER: Vector3 = hex(0xFFB22E);
+pub const FLAME_ORANGE: Vector3 = hex(0xFF6414);
+pub const FLAME_TIP: Vector3 = hex(0xA61E0A);
+
+/// One flame ready to shade a frame: the flame-space normal transform
+/// (inverse-transpose columns of its model matrix, for the view-facing
+/// glow), the simulated time and the nozzle's phase.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlameShader {
+    pub normal_axes: [Vector3; 3],
+    pub time: f32,
+    pub phase: f32,
+}
+
+impl FlameShader {
+    /// The flame of nozzle `index`, `length` object units long.
+    pub fn new(ship: &ShipState, index: usize, length: f32, time: f32) -> Self {
+        let (nozzle, s) = (NOZZLES[index], ship.scale);
+        let side = nozzle.half * s;
+        Self {
+            normal_axes: [
+                ship.right() / side,
+                ship.up / side,
+                -ship.forward / ((length + INSET) * s),
+            ],
+            time,
+            phase: nozzle_phase(index),
+        }
+    }
+
+    /// Emissive (no light): white-hot at the nozzle through amber and
+    /// orange to a dark red tip, brightest where the flame faces the eye
+    /// and pulsing in bands that run down the plume.
+    pub fn shade(&self, p: Vector3, face_normal: Vector3, view_world: Vector3) -> Vector3 {
+        let [x, y, z] = self.normal_axes;
+        let n = (x * face_normal.x + y * face_normal.y + z * face_normal.z).normalized();
+        let facing = n.dot(view_world).abs();
+        let t = p.z.clamp(0.0, 1.0);
+        let color = if t < 0.3 {
+            mix3(FLAME_CORE, FLAME_AMBER, smoothstep(0.0, 0.3, t))
+        } else if t < 0.65 {
+            mix3(FLAME_AMBER, FLAME_ORANGE, smoothstep(0.3, 0.65, t))
+        } else {
+            mix3(FLAME_ORANGE, FLAME_TIP, smoothstep(0.65, 1.0, t))
+        };
+        let pulse = 1.0 + 0.15 * (18.0 * t - 22.0 * self.time + self.phase).sin();
+        color * ((0.55 + 0.65 * facing) * pulse)
+    }
 }

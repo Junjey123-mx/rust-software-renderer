@@ -10,7 +10,7 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
-use crate::solar::flight::{FlightInput, FlightMode, ramp_boost, space_step};
+use crate::solar::flight::{FlightInput, FlightMode, ease_thrust, ramp_boost, space_step};
 use crate::solar::input::{
     CAPTURE_KEY, Look, MouseCapture, MouseLook, RELEASE_KEY, SolarAction, poll_solar,
 };
@@ -164,6 +164,7 @@ pub fn fly(
         }
         CameraRig::Orbit => {
             ramp_boost(&mut scene.ship, false, dt);
+            ease_thrust(&mut scene.ship, 0.0, dt);
             // Same senses as the orbit and tilt keys of the earlier scenes.
             scene.view.camera.orbit(-look.yaw);
             scene.view.camera.tilt(look.pitch);

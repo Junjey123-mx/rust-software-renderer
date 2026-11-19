@@ -414,22 +414,24 @@ fn the_crown_rides_on_the_star_transform_with_an_optional_own_spin() {
 fn without_the_star_or_without_a_crown_nothing_is_attached() {
     let s = star_scene(0.05, 4.0);
     assert_eq!(s.crown_host(), Some(0));
-    assert_eq!(s.effect_draws(W, H, 1).len(), 2, "gold and jewels");
+    assert_eq!(crown_draws(&s), 2, "gold and jewels");
     let bare = without_crown(s.clone());
     assert_eq!(bare.crown_host(), None);
-    assert!(bare.effect_draws(W, H, 1).is_empty());
+    assert_eq!(crown_draws(&bare), 0);
     let mut other = s.clone();
     other.bodies[0] = BodyInstance::new(
         Body::HouseOfCards,
         Transform::new(Vector3::zero(), 1.3),
         0.05,
     );
-    let crowns = other
-        .effect_draws(W, H, 1)
+    assert_eq!(crown_draws(&other), 0, "the gas giant wears no crown");
+}
+
+fn crown_draws(s: &SolarScene) -> usize {
+    s.effect_draws(W, H, 1)
         .iter()
         .filter(|d| matches!(d.shader, EffectShader::Crown(_)))
-        .count();
-    assert_eq!(crowns, 0, "the gas giant wears no crown");
+        .count()
 }
 
 #[test]
