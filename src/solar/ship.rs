@@ -38,6 +38,9 @@ pub struct ShipState {
     pub move_speed: f32,
     /// Radians per second.
     pub turn_speed: f32,
+    /// Light-speed boost level in `[0, 1]`, ramped by the flight controller
+    /// while the space bar is held (it also drives the exhaust).
+    pub boost: f32,
 }
 
 impl ShipState {
@@ -50,6 +53,7 @@ impl ShipState {
             scale,
             move_speed: 1.5,
             turn_speed: 1.0,
+            boost: 0.0,
         }
     }
 

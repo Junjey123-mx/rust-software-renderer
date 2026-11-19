@@ -443,32 +443,87 @@ fn the_status_line_reports_mode_body_altitude_speed_rig_and_fps() {
 // Light speed
 // ---------------------------------------------------------------------------
 
-use rust_software_renderer::solar::flight::BOOST;
+use rust_software_renderer::solar::flight::{BOOST, BOOST_RISE};
 
 #[test]
-fn shift_boosts_space_flight_only_while_held() {
-    let fwd = FlightInput::from_actions(&[SolarAction::Forward]);
-    let fast = FlightInput::from_actions(&[SolarAction::Forward, SolarAction::Boost]);
+fn the_space_bar_ramps_light_speed_up_while_held_and_down_after() {
+    let fwd = input(&[SolarAction::Forward]);
+    let fast = input(&[SolarAction::Forward, SolarAction::Boost]);
     assert!(fast.boost && !fwd.boost);
-    let (mut a, mut b) = (ship(), ship());
-    space_step(&mut a, &fwd, 0.05);
-    space_step(&mut b, &fast, 0.05);
-    assert!((b.position.length() - a.position.length() * BOOST).abs() < 1e-5);
-    // Released: back to the normal step at once.
-    let before = b.position;
-    space_step(&mut b, &fwd, 0.05);
-    assert!(((b.position - before).length() - a.position.length()).abs() < 1e-6);
+    let (dt, normal) = (0.05, 1.5 * 0.05);
+    let mut s = ship();
+    let mut steps = Vec::new();
+    for _ in 0..12 {
+        let p = s.position;
+        space_step(&mut s, &fast, dt);
+        steps.push((s.position - p).length());
+    }
+    assert!(
+        steps[0] > normal && steps[0] < normal * BOOST * 0.5,
+        "no jump: {steps:?}"
+    );
+    assert!(
+        steps.windows(2).all(|w| w[1] >= w[0] - 1e-6),
+        "rising: {steps:?}"
+    );
+    assert!(
+        (steps[11] - normal * BOOST).abs() < 1e-5,
+        "full after BOOST_RISE"
+    );
+    assert_eq!(s.boost, 1.0);
+    // Released: fades back without a jump.
+    let p = s.position;
+    space_step(&mut s, &fwd, dt);
+    let first = (s.position - p).length();
+    assert!(
+        first < normal * BOOST && first > normal * BOOST * 0.7,
+        "{first}"
+    );
+    for _ in 0..20 {
+        space_step(&mut s, &fwd, dt);
+    }
+    assert_eq!(s.boost, 0.0);
+    let p = s.position;
+    space_step(&mut s, &fwd, dt);
+    assert!(((s.position - p).length() - normal).abs() < 1e-6);
     // Boost alone does not move, and the stalled-frame clamp still applies.
     let mut c = ship();
-    space_step(
-        &mut c,
-        &FlightInput::from_actions(&[SolarAction::Boost]),
-        0.05,
-    );
+    space_step(&mut c, &input(&[SolarAction::Boost]), dt);
     assert_eq!(c.position, Vector3::zero());
+    assert!(c.boost > 0.0, "the drive spools up in place");
     let mut d = ship();
     space_step(&mut d, &fast, 10.0);
-    assert!((d.position.length() - 1.5 * BOOST * 0.1).abs() < 1e-4);
+    let factor = 1.0 + (BOOST - 1.0) * (0.1 / BOOST_RISE);
+    assert!((d.position.length() - 1.5 * factor * 0.1).abs() < 1e-4);
+}
+
+#[test]
+fn the_boost_ramp_does_not_depend_on_the_frame_rate() {
+    let fast = input(&[SolarAction::Boost]);
+    let (mut a, mut b) = (ship(), ship());
+    for _ in 0..9 {
+        space_step(&mut a, &fast, 1.0 / 30.0);
+    }
+    for _ in 0..18 {
+        space_step(&mut b, &fast, 1.0 / 60.0);
+    }
+    assert!((a.boost - 0.75).abs() < 1e-4 && (a.boost - b.boost).abs() < 1e-5);
+    let rest = input(&[]);
+    for _ in 0..9 {
+        space_step(&mut a, &rest, 1.0 / 30.0);
+    }
+    for _ in 0..18 {
+        space_step(&mut b, &rest, 1.0 / 60.0);
+    }
+    assert!((a.boost - b.boost).abs() < 1e-5 && a.boost < 0.3);
+}
+
+#[test]
+fn space_is_light_speed_p_pauses_and_shift_is_free() {
+    assert!(HELD.contains(&(KeyboardKey::KEY_SPACE, SolarAction::Boost)));
+    assert!(PRESSED.contains(&(KeyboardKey::KEY_P, SolarAction::TogglePause)));
+    let bound: Vec<_> = HELD.iter().chain(PRESSED.iter()).map(|(k, _)| *k).collect();
+    assert!(!bound.contains(&KeyboardKey::KEY_LEFT_SHIFT));
 }
 
 #[test]
@@ -494,6 +549,14 @@ fn boost_never_changes_local_flight_speed_or_the_orbits() {
         0.05,
     );
     assert_eq!(a, b);
+    // A ship that arrives boosted fades back to the normal pace.
+    let mut c = a;
+    c.boost = 1.0;
+    let mut mc = local_at(planet);
+    for _ in 0..3 {
+        local_step(&mut c, &mut mc, planet, 1.0, &FlightInput::default(), 0.1);
+    }
+    assert!((c.boost - 0.5).abs() < 1e-6, "{}", c.boost);
 }
 
 // ---------------------------------------------------------------------------

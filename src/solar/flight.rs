@@ -23,7 +23,8 @@ pub struct FlightInput {
     pub look: Look,
     /// Local flight only: `E` = +1 (away from the planet), `Q` = -1.
     pub radial: f32,
-    /// Space flight only: `LEFT_SHIFT` held multiplies the speed by `BOOST`.
+    /// Space flight only: the space bar held ramps the speed up to `BOOST`
+    /// times.
     pub boost: bool,
 }
 
@@ -100,11 +101,27 @@ fn clamp_dt(dt: f32) -> f32 {
 
 /// Speed factor of light speed (space flight with the boost held).
 pub const BOOST: f32 = 8.0;
+/// Seconds for the boost to build from rest to full light speed, and to
+/// fade back once released: the speed never jumps.
+pub const BOOST_RISE: f32 = 0.4;
+pub const BOOST_FALL: f32 = 0.6;
+
+/// Moves the ship's boost level towards 1 while `held` and towards 0
+/// otherwise, at the rise and fall rates. Runs on the real delta, so it
+/// never touches the simulation clock and works while paused.
+pub fn ramp_boost(ship: &mut ShipState, held: bool, dt: f32) {
+    let dt = clamp_dt(dt);
+    ship.boost = if held {
+        (ship.boost + dt / BOOST_RISE).min(1.0)
+    } else {
+        (ship.boost - dt / BOOST_FALL).max(0.0)
+    };
+}
 
 /// Space flight: turn (yaw around the orbital plane's normal, pitch within
 /// the limits), then move along the nose and sideways by `travel *
-/// move_speed * dt`, times `BOOST` while boosting. No inertia and no
-/// collisions: a boosted ship can pass through a body.
+/// move_speed * dt`, times up to `BOOST` as the boost level ramps. No
+/// inertia and no collisions: a boosted ship can pass through a body.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
     let turn = ship.turn_speed * dt;
@@ -114,7 +131,8 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
         input.yaw * turn + input.look.yaw,
         input.pitch * turn + input.look.pitch,
     );
-    let boost = if input.boost { BOOST } else { 1.0 };
+    ramp_boost(ship, input.boost, dt);
+    let boost = 1.0 + (BOOST - 1.0) * ship.boost;
     ship.position += travel(input, ship.forward, ship.right()) * (ship.move_speed * boost * dt);
 }
 
@@ -252,6 +270,8 @@ pub const RADIAL_SPEED: f32 = 0.4;
 ///    ship basis by the same rotation so its tilt to the local up is kept;
 /// 4. change the distance with `E`/`Q`, never below `radius + CLEARANCE`.
 ///
+/// Light speed is a space-flight tool: here the boost fades out and the
+/// space bar is ignored, so the surface stays at a precise, constant pace.
 /// Does nothing in space flight. No gravity, no collisions.
 pub fn local_step(
     ship: &mut ShipState,
@@ -271,6 +291,7 @@ pub fn local_step(
     ship.position += planet - *previous_planet_position;
     *previous_planet_position = planet;
     let dt = clamp_dt(dt);
+    ramp_boost(ship, false, dt);
 
     let Some(frame) = local_frame(ship, planet, radius) else {
         return;

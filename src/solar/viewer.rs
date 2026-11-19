@@ -10,7 +10,7 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
-use crate::solar::flight::{FlightInput, FlightMode, space_step};
+use crate::solar::flight::{FlightInput, FlightMode, ramp_boost, space_step};
 use crate::solar::input::{
     CAPTURE_KEY, Look, MouseCapture, MouseLook, RELEASE_KEY, SolarAction, poll_solar,
 };
@@ -163,6 +163,7 @@ pub fn fly(
             }
         }
         CameraRig::Orbit => {
+            ramp_boost(&mut scene.ship, false, dt);
             // Same senses as the orbit and tilt keys of the earlier scenes.
             scene.view.camera.orbit(-look.yaw);
             scene.view.camera.tilt(look.pitch);
@@ -199,7 +200,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SHIFT light speed, L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, SPACE pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()

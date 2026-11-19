@@ -737,3 +737,36 @@ fn the_batch_shades_no_more_fragments_than_one_by_one_and_wireframe_still_draws(
     );
     assert!(wire.count_non_background() > 100);
 }
+
+#[test]
+fn light_speed_never_touches_the_clock_and_fades_under_the_orbit_rig() {
+    let mut a = flying_scene();
+    let mut b = a.clone();
+    for _ in 0..10 {
+        step(&mut a, &[SolarAction::Forward], &[], Look::default(), 0.05);
+        step(
+            &mut b,
+            &[SolarAction::Forward, SolarAction::Boost],
+            &[],
+            Look::default(),
+            0.05,
+        );
+    }
+    assert_eq!(a.clock.time, b.clock.time);
+    let places = |s: &SolarScene| s.bodies.iter().map(|b| b.transform).collect::<Vec<_>>();
+    assert_eq!(places(&a), places(&b));
+    assert_eq!(b.ship.boost, 1.0);
+    let start = flying_scene().ship.position;
+    assert!((b.ship.position - start).length() > 3.0 * (a.ship.position - start).length());
+    step(
+        &mut b,
+        &[SolarAction::ToggleCamera],
+        &[],
+        Look::default(),
+        0.0,
+    );
+    for _ in 0..13 {
+        step(&mut b, &[SolarAction::Boost], &[], Look::default(), 0.05);
+    }
+    assert_eq!(b.ship.boost, 0.0, "a parked ship's drive winds down");
+}
