@@ -1,6 +1,6 @@
 //! The ring of diamond playing cards around House of Cards.
 
-use raylib::math::Vector3;
+use raylib::math::{Matrix, Vector3};
 use rust_software_renderer::geometry::Mesh;
 use rust_software_renderer::pipeline::{
     NormalSource, OrbitCamera, OrbitView, ShadedOptions, Transform, Uniforms, ViewPreset,
@@ -9,7 +9,8 @@ use rust_software_renderer::pipeline::{
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
 use rust_software_renderer::solar::card_ring::{
-    BORDER, CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, CardShader, CardSide, card_mesh, card_pattern,
+    BORDER, CARD_HEIGHT, CARD_THICKNESS, CARD_WIDTH, CardRing, CardRingSpec, CardShader, CardSide,
+    card_mesh, card_pattern,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -197,4 +198,118 @@ fn culling_and_depth_show_only_the_side_that_faces_the_camera() {
     let (_, edge_on) = draw(facing + std::f32::consts::FRAC_PI_2);
     assert!(edge_on[CardSide::Edge as usize] > 0 && edge_on[CardSide::Face as usize] == 0);
     assert_eq!(edge_on[CardSide::Back as usize], 0);
+}
+
+fn apply(m: &Matrix, p: Vector3) -> Vector3 {
+    Vector3::new(
+        m.m0 * p.x + m.m4 * p.y + m.m8 * p.z + m.m12,
+        m.m1 * p.x + m.m5 * p.y + m.m9 * p.z + m.m13,
+        m.m2 * p.x + m.m6 * p.y + m.m10 * p.z + m.m14,
+    )
+}
+
+/// World corners of every card of `ring` around a planet at `center`.
+fn corners(ring: &CardRing, center: Vector3, radius: f32) -> Vec<Vec<Vector3>> {
+    let mesh = card_mesh();
+    (0..ring.slots.len())
+        .map(|i| {
+            let m = ring.frame(i, center, radius, 0.0, 0.0).matrix();
+            mesh.vertices.iter().map(|&p| apply(&m, p)).collect()
+        })
+        .collect()
+}
+
+#[test]
+fn the_ring_deals_eighteen_to_twenty_four_cards_that_share_one_mesh() {
+    let ring = CardRing::diamonds();
+    assert!((18..=24).contains(&ring.slots.len()));
+    assert_eq!(ring.mesh.len(), card_mesh().indices.len());
+    assert!(std::sync::Arc::ptr_eq(&ring.mesh, &ring.clone().mesh));
+}
+
+#[test]
+fn the_seed_fixes_every_card_and_another_seed_deals_another_ring() {
+    let a = CardRing::diamonds();
+    assert_eq!(a.slots, CardRing::diamonds().slots);
+    let b = CardRing::new(CardRingSpec {
+        seed: 8,
+        ..CardRingSpec::default()
+    });
+    assert_ne!(a.slots, b.slots);
+    let distinct = |f: fn(&rust_software_renderer::solar::card_ring::CardSlot) -> f32| {
+        let mut v: Vec<f32> = a.slots.iter().map(f).collect();
+        v.sort_by(f32::total_cmp);
+        v.windows(2).all(|w| w[1] - w[0] > 1e-6)
+    };
+    assert!(distinct(|s| s.radius) && distinct(|s| s.tilt) && distinct(|s| s.flutter_phase));
+}
+
+#[test]
+fn each_card_frame_is_a_rotation_with_the_long_side_along_the_radius() {
+    let ring = CardRing::diamonds();
+    let center = Vector3::new(4.0, 0.0, -3.0);
+    for i in 0..ring.slots.len() {
+        let f = ring.frame(i, center, 0.78, 0.0, 0.0);
+        for (a, b) in [(f.x, f.y), (f.y, f.z), (f.z, f.x)] {
+            assert!(a.dot(b).abs() < 1e-5);
+        }
+        assert!((f.x.cross(f.y) - f.z).length() < 1e-5, "right-handed");
+        let out = (f.origin - center).normalized();
+        assert!(out.dot(f.y) > 0.99, "card {i} long side off the radius");
+        assert!(
+            f.z.dot(ring.normal()) > 0.4,
+            "card {i} face off the ring plane"
+        );
+    }
+}
+
+#[test]
+fn every_card_stays_outside_the_planet_and_inside_the_reserved_ring() {
+    let ring = CardRing::diamonds();
+    let (center, radius) = (Vector3::new(6.2, 0.0, 0.0), 0.78);
+    assert!(ring.extent() <= 2.2, "extent {}", ring.extent());
+    for (i, card) in corners(&ring, center, radius).iter().enumerate() {
+        for p in card {
+            let d = (*p - center).length() / radius;
+            assert!(d > 1.3, "card {i} touches the planet ({d})");
+            assert!(
+                d <= ring.extent() + 1e-4,
+                "card {i} beyond the extent ({d})"
+            );
+        }
+    }
+}
+
+#[test]
+fn neighbouring_cards_keep_a_gap() {
+    let ring = CardRing::diamonds();
+    let radius = 0.78;
+    let frames: Vec<_> = (0..ring.slots.len())
+        .map(|i| ring.frame(i, Vector3::zero(), radius, 0.0, 0.0))
+        .collect();
+    let reach = CARD_WIDTH.hypot(CARD_HEIGHT) / 2.0 * ring.spec.card_size * radius;
+    for (i, a) in frames.iter().enumerate() {
+        for b in &frames[i + 1..] {
+            let gap = (a.origin - b.origin).length();
+            assert!(gap > 2.0 * reach, "cards {gap} apart, reach {reach}");
+        }
+    }
+}
+
+#[test]
+fn the_ring_is_inclined_and_follows_the_planet_and_its_size() {
+    let ring = CardRing::diamonds();
+    let tilt = ring.normal().dot(Vector3::new(0.0, 1.0, 0.0)).acos();
+    assert!((tilt - ring.spec.inclination).abs() < 1e-5);
+    assert!(tilt > 0.2, "the ring lies in the orbital plane");
+    let (c, r) = (Vector3::new(-2.0, 1.0, 5.0), 1.7);
+    for i in 0..ring.slots.len() {
+        let unit = ring.frame(i, Vector3::zero(), 1.0, 0.3, 0.1);
+        let moved = ring.frame(i, c, r, 0.3, 0.1);
+        assert!((moved.origin - (c + unit.origin * r)).length() < 1e-4);
+        assert!((moved.z - unit.z).length() < 1e-6);
+        assert!((moved.size - unit.size * r).abs() < 1e-6);
+        let off_plane = unit.origin.dot(ring.normal()).abs();
+        assert!(off_plane <= ring.spec.thickness + 1e-5);
+    }
 }

@@ -3,7 +3,7 @@
 //! polygon rings, built once as indexed meshes and expanded for drawing.
 
 use crate::geometry::Mesh;
-use raylib::math::Vector3;
+use raylib::math::{Matrix, Vector3};
 
 /// How a loft ends before its first or after its last ring.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,4 +87,17 @@ pub fn octahedron(center: Vector3, a: Vector3, b: Vector3, c: Vector3) -> Mesh {
         End::Apex(center + c),
         center,
     )
+}
+
+/// Column-major model matrix whose columns are the (already scaled) object
+/// axes `x`, `y`, `z` and whose translation is `origin`: the layout
+/// `vertex_shader` multiplies, for parts placed by a basis rather than by
+/// Euler angles.
+pub fn frame_matrix(x: Vector3, y: Vector3, z: Vector3, origin: Vector3) -> Matrix {
+    let mut m = Matrix::identity();
+    (m.m0, m.m1, m.m2) = (x.x, x.y, x.z);
+    (m.m4, m.m5, m.m6) = (y.x, y.y, y.z);
+    (m.m8, m.m9, m.m10) = (z.x, z.y, z.z);
+    (m.m12, m.m13, m.m14) = (origin.x, origin.y, origin.z);
+    m
 }

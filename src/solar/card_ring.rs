@@ -6,10 +6,14 @@
 //! Card space: the card's center at the origin, its height along `+Y`, its
 //! width along `X` and its face looking along `+Z` (the back along `-Z`).
 
-use crate::geometry::Mesh;
+use crate::geometry::{Mesh, Vertex};
 use crate::shading::math::{hex, mix3, smoothstep};
-use crate::solar::shapes::{End, loft};
-use raylib::math::Vector3;
+use crate::shading::sphere::rotate_axis;
+use crate::solar::shapes::{End, frame_matrix, loft};
+use crate::solar::skybox::random01;
+use raylib::math::{Matrix, Vector3};
+use std::f32::consts::TAU;
+use std::sync::Arc;
 
 /// Card size in card units: height 1, the 2.5 x 3.5 proportion of a
 /// playing card, and a thin slab.
@@ -143,5 +147,182 @@ impl CardShader {
         let n = face_normal.normalized();
         let (albedo, glow) = card_pattern(CardSide::of(n), p.x, p.y);
         albedo * (0.3 + 0.5 * n.dot(self.light).max(0.0) + glow)
+    }
+}
+
+/// Layout of the ring, in radii of the planet it circles, so the ring
+/// grows with the planet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CardRingSpec {
+    pub cards: usize,
+    /// Distance from the planet's center to the cards' centers.
+    pub radius: f32,
+    /// Largest radial offset of a card from `radius`.
+    pub spread: f32,
+    /// Largest offset of a card off the ring plane.
+    pub thickness: f32,
+    /// Card height (its long side lies along the radius).
+    pub card_size: f32,
+    /// Tilt of the ring plane from the orbital plane, radians.
+    pub inclination: f32,
+    /// Azimuth of the axis the ring tilts around, radians.
+    pub node: f32,
+    /// Mean tilt of the cards' faces from the ring plane towards the
+    /// direction of travel, radians, and its largest variation.
+    pub tilt: f32,
+    pub tilt_spread: f32,
+    pub seed: u32,
+}
+
+impl Default for CardRingSpec {
+    /// Twenty cards about 1.85 radii out, so the outer edge stays within
+    /// the 2.2 radii the system reserves around House of Cards.
+    fn default() -> Self {
+        Self {
+            cards: 20,
+            radius: 1.85,
+            spread: 0.06,
+            thickness: 0.04,
+            card_size: 0.3,
+            inclination: 24f32.to_radians(),
+            node: 0.6,
+            tilt: 40f32.to_radians(),
+            tilt_spread: 12f32.to_radians(),
+            seed: 7,
+        }
+    }
+}
+
+/// Fixed character of one card, drawn once from the ring's seed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CardSlot {
+    /// Angle around the ring at time 0, radians.
+    pub phase: f32,
+    /// Distance from the planet's center, planet radii.
+    pub radius: f32,
+    /// Offset along the ring's normal, planet radii.
+    pub height: f32,
+    /// Tilt of the face, radians.
+    pub tilt: f32,
+    /// Its own flutter: angular speed (radians per second) and phase.
+    pub flutter_speed: f32,
+    pub flutter_phase: f32,
+}
+
+/// Placement of one card in the world: unit axes of card space and the
+/// card height in world units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CardFrame {
+    pub origin: Vector3,
+    pub x: Vector3,
+    pub y: Vector3,
+    pub z: Vector3,
+    pub size: f32,
+}
+
+impl CardFrame {
+    /// Model matrix of the shared card mesh.
+    pub fn matrix(&self) -> Matrix {
+        frame_matrix(
+            self.x * self.size,
+            self.y * self.size,
+            self.z * self.size,
+            self.origin,
+        )
+    }
+
+    /// A world direction in card space (rotation only).
+    pub fn to_card_dir(&self, d: Vector3) -> Vector3 {
+        Vector3::new(d.dot(self.x), d.dot(self.y), d.dot(self.z))
+    }
+}
+
+/// The cards around one planet: their seeded slots and the one card mesh
+/// they all share.
+#[derive(Debug, Clone)]
+pub struct CardRing {
+    pub spec: CardRingSpec,
+    pub slots: Vec<CardSlot>,
+    pub mesh: Arc<Vec<Vertex>>,
+}
+
+/// Corner color of the card mesh, seen only in wireframe.
+pub const CARD_WIRE: Vector3 = PINK;
+
+impl CardRing {
+    /// Evenly spaced cards, each nudged by the seed: its angle by at most
+    /// 15 % of a slot, its radius, height and tilt within the spec.
+    pub fn new(spec: CardRingSpec) -> Self {
+        let mut state = spec.seed;
+        let mut signed = || 2.0 * random01(&mut state) - 1.0;
+        let step = TAU / spec.cards as f32;
+        let slots = (0..spec.cards)
+            .map(|i| CardSlot {
+                phase: step * (i as f32 + 0.15 * signed()),
+                radius: spec.radius + spec.spread * signed(),
+                height: spec.thickness * signed(),
+                tilt: spec.tilt + spec.tilt_spread * signed(),
+                flutter_speed: 0.7 + 0.25 * signed(),
+                flutter_phase: TAU * (0.5 + 0.5 * signed()),
+            })
+            .collect();
+        Self {
+            spec,
+            slots,
+            mesh: Arc::new(card_mesh().expand_vertices(CARD_WIRE)),
+        }
+    }
+
+    /// The ring of House of Cards.
+    pub fn diamonds() -> Self {
+        Self::new(CardRingSpec::default())
+    }
+
+    /// Unit normal of the ring plane: `+Y` tilted by the inclination
+    /// around the node axis.
+    pub fn normal(&self) -> Vector3 {
+        let (s, c) = self.spec.node.sin_cos();
+        rotate_axis(
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(s, 0.0, c),
+            self.spec.inclination,
+        )
+    }
+
+    /// Farthest reach of a card from the planet's center, planet radii.
+    pub fn extent(&self) -> f32 {
+        let half = (CARD_WIDTH.hypot(CARD_HEIGHT) / 2.0) * self.spec.card_size;
+        self.spec.radius + self.spec.spread + self.spec.thickness + half
+    }
+
+    /// Card `index` around a planet at `center` of `radius`, at `angle`
+    /// radians along the ring from its slot and with `flutter` radians
+    /// added to its tilt: the long side along the radius and the face
+    /// turned from the ring's normal towards the direction of travel.
+    pub fn frame(
+        &self,
+        index: usize,
+        center: Vector3,
+        radius: f32,
+        angle: f32,
+        flutter: f32,
+    ) -> CardFrame {
+        let slot = &self.slots[index];
+        let normal = self.normal();
+        let (s, c) = self.spec.node.sin_cos();
+        let e1 = Vector3::new(s, 0.0, c);
+        let e2 = normal.cross(e1);
+        let (sa, ca) = (slot.phase + angle).sin_cos();
+        let radial = e1 * ca + e2 * sa;
+        let travel = normal.cross(radial);
+        let (st, ct) = (slot.tilt + flutter).sin_cos();
+        let face = normal * ct + travel * st;
+        CardFrame {
+            origin: center + (radial * slot.radius + normal * slot.height) * radius,
+            x: radial.cross(face),
+            y: radial,
+            z: face,
+            size: self.spec.card_size * radius,
+        }
     }
 }
