@@ -2,6 +2,7 @@
 //! bodies and the spacecraft on the shared CPU pipeline.
 
 pub mod camera;
+pub mod card_ring;
 pub mod clock;
 pub mod effects;
 pub mod flight;
