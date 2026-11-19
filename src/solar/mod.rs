@@ -3,6 +3,7 @@
 
 pub mod camera;
 pub mod clock;
+pub mod effects;
 pub mod flight;
 pub mod input;
 pub mod instance;

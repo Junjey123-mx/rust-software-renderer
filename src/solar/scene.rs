@@ -15,6 +15,7 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
+use crate::solar::effects::EffectShader;
 use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
 use crate::solar::instance::{
     Quality, adapted_material, prepare_instance, projected_radius_px, render_instance_scratch,
@@ -22,13 +23,14 @@ use crate::solar::instance::{
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
+use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, SPHERE_RADIUS, ShipState, SimulationClock, SolarMeshes,
 };
 use raylib::math::Vector3;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 
 /// Which projection the solar scene renders through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -99,6 +101,8 @@ pub struct SolarScene {
     /// Magnetic arcs that rise out of The King's Crown, drawn with its
     /// transform (no arcs: nothing drawn).
     pub plasma: PlasmaLoops,
+    /// Royal crown worn by The King's Crown (`None`: no crown).
+    pub crown: Option<RoyalCrown>,
     /// Shader quality policy (full by default).
     pub quality: Quality,
     /// Shaded-stage buffers reused by every draw of this scene.
@@ -125,6 +129,7 @@ impl SolarScene {
             stars: StarField::generate_with(DEFAULT_SEED, DEFAULT_STARS, StarDensity::default()),
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
             plasma: PlasmaLoops::crown(),
+            crown: Some(RoyalCrown::royal()),
             scratch: RefCell::new(RenderScratch::new()),
             quality: Quality::Full,
             clock: SimulationClock::default(),
@@ -134,11 +139,11 @@ impl SolarScene {
     }
 
     /// The default system: The King's Crown at the center (scale 1.3 of the
-    /// course sphere, radius 1.13, its loops drawn as external arcs),
-    /// Crimson Entrance at scale 0.6 on a 3.0 orbit and House of Cards at
-    /// scale 0.9 on a 6.2 orbit, placed for time 0. The gap between the two orbits leaves room for a future ring of
-    /// up to 2.2 radii around the gas giant, about one unit clear of
-    /// Crimson Entrance.
+    /// course sphere, radius 1.13, wearing its royal crown, its loops drawn
+    /// as external arcs), Crimson Entrance at scale 0.6 on a 3.0 orbit and
+    /// House of Cards at scale 0.9 on a 6.2 orbit, placed for time 0. The
+    /// gap between the two orbits leaves room for a ring of up to 2.2 radii
+    /// around the gas giant, about one unit clear of Crimson Entrance.
     pub fn default_system(
         meshes: SolarMeshes,
         view: OrbitView,
@@ -397,17 +402,18 @@ impl SolarScene {
     }
 
     /// One frame: clear color and depth once, the star field (color only),
-    /// then every body, the star's plasma loops and the spacecraft, all
-    /// through the same camera and depth buffer. Returns the fragments
-    /// shaded.
+    /// then every body, the star's plasma loops, the attached effects and
+    /// the spacecraft, all through the same camera and depth buffer.
+    /// Returns the fragments shaded.
     ///
     /// Filled modes run as one frame batch: every visible instance is
     /// rasterized first (depth written at once), all samples are shaded by a
     /// single thread pool and the colors are resolved by depth. The image is
     /// identical to drawing the instances one by one
-    /// (`render_objects_without_clear`, `render_plasma_without_clear` and
-    /// `render_ship_without_clear`), but idle cores at the end of each
-    /// instance are avoided. Wireframe draws the instances one by one.
+    /// (`render_objects_without_clear`, `render_plasma_without_clear`,
+    /// `render_effects_without_clear` and `render_ship_without_clear`), but
+    /// idle cores at the end of each instance are avoided. Wireframe draws
+    /// the instances one by one.
     pub fn render_frame(
         &self,
         framebuffer: &mut Framebuffer,
@@ -421,10 +427,12 @@ impl SolarScene {
         if mode == TriangleMode::Wireframe {
             let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
             let plasma = self.render_plasma_without_clear(framebuffer, mode, options)?;
+            let effects = self.render_effects_without_clear(framebuffer, mode, options)?;
             let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
             return Ok(bodies
                 .iter()
                 .chain(&plasma)
+                .chain(&effects)
                 .map(|s| s.fragments_shaded)
                 .sum::<usize>()
                 + ship.fragments_shaded);
@@ -433,7 +441,9 @@ impl SolarScene {
         let shared = self.frame_context(mode, options);
         let mut scratch = self.scratch.borrow_mut();
         scratch.begin_batch();
-        let mut jobs: Vec<Job> = Vec::with_capacity(self.bodies.len() + self.plasma.arcs.len() + 1);
+        let effects = self.effect_draws(w, h, options.threads);
+        let mut jobs: Vec<Job> =
+            Vec::with_capacity(self.bodies.len() + self.plasma.arcs.len() + effects.len() + 1);
         for (i, body) in self.bodies.iter().enumerate() {
             if !self.body_in_view(i, w, h) {
                 continue;
@@ -483,6 +493,19 @@ impl SolarScene {
                 )?;
             }
         }
+        for draw in &effects {
+            jobs.push(Job::Effect(draw.shader));
+            let tag = (jobs.len() - 1) as u32;
+            scratch.rasterize(
+                framebuffer,
+                &draw.model,
+                draw.mesh,
+                &shared.projection,
+                mode,
+                draw.options,
+                tag,
+            )?;
+        }
         if self.sphere_in_view(self.ship.position, self.ship.radius(), w, h) {
             jobs.push(Job::Ship(ship_light(&self.ship, self.ship_light())));
             let model = Uniforms {
@@ -504,6 +527,7 @@ impl SolarScene {
             Job::Plasma(arc, transform) => {
                 arc.shade(s.object_position, transform.to_object_dir(v.view_direction))
             }
+            Job::Effect(effect) => effect.shade(s, v),
             Job::Ship(light) => ship_color(light, s),
         });
         scratch.resolve(framebuffer);
@@ -580,6 +604,11 @@ impl SolarScene {
         self.sphere_in_view(b.transform.position, self.radius_of(index), width, height)
     }
 
+    /// The shaded-stage buffers of this scene, for draws in other modules.
+    pub(crate) fn scratch_mut(&self) -> RefMut<'_, RenderScratch> {
+        self.scratch.borrow_mut()
+    }
+
     /// Fragments the reused shaded-stage buffers can hold.
     pub fn scratch_capacity(&self) -> usize {
         self.scratch.borrow().capacity()
@@ -624,9 +653,12 @@ impl SolarScene {
 /// One shading job of a frame batch: what a tagged sample is shaded with.
 enum Job {
     /// Boxed: a prepared shader is large and a frame has only a few jobs
-    /// (at most the bodies, the star's arcs and the spacecraft).
+    /// (at most the bodies, the star's arcs, the effect draws and the
+    /// spacecraft).
     Body(Box<PreparedShader>, Transform),
     /// One plasma arc and the transform of the star it rises from.
     Plasma(ArcShader, Transform),
+    /// One draw of an attached effect (`effects`).
+    Effect(EffectShader),
     Ship(DirectionalLight),
 }

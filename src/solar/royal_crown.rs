@@ -254,7 +254,7 @@ impl CrownSpec {
         }
         Self {
             band: CrownBand {
-                latitude: 50f32.to_radians(),
+                latitude: 54f32.to_radians(),
                 height: 0.2,
                 thickness: 0.04,
                 lift: 0.08,
@@ -306,6 +306,9 @@ pub struct RoyalCrown {
     pub jewels: Arc<Vec<Vertex>>,
     /// Farthest corner from the star's center, in body radii.
     pub extent: f32,
+    /// Own turn of the crown around the star's axis, radians per simulated
+    /// second, on top of the star's spin (0: it turns with the star).
+    pub spin: f32,
 }
 
 impl RoyalCrown {
@@ -322,6 +325,7 @@ impl RoyalCrown {
             jewels: Arc::new(scaled(&jewels, SPHERE_RADIUS).expand_vertices(JEWEL_WIRE)),
             spec,
             extent,
+            spin: 0.0,
         }
     }
 

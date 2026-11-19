@@ -272,3 +272,190 @@ fn the_built_crown_is_scaled_to_the_course_sphere_and_stays_light() {
     let n = crown.triangle_count();
     assert!(n > 300 && n < 800, "{n} triangles");
 }
+
+// ---------------------------------------------------------------------------
+// The crown on the star in the solar scene
+// ---------------------------------------------------------------------------
+
+use rust_software_renderer::celestial::Body;
+use rust_software_renderer::pipeline::{
+    OrbitCamera, OrbitView, ShadedOptions, Transform, ViewPreset, Viewport,
+};
+use rust_software_renderer::rasterization::TriangleMode;
+use rust_software_renderer::rendering::Framebuffer;
+use rust_software_renderer::solar::plasma_loops::{CROWN_ARCS, PlasmaLoops};
+use rust_software_renderer::solar::{BodyInstance, CameraMode, SolarMeshes, SolarScene};
+
+const W: u32 = 320;
+const H: u32 = 240;
+
+/// The crown's star alone at the origin under the orthographic front
+/// camera, framed so the crown fits above it.
+fn star_scene(spin: f32, time: f32) -> SolarScene {
+    let camera = OrbitCamera::new(Vector3::zero(), ViewPreset::Front);
+    let view = OrbitView::for_world(camera, 2.4, Viewport::new(W, H, 0.1)).unwrap();
+    let mut s = SolarScene::new(
+        SolarMeshes::load().unwrap(),
+        view,
+        Vector3::new(0.0, 0.0, -1.0),
+    );
+    s.camera_mode = CameraMode::Orbit;
+    s.bodies = vec![BodyInstance::new(
+        Body::KingsCrown,
+        Transform::new(Vector3::zero(), 1.3),
+        spin,
+    )];
+    s.plasma = PlasmaLoops::new(&[]);
+    s.clock.time = time;
+    s.update();
+    s
+}
+
+fn frame(s: &SolarScene) -> Framebuffer {
+    let mut fb = Framebuffer::new(W, H);
+    s.render_frame(
+        &mut fb,
+        TriangleMode::FilledScanline,
+        ShadedOptions::default(),
+    )
+    .unwrap();
+    fb
+}
+
+fn without_crown(mut s: SolarScene) -> SolarScene {
+    s.crown = None;
+    s
+}
+
+/// Pixels whose depth the crown changed.
+fn crown_pixels(s: &SolarScene) -> Vec<(i32, i32)> {
+    let (with, without) = (frame(s), frame(&without_crown(s.clone())));
+    let mut covered = Vec::new();
+    for y in 0..H as i32 {
+        for x in 0..W as i32 {
+            if with.get_depth(x, y) != without.get_depth(x, y) {
+                covered.push((x, y));
+            }
+        }
+    }
+    covered
+}
+
+#[test]
+fn the_crown_rises_above_the_star_and_also_covers_its_upper_disk() {
+    let s = star_scene(0.05, 4.0);
+    let covered = crown_pixels(&s);
+    let radius_px = s.radius_of(0) * s.view.scale();
+    let (cx, cy) = (W as f32 / 2.0, H as f32 / 2.0);
+    let above = covered
+        .iter()
+        .filter(|&&(_, y)| (y as f32 + 0.5) < cy - radius_px)
+        .count();
+    let on_disk = covered
+        .iter()
+        .filter(|&&(x, y)| {
+            let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+            (dx * dx + dy * dy).sqrt() < radius_px * 0.95
+        })
+        .count();
+    assert!(above > 150, "{above} pixels above the star");
+    assert!(on_disk > 150, "{on_disk} pixels in front of the star");
+    assert!(
+        covered.iter().all(|&(_, y)| (y as f32) < cy),
+        "the crown sits on the northern half"
+    );
+}
+
+#[test]
+fn the_star_hides_the_back_of_the_crown() {
+    let s = star_scene(0.05, 4.0);
+    let options = ShadedOptions::default();
+    let shaded = |fb: &mut Framebuffer| -> usize {
+        s.render_effects_without_clear(fb, TriangleMode::FilledScanline, options)
+            .unwrap()
+            .iter()
+            .map(|d| d.fragments_shaded)
+            .sum()
+    };
+    let mut alone = Framebuffer::new(W, H);
+    alone.clear();
+    let free = shaded(&mut alone);
+    let mut behind = Framebuffer::new(W, H);
+    behind.clear();
+    s.render_objects_without_clear(&mut behind, TriangleMode::FilledScanline, options)
+        .unwrap();
+    let occluded = shaded(&mut behind);
+    assert!(occluded > 0 && occluded < free, "{occluded} of {free}");
+}
+
+#[test]
+fn the_crown_rides_on_the_star_transform_with_an_optional_own_spin() {
+    let mut s = star_scene(0.05, 7.0);
+    s.bodies[0].transform.position = Vector3::new(0.3, -0.2, 0.1);
+    s.bodies[0].transform.scale = 0.9;
+    let star = s.bodies[0].transform;
+    assert_eq!(s.crown_transform(0), star);
+    s.crown.as_mut().unwrap().spin = 0.1;
+    let own = s.crown_transform(0);
+    assert!((own.yaw - (star.yaw + 0.1 * 7.0)).abs() < 1e-6);
+    assert_eq!(
+        (own.position, own.scale, own.pitch),
+        (star.position, star.scale, star.pitch)
+    );
+    // On screen: the covered pixels move with a turning star and stay put
+    // on a still one.
+    let still = |t| crown_pixels(&star_scene(0.0, t));
+    assert_eq!(still(2.0), still(9.0));
+    assert_ne!(crown_pixels(&star_scene(0.05, 9.0)), still(9.0));
+}
+
+#[test]
+fn without_the_star_or_without_a_crown_nothing_is_attached() {
+    let s = star_scene(0.05, 4.0);
+    assert_eq!(s.crown_host(), Some(0));
+    assert_eq!(s.effect_draws(W, H, 1).len(), 2, "gold and jewels");
+    let bare = without_crown(s.clone());
+    assert_eq!(bare.crown_host(), None);
+    assert!(bare.effect_draws(W, H, 1).is_empty());
+    let mut other = s.clone();
+    other.bodies[0] = BodyInstance::new(
+        Body::HouseOfCards,
+        Transform::new(Vector3::zero(), 1.3),
+        0.05,
+    );
+    assert!(other.effect_draws(W, H, 1).is_empty());
+}
+
+#[test]
+fn the_crown_keeps_clear_of_the_plasma_loops_and_both_are_drawn() {
+    let crown = RoyalCrown::royal();
+    let corners: Vec<Vector3> = crown
+        .gold
+        .iter()
+        .chain(crown.jewels.iter())
+        .map(|v| v.position)
+        .collect();
+    for (i, arc) in CROWN_ARCS.iter().enumerate() {
+        for k in 0..=60 {
+            let t = k as f32 / 60.0;
+            let axis = arc.point(t, SPHERE_RADIUS);
+            let tube = arc.width_at(t) * SPHERE_RADIUS;
+            let nearest = corners
+                .iter()
+                .map(|&c| (c - axis).length())
+                .fold(f32::INFINITY, f32::min);
+            assert!(nearest > tube + 0.05, "arc {i} at t {t}: {nearest}");
+        }
+    }
+    // With both attached, the loops still change the frame.
+    let mut s = star_scene(0.05, 6.0);
+    s.plasma = PlasmaLoops::crown();
+    let mut bare = s.clone();
+    bare.plasma = PlasmaLoops::new(&[]);
+    let (with, without) = (frame(&s), frame(&bare));
+    let changed = (0..H as i32)
+        .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
+        .filter(|&(x, y)| with.get_depth(x, y) != without.get_depth(x, y))
+        .count();
+    assert!(changed > 200, "{changed}");
+}
