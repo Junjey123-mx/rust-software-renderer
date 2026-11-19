@@ -129,6 +129,13 @@ impl ShipState {
         m
     }
 
+    /// An object-space point of the mesh in the world (what `model_matrix`
+    /// does to it).
+    pub fn to_world(&self, p: Vector3) -> Vector3 {
+        let d = p - MESH_CENTER;
+        self.position + (self.right() * d.x + self.up * d.y - self.forward * d.z) * self.scale
+    }
+
     /// Rotates a world direction into the spacecraft's object space.
     pub fn to_object_dir(&self, d: Vector3) -> Vector3 {
         Vector3::new(d.dot(self.right()), d.dot(self.up), d.dot(-self.forward))
