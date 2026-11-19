@@ -17,8 +17,9 @@ use std::io::Write;
 /// Scripted timelines of the solar scene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SolarTimeline {
-    /// Approach, local flight over Crimson Entrance, over House of Cards,
-    /// then the whole system from the orbit rig (22 s).
+    /// Approach with a burst of light speed (the blue afterburner), local
+    /// flight over Crimson Entrance, over House of Cards and its ring of
+    /// cards, then the whole system from the orbit rig (22 s).
     #[default]
     Flight,
 }
@@ -59,7 +60,11 @@ pub fn flight_actions(previous: f32, t: f32) -> Vec<SolarAction> {
         .map(|(_, a)| *a)
         .collect();
     let held: &[SolarAction] = match t {
-        t if t < 3.0 => &[SolarAction::Forward],
+        t if t < 1.0 => &[SolarAction::Forward],
+        // A burst of light speed, then the ship coasts to a stop short of
+        // the star while the exhaust fades back to its idle flame.
+        t if t < 1.45 => &[SolarAction::Forward, SolarAction::Boost],
+        t if t < 3.0 => &[],
         t if t < 5.0 => &[SolarAction::Forward, SolarAction::Descend],
         t if t < 11.0 => &[SolarAction::Forward],
         t if t < 13.0 => &[SolarAction::Forward, SolarAction::Descend],
