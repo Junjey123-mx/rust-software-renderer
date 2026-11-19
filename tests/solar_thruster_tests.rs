@@ -9,12 +9,14 @@ use rust_software_renderer::pipeline::{
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
 use rust_software_renderer::solar::effects::EffectShader;
-use rust_software_renderer::solar::flight::{FlightInput, THRUST_EASE, space_step};
+use rust_software_renderer::solar::flight::{
+    FlightInput, FlightMode, THRUST_EASE, local_step, space_step,
+};
 use rust_software_renderer::solar::input::{Look, SolarAction};
 use rust_software_renderer::solar::plasma_loops::PlasmaLoops;
 use rust_software_renderer::solar::thrusters::{
-    FlameShader, IDLE_LENGTH, INSET, NOZZLES, POD_SHARE, THRUST_LENGTH, Thrusters, flame_length,
-    flame_matrix, flame_mesh,
+    BOOST_STRETCH, FlameShader, IDLE_LENGTH, INSET, NOZZLES, POD_SHARE, THRUST_LENGTH, Thrusters,
+    flame_length, flame_matrix, flame_mesh,
 };
 use rust_software_renderer::solar::viewer::step;
 use rust_software_renderer::solar::{CameraMode, ShipState, SolarMeshes, SolarScene};
@@ -343,4 +345,92 @@ fn the_exhaust_shows_orange_behind_the_ship_and_the_hull_hides_it_from_the_front
         idle.len(),
         back.len()
     );
+}
+
+fn luminance(c: Vector3) -> f32 {
+    0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z
+}
+
+#[test]
+fn the_afterburner_stretches_the_flames_as_the_boost_ramps() {
+    let mut s = ShipState::new(Vector3::zero(), 0.08);
+    s.thrust = 1.0;
+    let at = |s: &ShipState| flame_length(s, 0, 0.4);
+    let cruise = at(&s);
+    let mut last = cruise;
+    for k in 1..=10 {
+        s.boost = k as f32 / 10.0;
+        let l = at(&s);
+        assert!(l > last, "longer at boost {}", s.boost);
+        assert!(l - last < 0.2 * cruise, "no jump at boost {}", s.boost);
+        last = l;
+    }
+    assert!((last / cruise - (1.0 + BOOST_STRETCH)).abs() < 1e-4);
+}
+
+#[test]
+fn the_afterburner_turns_the_flame_blue_cyan_and_brighter() {
+    let mut s = ShipState::new(Vector3::zero(), 0.08);
+    let normal = Vector3::new(1.0, 0.0, 0.0);
+    let shade = |s: &ShipState, z: f32| {
+        FlameShader::new(s, 0, 1.5, 0.0).shade(Vector3::new(0.5, 0.0, z), normal, normal)
+    };
+    let warm: Vec<_> = (0..=10).map(|k| shade(&s, k as f32 / 10.0)).collect();
+    s.boost = 0.5;
+    let half: Vec<_> = (0..=10).map(|k| shade(&s, k as f32 / 10.0)).collect();
+    s.boost = 1.0;
+    let blue: Vec<_> = (0..=10).map(|k| shade(&s, k as f32 / 10.0)).collect();
+    for k in 0..=10 {
+        let (w, h, b) = (warm[k], half[k], blue[k]);
+        assert!(b.z > b.x, "blue beats red at {k}: {b:?}");
+        assert!(luminance(b) > luminance(w), "brighter at {k}");
+        assert!(w.z < h.z && h.z < b.z, "blends in at {k}");
+    }
+    let (core, cyan) = (blue[0], blue[3]);
+    assert!(core.x > 0.8 * core.z, "white-hot at the nozzle: {core:?}");
+    assert!(
+        cyan.y > 0.8 * cyan.z && cyan.y > 1.5 * cyan.x,
+        "then cyan: {cyan:?}"
+    );
+}
+
+#[test]
+fn boosting_paints_the_exhaust_blue_on_screen() {
+    let mut s = ship_scene(true, 1.0);
+    let orange = flame_pixels(&s);
+    s.ship.boost = 1.0;
+    let boosted = flame_pixels(&s);
+    let blue = |c: &&Vector3| c.z > c.x && c.z > 0.3;
+    assert!(
+        boosted.iter().filter(blue).count() * 2 > boosted.len(),
+        "mostly blue"
+    );
+    assert_eq!(
+        orange.iter().filter(blue).count(),
+        0,
+        "no blue without boost"
+    );
+    assert!(boosted.len() > orange.len(), "longer plumes");
+}
+
+#[test]
+fn local_flight_keeps_the_exhaust_orange_even_with_the_space_bar_held() {
+    let planet = Vector3::zero();
+    let mut s = ShipState::new(Vector3::new(0.0, 0.0, 2.0), 0.08);
+    let mut mode = FlightMode::Local {
+        planet: 0,
+        previous_planet_position: planet,
+    };
+    let held = FlightInput::from_actions(&[SolarAction::Forward, SolarAction::Boost]);
+    for _ in 0..20 {
+        local_step(&mut s, &mut mode, planet, 1.0, &held, 0.05);
+    }
+    assert_eq!(s.boost, 0.0);
+    let f = FlameShader::new(&s, 0, 1.5, 0.0);
+    let c = f.shade(
+        Vector3::new(0.5, 0.0, 0.5),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    );
+    assert!(c.x > c.z, "orange: {c:?}");
 }

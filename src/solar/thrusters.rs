@@ -127,6 +127,9 @@ pub const IDLE_LENGTH: f32 = 0.45;
 pub const THRUST_LENGTH: f32 = 1.5;
 /// Wing pods burn shorter than the main engine.
 pub const POD_SHARE: f32 = 0.8;
+/// Afterburner: how much longer and brighter a fully boosted flame is.
+pub const BOOST_STRETCH: f32 = 1.3;
+pub const BOOST_GLOW: f32 = 0.45;
 
 /// Flicker phase of nozzle `index`, so the engines never pulse in step.
 pub fn nozzle_phase(index: usize) -> f32 {
@@ -134,14 +137,16 @@ pub fn nozzle_phase(index: usize) -> f32 {
 }
 
 /// Length of the flame at nozzle `index` for the ship's engine level at
-/// simulated `time`: idle plus thrust, flickering a few percent at its own
-/// phase (frozen with the clock, so a paused frame is stable).
+/// simulated `time`: idle plus thrust, stretched by the afterburner as the
+/// boost ramps, flickering a few percent at its own phase (frozen with the
+/// clock, so a paused frame is stable).
 pub fn flame_length(ship: &ShipState, index: usize, time: f32) -> f32 {
     let phase = nozzle_phase(index);
     let flicker =
         1.0 + 0.07 * (31.0 * time + phase).sin() + 0.04 * (57.0 * time + 2.0 * phase).sin();
     let share = if index == 0 { 1.0 } else { POD_SHARE };
-    (IDLE_LENGTH + THRUST_LENGTH * ship.thrust) * share * flicker
+    let afterburner = 1.0 + BOOST_STRETCH * ship.boost;
+    (IDLE_LENGTH + THRUST_LENGTH * ship.thrust) * share * afterburner * flicker
 }
 
 /// Exhaust colors from the nozzle to the tip.
@@ -149,15 +154,32 @@ pub const FLAME_CORE: Vector3 = hex(0xFFF1B8);
 pub const FLAME_AMBER: Vector3 = hex(0xFFB22E);
 pub const FLAME_ORANGE: Vector3 = hex(0xFF6414);
 pub const FLAME_TIP: Vector3 = hex(0xA61E0A);
+/// Afterburner colors over the same stops.
+pub const AFTER_CORE: Vector3 = hex(0xE6FFFF);
+pub const AFTER_CYAN: Vector3 = hex(0x3FE3FF);
+pub const AFTER_BLUE: Vector3 = hex(0x2A6BFF);
+pub const AFTER_TIP: Vector3 = hex(0x4A1EB4);
+
+/// Color `t` of the way down a flame through four stops.
+fn gradient(stops: [Vector3; 4], t: f32) -> Vector3 {
+    if t < 0.3 {
+        mix3(stops[0], stops[1], smoothstep(0.0, 0.3, t))
+    } else if t < 0.65 {
+        mix3(stops[1], stops[2], smoothstep(0.3, 0.65, t))
+    } else {
+        mix3(stops[2], stops[3], smoothstep(0.65, 1.0, t))
+    }
+}
 
 /// One flame ready to shade a frame: the flame-space normal transform
 /// (inverse-transpose columns of its model matrix, for the view-facing
-/// glow), the simulated time and the nozzle's phase.
+/// glow), the simulated time, the nozzle's phase and the boost level.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FlameShader {
     pub normal_axes: [Vector3; 3],
     pub time: f32,
     pub phase: f32,
+    pub boost: f32,
 }
 
 impl FlameShader {
@@ -173,25 +195,24 @@ impl FlameShader {
             ],
             time,
             phase: nozzle_phase(index),
+            boost: ship.boost,
         }
     }
 
     /// Emissive (no light): white-hot at the nozzle through amber and
     /// orange to a dark red tip, brightest where the flame faces the eye
-    /// and pulsing in bands that run down the plume.
+    /// and pulsing in bands that run down the plume. The afterburner blends
+    /// in as the boost ramps: white-cyan through blue to a violet tip, and
+    /// brighter.
     pub fn shade(&self, p: Vector3, face_normal: Vector3, view_world: Vector3) -> Vector3 {
         let [x, y, z] = self.normal_axes;
         let n = (x * face_normal.x + y * face_normal.y + z * face_normal.z).normalized();
         let facing = n.dot(view_world).abs();
         let t = p.z.clamp(0.0, 1.0);
-        let color = if t < 0.3 {
-            mix3(FLAME_CORE, FLAME_AMBER, smoothstep(0.0, 0.3, t))
-        } else if t < 0.65 {
-            mix3(FLAME_AMBER, FLAME_ORANGE, smoothstep(0.3, 0.65, t))
-        } else {
-            mix3(FLAME_ORANGE, FLAME_TIP, smoothstep(0.65, 1.0, t))
-        };
+        let warm = gradient([FLAME_CORE, FLAME_AMBER, FLAME_ORANGE, FLAME_TIP], t);
+        let blue = gradient([AFTER_CORE, AFTER_CYAN, AFTER_BLUE, AFTER_TIP], t);
+        let color = mix3(warm, blue, self.boost);
         let pulse = 1.0 + 0.15 * (18.0 * t - 22.0 * self.time + self.phase).sin();
-        color * ((0.55 + 0.65 * facing) * pulse)
+        color * ((0.55 + 0.65 * facing) * pulse * (1.0 + BOOST_GLOW * self.boost))
     }
 }
