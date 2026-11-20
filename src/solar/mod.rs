@@ -21,6 +21,7 @@ pub mod shapes;
 pub mod ship;
 pub mod skybox;
 pub mod stats;
+pub mod system;
 pub mod thrusters;
 pub mod travel;
 pub mod viewer;
