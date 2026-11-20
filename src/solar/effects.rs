@@ -18,7 +18,9 @@ use crate::solar::SPHERE_RADIUS;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
 use crate::solar::attach::props::{PROP_MIN_PX, PropLayers, PropPart, beyond_horizon};
-use crate::solar::attach::traffic::{CYCLE_EDGE, NEON_BODY, NEON_EDGE, NEON_FRESNEL, NeonShader};
+use crate::solar::attach::traffic::{
+    CYCLE_EDGE, NEON_BODY, NEON_EDGE, NEON_FRESNEL, NeonShader, TrailShader,
+};
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
 use crate::solar::instance::{eye_towards, projected_radius_px};
@@ -39,6 +41,7 @@ pub enum EffectShader {
     Prop(PropShader),
     Waterfall(WaterfallShader),
     Neon(NeonShader),
+    Trail(TrailShader),
 }
 
 /// Flat-shaded surface prop: its part's color lit by the star, the light
@@ -71,6 +74,7 @@ impl EffectShader {
             Self::Prop(p) => p.shade(s.face_normal),
             Self::Waterfall(w) => w.shade(s.object_position, s.face_normal),
             Self::Neon(n) => n.shade(s.face_normal),
+            Self::Trail(t) => t.shade(s.object_position),
         }
     }
 }
@@ -288,11 +292,40 @@ impl SolarScene {
                             }),
                         });
                     }
+                    // Trails, in the host's frame: the cycles' ones (and
+                    // the cycles) hide with the props while the planet is
+                    // small; each is tested on the sphere around its chord.
+                    let small = self.radius_px(host, &projection, height) < PROP_MIN_PX;
+                    let model = Uniforms {
+                        model_matrix: t.matrix(),
+                    };
+                    for (i, trail) in traffic.trails.iter().enumerate() {
+                        if trail.is_empty() || (small && i >= traffic.ships.len()) {
+                            continue;
+                        }
+                        let (head, tail) = traffic.trail_ends(i, self.clock.time);
+                        let mid = (head + tail) * 0.5;
+                        let r = (head - tail).length() * 0.5 + 0.05 * SPHERE_RADIUS;
+                        let center = t.position + t.to_world_dir(mid) * t.scale;
+                        if self.patch_hidden(host, &projection, mid, r)
+                            || !self.sphere_in_view(center, r * t.scale, width, height)
+                        {
+                            continue;
+                        }
+                        draws.push(EffectDraw {
+                            mesh: trail,
+                            model,
+                            options: ship_options(threads),
+                            shader: EffectShader::Trail(TrailShader {
+                                color: traffic.trail_color(i),
+                                head,
+                                tail,
+                            }),
+                        });
+                    }
                     // Lightcycles: like the props, hidden while the planet
                     // is small, then one test each.
-                    if traffic.cycles.is_empty()
-                        || self.radius_px(host, &projection, height) < PROP_MIN_PX
-                    {
+                    if traffic.cycles.is_empty() || small {
                         continue;
                     }
                     let r = traffic.cycle_radius(&t);

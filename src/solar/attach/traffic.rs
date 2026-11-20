@@ -9,7 +9,7 @@ use crate::geometry::{Mesh, Vertex};
 use crate::pipeline::Transform;
 use crate::shading::math::hex;
 use crate::shading::noise::hash3;
-use crate::solar::attach::path::Path;
+use crate::solar::attach::path::{Path, PathPose};
 use crate::solar::planet::HeightField;
 use crate::solar::shapes::frame_matrix;
 use crate::solar::ship::{MESH_CENTER, MESH_RADIUS, ShipState};
@@ -50,6 +50,21 @@ pub const CYCLE_MARGIN: f32 = 0.06;
 const CYCLE_TRIES: u32 = 128;
 /// Rim of the lightcycles.
 pub const CYCLE_EDGE: Vector3 = hex(0xFFA62B);
+/// Segments of a trail (32 to 48 triangles).
+pub const TRAIL_SEGS: std::ops::RangeInclusive<usize> = 16..=24;
+/// The ships' trails: a flat ribbon one ship wide at the head, 1.2 s long.
+pub const SHIP_TRAIL: TrailSpec = TrailSpec {
+    kind: TrailKind::Ribbon { width: 0.05 },
+    len_s: 1.2,
+    segs: 20,
+};
+/// The lightcycles' trails: a wall as tall as the cycle at its head, 0.9 s
+/// long.
+pub const CYCLE_TRAIL: TrailSpec = TrailSpec {
+    kind: TrailKind::Wall { height: 0.022 },
+    len_s: 0.9,
+    segs: 16,
+};
 
 /// Pushes the triangle `[a, b, c]` wound to face away from `inside`.
 fn push_out(m: &mut Mesh, [a, b, c]: [Vector3; 3], inside: Vector3) {
@@ -201,6 +216,100 @@ fn lerp((a, b): (f32, f32), x: f32) -> f32 {
     a + (b - a) * x
 }
 
+/// Shape of a trail; sizes in planet radii, at the head (they taper to
+/// nothing at the tail).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TrailKind {
+    /// Flat, across the heading (the ships).
+    Ribbon { width: f32 },
+    /// Upright, from the route up (the lightcycles' light walls).
+    Wall { height: f32 },
+}
+
+/// A trail: its shape, how many seconds of the route it covers and in how
+/// many segments.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrailSpec {
+    pub kind: TrailKind,
+    pub len_s: f32,
+    pub segs: usize,
+}
+
+/// The trail of a vehicle on `path` at time `t` over `field` (the host's
+/// mesh space, planet radius `SPHERE_RADIUS`): `segs + 1` poses from
+/// `t - len_s` to `t`, each widened into two vertices, `2 * segs`
+/// triangles. Rebuilt from the route alone (no history), into `out`, which
+/// is cleared first and keeps its capacity, as does `poses`. `len_s` 0
+/// leaves `out` empty; `segs` outside `TRAIL_SEGS` is an error.
+pub fn build_trail(
+    path: &Path,
+    t: f32,
+    spec: &TrailSpec,
+    field: &HeightField,
+    poses: &mut Vec<PathPose>,
+    out: &mut Vec<Vertex>,
+) -> Result<(), String> {
+    out.clear();
+    if !TRAIL_SEGS.contains(&spec.segs) {
+        return Err(format!(
+            "a trail takes 16 to 24 segments, not {}",
+            spec.segs
+        ));
+    }
+    if spec.len_s.is_nan() || spec.len_s <= 0.0 {
+        return Ok(());
+    }
+    path.sample(
+        t - spec.len_s,
+        t,
+        spec.segs + 1,
+        field,
+        SPHERE_RADIUS,
+        poses,
+    );
+    // Two vertices per pose, tail (0) to head (segs); the size grows from
+    // nothing at the tail.
+    let edge = |i: usize, p: &PathPose| -> [Vector3; 2] {
+        let k = i as f32 / spec.segs as f32 * SPHERE_RADIUS;
+        match spec.kind {
+            TrailKind::Ribbon { width } => {
+                let across = p.tangent.cross(p.up) * (0.5 * width * k);
+                [p.pos - across, p.pos + across]
+            }
+            TrailKind::Wall { height } => [p.pos, p.pos + p.up * (height * k)],
+        }
+    };
+    for i in 0..spec.segs {
+        let ([a, b], [c, d]) = (edge(i, &poses[i]), edge(i + 1, &poses[i + 1]));
+        for p in [a, c, d, a, d, b] {
+            out.push(Vertex::new_with_color(p, Vector3::one()));
+        }
+    }
+    Ok(())
+}
+
+/// Emissive trail: its color dimmed from the head to the tail along the
+/// chord between them (object positions), no lighting, no alpha.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrailShader {
+    pub color: Vector3,
+    pub head: Vector3,
+    pub tail: Vector3,
+}
+
+impl TrailShader {
+    pub fn shade(&self, object_position: Vector3) -> Vector3 {
+        let chord = self.head - self.tail;
+        let len2 = chord.dot(chord);
+        let along = if len2 > 0.0 {
+            ((object_position - self.tail).dot(chord) / len2).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        self.color * (0.15 + 0.85 * along)
+    }
+}
+
 /// True when no point of `path` (128 samples of one lap) comes within
 /// `margin` radians of a site (unit directions).
 pub fn route_clear_of_buildings(path: &Path, sites: &[Vector3], margin: f32) -> bool {
@@ -228,6 +337,11 @@ pub struct Traffic {
     pub cycles: Vec<Path>,
     /// The shared lightcycle mesh (`SolarMeshes::lightcycle`).
     pub cycle_mesh: Arc<Vec<Vertex>>,
+    /// Trail of every ship, then of every cycle, the host's mesh space
+    /// (`update_trails`); the buffers are reused from frame to frame.
+    pub trails: Vec<Vec<Vertex>>,
+    /// Sampling buffer of the trails.
+    poses: Vec<PathPose>,
     /// The host's ground (`Flat` for a sphere).
     pub field: HeightField,
     /// Farthest reach from the host center, host radii.
@@ -277,6 +391,8 @@ impl Traffic {
             ships,
             cycles: Vec::new(),
             cycle_mesh: Arc::clone(&meshes.lightcycle),
+            trails: Vec::new(),
+            poses: Vec::new(),
             field,
             reach: 1.0 + field.max_height() + SHIP_ALTITUDE.1 + ship_radius / host_radius,
         }
@@ -325,6 +441,39 @@ impl Traffic {
             self.reach = self.reach.max(top);
         }
         self
+    }
+
+    /// Rebuilds every trail at time `t` (`SHIP_TRAIL`, `CYCLE_TRAIL`) in
+    /// the kept buffers: cleared and refilled, never reallocated once
+    /// grown.
+    pub fn update_trails(&mut self, t: f32) {
+        let count = self.ships.len() + self.cycles.len();
+        self.trails.resize_with(count, Vec::new);
+        let routes = self.ships.iter().map(|(p, _)| (p, &SHIP_TRAIL));
+        let routes = routes.chain(self.cycles.iter().map(|p| (p, &CYCLE_TRAIL)));
+        for ((path, spec), out) in routes.zip(&mut self.trails) {
+            // The specs are constants inside TRAIL_SEGS: never an error.
+            let _ = build_trail(path, t, spec, &self.field, &mut self.poses, out);
+        }
+    }
+
+    /// Head and tail of trail `i` at time `t`, the host's mesh space.
+    pub fn trail_ends(&self, i: usize, t: f32) -> (Vector3, Vector3) {
+        let (path, spec) = match i.checked_sub(self.ships.len()) {
+            None => (&self.ships[i].0, &SHIP_TRAIL),
+            Some(c) => (&self.cycles[c], &CYCLE_TRAIL),
+        };
+        let at = |t| path.pose(t, &self.field, SPHERE_RADIUS).pos;
+        (at(t), at(t - spec.len_s))
+    }
+
+    /// Color of trail `i`: the ships' rim, then the cycles'.
+    pub fn trail_color(&self, i: usize) -> Vector3 {
+        if i < self.ships.len() {
+            NEON_EDGE
+        } else {
+            CYCLE_EDGE
+        }
     }
 
     /// Center, heading and top of `path` at time `t`, world space, on a

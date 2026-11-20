@@ -788,6 +788,9 @@ impl SolarScene {
         for body in &mut self.bodies {
             body.update(time, center);
         }
+        if let Some(traffic) = &mut self.traffic {
+            traffic.update_trails(time);
+        }
     }
 
     /// Perspective camera on the orbit rig: the eye sits along the orbit

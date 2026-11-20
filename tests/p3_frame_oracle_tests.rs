@@ -134,18 +134,19 @@ fn scaled_hash(id: &str) -> u64 {
 /// behind Crimson Entrance) and E (two pixels of its heart disc between
 /// the ship and the horizon) change; the layout keeps House at 40, so the
 /// rest do not. Recaptured on C65, which adds the neon ships over Hearts:
-/// C and J change (ships in view), the rest do not.
+/// C and J change (ships in view), the rest do not. Recaptured on C68,
+/// which adds the trails: C and J change again.
 const P3_SCALED_A_J: [(&str, u64); 10] = [
     ("A", 0x1dbb86321bfc4240),
     ("B", 0xe59e2a67ca2766b7),
-    ("C", 0xf7c572f4dd37d0f4),
+    ("C", 0x84b3ec0d151dde8c),
     ("D", 0x6f0809c2c61bdadb),
     ("E", 0xcf231405f64870a6),
     ("F", 0xbad58159c18ffe26),
     ("G", 0x833fb13d759a35d5),
     ("H", 0x6f0809c2c61bdadb),
     ("I", 0x0150a9073accf154),
-    ("J", 0xfa09572be578a506),
+    ("J", 0x7f402430390f26c9),
 ];
 
 /// Clover planet scenarios of the scaled benchmark, captured on C49. C52
@@ -160,8 +161,9 @@ const P3_CLOVER_K: [(&str, u64); 3] = [
 /// Hearts planet scenarios of the scaled benchmark, captured on C61: the
 /// pyramid and the city up close (M) and the planet 12 radii away (M2).
 /// Recaptured on C65: both show the neon ships now. C67 adds the
-/// lightcycles: M changes, M2 (planet under 60 px) does not.
-const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0xe19c3e8f74e32e60), ("M2", 0x13e2c975371f51c9)];
+/// lightcycles: M changes, M2 (planet under 60 px) does not. C68 adds the
+/// trails: both change (the ships' ribbons show from afar too).
+const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0xdca0c052459b2ddc), ("M2", 0x0c41bd2372884a03)];
 
 #[test]
 fn p3_scaled_a_j_match() {
