@@ -1,0 +1,21 @@
+scenario,name,threads,runs,rounds_per_run,bodies,fragments_shaded,median_of_medians_ms,min_run_median_ms,max_run_median_ms,min_round_ms,max_round_ms,peak_rss_kb
+A,spacecraft alone,1,3,7,0,25993,5.22,5.11,6.15,5.08,7.24,14136
+B,one planet,1,3,7,1,23469,85.62,85.26,85.70,85.20,100.63,14300
+C,distant system with three bodies,1,3,7,3,13183,17.07,17.03,18.31,16.97,19.32,14300
+D,full system with the spacecraft,1,3,7,3,43312,31.73,31.64,31.86,31.50,34.87,16464
+E,close approach to Crimson Entrance,1,3,7,3,62738,130.00,129.99,136.41,129.83,150.40,17248
+F,close approach to House of Cards,1,3,7,3,108900,56.89,56.86,57.23,56.71,70.97,22740
+G,camera facing empty space,1,3,7,3,25993,5.14,5.12,5.19,5.08,5.46,22404
+H,full system with the star field,1,3,7,3,43312,31.72,31.63,42.49,31.51,48.26,22404
+I,full system without the sky (stars and nebula),1,3,7,3,43312,30.08,30.02,30.17,29.92,30.39,22404
+J,lowest flight over Crimson Entrance,1,3,7,3,132873,286.58,286.45,293.58,286.09,336.50,29384
+A,spacecraft alone,20,3,7,0,25993,9.12,8.74,9.28,8.00,10.71,14512
+B,one planet,20,3,7,1,23469,22.68,21.45,23.92,18.52,25.79,14440
+C,distant system with three bodies,20,3,7,3,13183,10.94,10.94,11.39,8.59,14.38,14492
+D,full system with the spacecraft,20,3,7,3,43312,17.14,12.28,17.32,11.24,17.90,17048
+E,close approach to Crimson Entrance,20,3,7,3,62738,21.25,20.95,32.74,19.97,37.02,17692
+F,close approach to House of Cards,20,3,7,3,108900,22.10,16.09,23.75,15.18,25.64,23172
+G,camera facing empty space,20,3,7,3,25993,8.21,8.09,8.94,5.69,11.01,22560
+H,full system with the star field,20,3,7,3,43312,17.48,12.47,17.87,11.62,18.89,22560
+I,full system without the sky (stars and nebula),20,3,7,3,43312,15.86,10.51,16.39,9.61,18.50,22560
+J,lowest flight over Crimson Entrance,20,3,7,3,132873,40.25,39.95,41.08,38.99,65.62,29884

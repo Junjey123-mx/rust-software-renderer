@@ -375,11 +375,22 @@ fn run_shader_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn 
 }
 
 /// Headless solar scenarios A-J (Camino al Proyecto 3, no window).
-fn run_solar_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn Error>> {
-    let config = SolarBenchConfig::default();
+fn run_solar_benchmark_cli(
+    output_dir: &std::path::Path,
+    threads: Option<usize>,
+) -> Result<(), Box<dyn Error>> {
+    let config = SolarBenchConfig {
+        threads: threads.unwrap_or(0),
+        ..SolarBenchConfig::default()
+    };
     println!(
-        "Solar benchmark: scenarios A-J, {}x{}, {} warm-up + {} rounds, t = {} s, all threads, CPU frame only (no presentation)",
-        config.width, config.height, config.warmup, config.rounds, config.time
+        "Solar benchmark: scenarios A-J, {}x{}, {} warm-up + {} rounds, t = {} s, {} threads, CPU frame only (no presentation)",
+        config.width,
+        config.height,
+        config.warmup,
+        config.rounds,
+        config.time,
+        threads.map_or("all".to_string(), |n| n.to_string())
     );
     let rows = run_solar_benchmark(&config)?;
     for r in &rows {
@@ -407,7 +418,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         let dir = args
             .benchmark_output
             .unwrap_or_else(|| PathBuf::from("docs/results/preproject3"));
-        return run_solar_benchmark_cli(&dir);
+        return run_solar_benchmark_cli(&dir, lab6.threads);
     }
     if lab6.benchmark_shaders {
         let dir = args

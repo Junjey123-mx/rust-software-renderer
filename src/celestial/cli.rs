@@ -271,11 +271,15 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     }
     // The shader benchmark renders every body itself, so it needs no scene;
     // the solar scene shares `--threads`, `--time` and prefixed `--set` with
-    // the single-body scenes.
+    // the single-body scenes, and the solar benchmark takes `--threads`.
     let scene_options = CelestialArgs {
         benchmark_shaders: false,
         benchmark_solar: false,
-        threads: if solar { None } else { lab6.threads },
+        threads: if solar || lab6.benchmark_solar {
+            None
+        } else {
+            lab6.threads
+        },
         time: if solar { None } else { lab6.time },
         sets: if solar { Vec::new() } else { lab6.sets.clone() },
         camera: None,

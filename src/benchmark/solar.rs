@@ -70,6 +70,21 @@ pub struct SolarBenchRow {
     pub median_ms: f64,
     pub p95_ms: f64,
     pub min_ms: f64,
+    /// Slowest timed round (with `min_ms`, the spread of the rounds).
+    pub max_ms: f64,
+    /// Peak resident memory of the process after the scenario, kilobytes
+    /// (`VmHWM` of `/proc/self/status`; `None` where it is not available).
+    pub peak_rss_kb: Option<u64>,
+}
+
+/// Peak resident set size of this process in kilobytes, read from
+/// `/proc/self/status` (Linux); `None` elsewhere or when unreadable.
+pub fn peak_rss_kb() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    status
+        .lines()
+        .find_map(|l| l.strip_prefix("VmHWM:"))
+        .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
 }
 
 /// Parks the spacecraft in local flight `altitude` above body `index`,
@@ -171,6 +186,8 @@ pub fn run_solar_benchmark(
             median_ms: percentile(&times, 0.5),
             p95_ms: percentile(&times, 0.95),
             min_ms: times[0],
+            max_ms: times[times.len() - 1],
+            peak_rss_kb: peak_rss_kb(),
         });
     }
     Ok(rows)
@@ -183,12 +200,12 @@ pub fn write_solar_csv(rows: &[SolarBenchRow], path: &Path) -> Result<(), Box<dy
     let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
     writeln!(
         out,
-        "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms"
+        "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms,max_ms,peak_rss_kb"
     )?;
     for r in rows {
         writeln!(
             out,
-            "{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3}",
+            "{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{}",
             r.id,
             r.name,
             r.width,
@@ -199,9 +216,62 @@ pub fn write_solar_csv(rows: &[SolarBenchRow], path: &Path) -> Result<(), Box<dy
             r.fragments_shaded,
             r.median_ms,
             r.p95_ms,
-            r.min_ms
+            r.min_ms,
+            r.max_ms,
+            r.peak_rss_kb.map_or(String::new(), |kb| kb.to_string())
         )?;
     }
     out.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rounds_spread_brackets_the_median_and_memory_is_read() {
+        let config = SolarBenchConfig {
+            width: 64,
+            height: 48,
+            warmup: 0,
+            rounds: 3,
+            threads: 1,
+            time: 6.0,
+        };
+        for r in run_solar_benchmark(&config).unwrap() {
+            assert!(r.min_ms <= r.median_ms && r.median_ms <= r.max_ms, "{r:?}");
+            if cfg!(target_os = "linux") {
+                assert!(r.peak_rss_kb.is_some_and(|kb| kb > 0), "{r:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn csv_header_keeps_the_old_columns_first() {
+        let dir = std::env::temp_dir().join(format!("solar_csv_{}", std::process::id()));
+        let path = dir.join("solar.csv");
+        let row = SolarBenchRow {
+            id: "A",
+            name: "spacecraft alone",
+            width: 1,
+            height: 1,
+            threads: 1,
+            rounds: 1,
+            bodies: 0,
+            fragments_shaded: 0,
+            median_ms: 1.0,
+            p95_ms: 1.0,
+            min_ms: 1.0,
+            max_ms: 1.0,
+            peak_rss_kb: None,
+        };
+        write_solar_csv(&[row], &path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(text.starts_with(
+            "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms,max_ms,peak_rss_kb\n"
+        ));
+        assert!(text.lines().nth(1).unwrap().ends_with(",1.000,"));
+    }
 }

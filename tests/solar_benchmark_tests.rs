@@ -70,7 +70,8 @@ fn the_csv_has_one_row_per_scenario() {
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 11);
     for line in &lines {
-        assert_eq!(line.split(',').count(), 11, "one field per column: {line}");
+        // 11 original columns, then max_ms and peak_rss_kb appended at the end.
+        assert_eq!(line.split(',').count(), 13, "one field per column: {line}");
     }
     assert!(lines[0].starts_with("scenario,name,width"));
     assert!(lines[1].starts_with("A,spacecraft alone,160,120,2,1,0,"));
@@ -87,6 +88,10 @@ fn the_cli_flag_is_exclusive_with_other_benchmarks() {
     };
     assert!(parse("--benchmark-solar").unwrap().benchmark_solar);
     assert!(parse("--benchmark-solar --benchmark-output /tmp/x").is_ok());
+    assert_eq!(
+        parse("--benchmark-solar --threads 1").unwrap().threads,
+        Some(1)
+    );
     assert!(parse("--benchmark-solar --benchmark-shaders").is_err());
     assert!(parse("--benchmark-solar --benchmark-triangles").is_err());
 }
