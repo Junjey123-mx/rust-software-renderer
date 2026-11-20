@@ -11,6 +11,7 @@ use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
 use crate::solar::flight::{FlightInput, FlightMode, ease_thrust, ramp_boost, space_step};
+use crate::solar::hud::{draw_hud, hud_lines};
 use crate::solar::input::{
     CAPTURE_KEY, Look, MouseCapture, MouseLook, RELEASE_KEY, SolarAction, poll_solar,
 };
@@ -65,7 +66,8 @@ pub fn solar_mode(cli: &CliArgs, lab6: &CelestialArgs) -> TriangleMode {
 
 /// Window title text: flight mode, the body local flight follows (or the
 /// nearest planet in space flight) with the altitude above its ideal
-/// surface, the ship speed, the camera rig and the measured frame rate.
+/// surface, the ship speed, the camera rig, the measured frame rate and
+/// the triangles submitted in the last frame.
 pub fn status_line(scene: &SolarScene, speed: f32, fps: f32) -> String {
     let focus = match scene.flight {
         FlightMode::Local { planet, .. } => Some(planet),
@@ -91,9 +93,10 @@ pub fn status_line(scene: &SolarScene, speed: f32, fps: f32) -> String {
         None => "no planet".to_string(),
     };
     format!(
-        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS",
+        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS | tris {}",
         scene.flight.name(),
-        scene.rig.name()
+        scene.rig.name(),
+        scene.last_stats().triangles_submitted
     )
 }
 
@@ -201,7 +204,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
@@ -222,6 +225,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
     let mut presenter = Presenter::new(&mut rl, &thread, &framebuffer)?;
     let mut reported = false;
     let mut title_timer = 0.0f32;
+    let mut hud = false;
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -254,6 +258,10 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
             mode = m;
             println!("Mode: {mode}");
         }
+        if actions.contains(&SolarAction::ToggleHud) {
+            hud = !hud;
+            println!("Render counters: {}", if hud { "shown" } else { "hidden" });
+        }
         let before = scene.ship.position;
         let mode_before = scene.flight;
         for message in step(&mut scene, &actions, &camera_actions, look, dt) {
@@ -271,6 +279,10 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
             title_timer = 0.0;
         }
         let shaded = render_frame(&scene, &mut framebuffer, mode, options)?;
+        if hud {
+            let lines = hud_lines(&scene.last_stats(), rl.get_fps() as f32);
+            draw_hud(&mut framebuffer, &lines);
+        }
         if !reported {
             println!(
                 "Rendered {} bodies and the spacecraft, {shaded} fragments shaded",

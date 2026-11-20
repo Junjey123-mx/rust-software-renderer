@@ -62,6 +62,16 @@ impl FrameStats {
         self.fragments += s.fragments_generated;
     }
 
+    /// Bodies that passed the view test.
+    pub fn visible_bodies(&self) -> usize {
+        self.per_body.iter().filter(|b| b.visible).count()
+    }
+
+    /// Triangles submitted for the bodies alone.
+    pub fn body_triangles(&self) -> usize {
+        self.per_body.iter().map(|b| b.triangles).sum()
+    }
+
     /// Records body `index`: its view test and, when visible, its draw.
     pub fn body(&mut self, index: usize, visible: bool, s: &ShadedStats) {
         self.test(visible);
@@ -96,6 +106,7 @@ mod tests {
             (2, 1, 1)
         );
         assert_eq!(stats.per_body[1].triangles, 0);
+        assert_eq!((stats.visible_bodies(), stats.body_triangles()), (1, 10));
         let capacity = stats.per_body.capacity();
         stats.clear();
         assert_eq!(stats, FrameStats::default());

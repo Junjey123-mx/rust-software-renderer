@@ -1,0 +1,138 @@
+//! On-screen counters of the solar viewer: plain text lines from the
+//! frame's `FrameStats`, painted with a 5x7 bitmap font straight into the
+//! CPU framebuffer after the frame is resolved (raylib draws no text).
+//! The viewer toggles it with `H`; recordings and benchmarks never draw it.
+
+use crate::rendering::Framebuffer;
+use crate::solar::stats::FrameStats;
+use raylib::math::Vector3;
+
+/// Pixels per font dot.
+pub const SCALE: i32 = 2;
+/// Top-left corner of the box.
+pub const ORIGIN: (i32, i32) = (8, 8);
+/// Box padding around the text, pixels.
+const PAD: i32 = 4;
+const ADVANCE: i32 = 6 * SCALE;
+const LINE: i32 = 9 * SCALE;
+
+/// The counters of one frame as text.
+pub fn hud_lines(stats: &FrameStats, fps: f32) -> Vec<String> {
+    vec![
+        format!("FPS {fps:.0}"),
+        format!(
+            "OBJECTS {} CULLED {}",
+            stats.objects_tested, stats.objects_culled
+        ),
+        format!(
+            "BODIES {}/{} TRIS {}",
+            stats.visible_bodies(),
+            stats.per_body.len(),
+            stats.body_triangles()
+        ),
+        format!(
+            "DRAWS {} TRIS {} CULLED {}",
+            stats.draws, stats.triangles_submitted, stats.triangles_culled
+        ),
+        format!("FRAGMENTS {}", stats.fragments),
+    ]
+}
+
+/// Screen rectangle `(x, y, width, height)` the box of `lines` covers;
+/// empty for no lines.
+pub fn hud_box(lines: &[String]) -> (i32, i32, i32, i32) {
+    if lines.is_empty() {
+        return (ORIGIN.0, ORIGIN.1, 0, 0);
+    }
+    let columns = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as i32;
+    (
+        ORIGIN.0,
+        ORIGIN.1,
+        columns * ADVANCE - SCALE + 2 * PAD,
+        lines.len() as i32 * LINE - 2 * SCALE + 2 * PAD,
+    )
+}
+
+/// Paints `lines` in a dark box at the top-left corner. Nothing for no
+/// lines; only pixels inside `hud_box(lines)` change.
+pub fn draw_hud(framebuffer: &mut Framebuffer, lines: &[String]) {
+    let (x0, y0, w, h) = hud_box(lines);
+    let background = Vector3::new(0.02, 0.01, 0.04);
+    let ink = Vector3::new(0.95, 0.85, 0.55);
+    for y in y0..y0 + h {
+        for x in x0..x0 + w {
+            framebuffer.point(x, y, background);
+        }
+    }
+    for (row, line) in lines.iter().enumerate() {
+        let top = y0 + PAD + row as i32 * LINE;
+        for (column, c) in line.chars().enumerate() {
+            let left = x0 + PAD + column as i32 * ADVANCE;
+            for (dy, bits) in glyph(c).iter().enumerate() {
+                for dx in 0..5 {
+                    if bits & (0x10 >> dx) == 0 {
+                        continue;
+                    }
+                    for sy in 0..SCALE {
+                        for sx in 0..SCALE {
+                            framebuffer.point(
+                                left + dx * SCALE + sx,
+                                top + dy as i32 * SCALE + sy,
+                                ink,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Rows (top to bottom, 5 low bits, leftmost dot = 0x10) of `c`; lower case
+/// is drawn as upper case and unknown characters are blank.
+fn glyph(c: char) -> [u8; 7] {
+    match c.to_ascii_uppercase() {
+        '0' => [0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E],
+        '1' => [0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E],
+        '2' => [0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F],
+        '3' => [0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E],
+        '4' => [0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02],
+        '5' => [0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E],
+        '6' => [0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E],
+        '7' => [0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
+        '8' => [0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E],
+        '9' => [0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C],
+        'A' => [0x0E, 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11],
+        'B' => [0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E],
+        'C' => [0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E],
+        'D' => [0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C],
+        'E' => [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F],
+        'F' => [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10],
+        'G' => [0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F],
+        'H' => [0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11],
+        'I' => [0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E],
+        'J' => [0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C],
+        'K' => [0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11],
+        'L' => [0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F],
+        'M' => [0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11],
+        'N' => [0x11, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11],
+        'O' => [0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+        'P' => [0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10],
+        'Q' => [0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D],
+        'R' => [0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11],
+        'S' => [0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E],
+        'T' => [0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04],
+        'U' => [0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+        'V' => [0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04],
+        'W' => [0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A],
+        'X' => [0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11],
+        'Y' => [0x11, 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04],
+        'Z' => [0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F],
+        '.' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C],
+        ':' => [0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00],
+        '/' => [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x00],
+        '-' => [0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00],
+        '%' => [0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03],
+        _ => [0; 7],
+    }
+}

@@ -34,6 +34,8 @@ pub enum SolarAction {
     ToggleLocal,
     /// Quick travel next to the body with this index (F1, F2, F3).
     Warp(usize),
+    /// Shows or hides the render counters of the viewer (`H`).
+    ToggleHud,
 }
 
 /// Held keys and the action they produce.
@@ -48,13 +50,14 @@ pub const HELD: [(KeyboardKey, SolarAction); 7] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 6] = [
+pub const PRESSED: [(KeyboardKey, SolarAction); 7] = [
     (KeyboardKey::KEY_P, SolarAction::TogglePause),
     (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
     (KeyboardKey::KEY_L, SolarAction::ToggleLocal),
     (KeyboardKey::KEY_F1, SolarAction::Warp(0)),
     (KeyboardKey::KEY_F2, SolarAction::Warp(1)),
     (KeyboardKey::KEY_F3, SolarAction::Warp(2)),
+    (KeyboardKey::KEY_H, SolarAction::ToggleHud),
 ];
 
 /// Frees the captured mouse or captures a free one.

@@ -6,6 +6,7 @@ pub mod card_ring;
 pub mod clock;
 pub mod effects;
 pub mod flight;
+pub mod hud;
 pub mod input;
 pub mod instance;
 pub mod nebula;
