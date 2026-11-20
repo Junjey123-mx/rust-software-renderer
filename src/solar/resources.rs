@@ -1,9 +1,11 @@
 //! Geometry shared by every instance of the solar scene: the course sphere
-//! and the spacecraft, loaded and expanded once and never mutated.
+//! and the spacecraft, loaded and expanded once and never mutated, and the
+//! relief planets' levels of detail, built at startup.
 
 use crate::config::{AppConfig, SPHERE_MODEL_PATH};
 use crate::geometry::Vertex;
 use crate::io::load_obj;
+use crate::solar::planet::geometry::GeometryCache;
 use raylib::math::Vector3;
 use std::error::Error;
 use std::path::Path;
@@ -20,6 +22,9 @@ pub const SPHERE_RADIUS: f32 = 0.866;
 pub struct SolarMeshes {
     pub sphere: Arc<Vec<Vertex>>,
     pub ship: Arc<Vec<Vertex>>,
+    /// Relief geometries by radius and field (empty until a planet has a
+    /// height field).
+    pub relief: GeometryCache,
 }
 
 impl SolarMeshes {
@@ -30,6 +35,7 @@ impl SolarMeshes {
         Ok(Self {
             sphere: Arc::new(sphere.expand_vertices(Vector3::one())),
             ship: Arc::new(ship.expand_vertices(Vertex::DEFAULT_COLOR)),
+            relief: GeometryCache::default(),
         })
     }
 }
