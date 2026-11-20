@@ -1,7 +1,7 @@
 //! Low-poly surface models of the relief planets, built once as indexed
 //! meshes with their base at the origin and "up" along +Y: a clover tree
-//! (hexagonal trunk and stacked cone canopies), a faceted boulder and the
-//! Hearts city's stepped neon buildings.
+//! (hexagonal trunk and stacked cone canopies), a faceted boulder, the
+//! Hearts city's stepped neon buildings and its lightcycle.
 
 use crate::geometry::Mesh;
 use crate::shading::noise::hash3;
@@ -289,4 +289,149 @@ pub fn heart_disc_mesh(samples: u32) -> Result<Mesh, String> {
         }
     }
     Ok(Mesh { vertices, indices })
+}
+
+/// Nose and top of the lightcycle model: the spacecraft's convention
+/// (`Laboratorio3.obj` flies nose first to `-Z`, `+Y` up).
+pub const LIGHTCYCLE_FORWARD: Vector3 = Vector3::new(0.0, 0.0, -1.0);
+pub const LIGHTCYCLE_UP: Vector3 = Vector3::new(0.0, 1.0, 0.0);
+
+/// `mesh` ready to place on a surface: an error when it has no triangles
+/// or a degenerate one (zero area); otherwise moved so its footprint is
+/// centered on the origin with its lowest point at `y = 0`, and scaled so
+/// its bounding sphere (about its box center) has radius 1.
+pub fn normalize_model(mut mesh: Mesh) -> Result<Mesh, String> {
+    if mesh.indices.len() < 3 || !mesh.indices.len().is_multiple_of(3) {
+        return Err("the model has no triangles".into());
+    }
+    for t in mesh.indices.chunks(3) {
+        let p = t
+            .iter()
+            .map(|&i| mesh.vertices.get(i))
+            .collect::<Option<Vec<_>>>();
+        let p = p.ok_or("a face points past the vertices")?;
+        let area2 = (*p[1] - *p[0]).cross(*p[2] - *p[0]).length();
+        if !area2.is_finite() || area2 <= 1e-9 {
+            return Err("the model has a degenerate face".into());
+        }
+    }
+    let (lo, hi) = mesh.vertices.iter().fold(
+        (Vector3::one() * f32::MAX, Vector3::one() * f32::MIN),
+        |(lo, hi), p| {
+            (
+                Vector3::new(lo.x.min(p.x), lo.y.min(p.y), lo.z.min(p.z)),
+                Vector3::new(hi.x.max(p.x), hi.y.max(p.y), hi.z.max(p.z)),
+            )
+        },
+    );
+    let center = (lo + hi) * 0.5;
+    let radius = mesh
+        .vertices
+        .iter()
+        .map(|p| (*p - center).length())
+        .fold(0.0, f32::max);
+    let foot = Vector3::new(center.x, lo.y, center.z);
+    for p in &mut mesh.vertices {
+        *p = (*p - foot) / radius;
+    }
+    Ok(mesh)
+}
+
+/// An original low-poly lightcycle (82 triangles), `normalize_model`ed:
+/// two octagonal wheels under a wedge hull that ends in a pointed nose
+/// (`LIGHTCYCLE_FORWARD`) and a flat tail, with a low canopy over the rider
+/// position.
+pub fn lightcycle_mesh() -> Result<Mesh, String> {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    // Wheels: octagonal prisms 0.25 wide, radius 0.45, axles at z = -0.8
+    // (front) and 0.8 (rear).
+    for z0 in [-0.8f32, 0.8] {
+        let axle = Vector3::new(0.0, 0.45, z0);
+        let base = vertices.len();
+        for x in [-0.125f32, 0.125] {
+            for k in 0..8 {
+                let a = k as f32 / 8.0 * std::f32::consts::TAU;
+                vertices.push(axle + Vector3::new(x, 0.45 * a.sin(), 0.45 * a.cos()));
+            }
+        }
+        for k in 0..8 {
+            let n = (k + 1) % 8;
+            let (a, b, c, d) = (base + k, base + n, base + 8 + n, base + 8 + k);
+            let out = (vertices[a] + vertices[c]) * 0.5 - axle;
+            let out = Vector3::new(0.0, out.y, out.z);
+            facing(&vertices, &mut indices, [a, b, c], out);
+            facing(&vertices, &mut indices, [a, c, d], out);
+        }
+        for (side, x) in [(0, -1.0f32), (8, 1.0)] {
+            for k in 1..7 {
+                let tri = [base + side, base + side + k, base + side + k + 1];
+                facing(&vertices, &mut indices, tri, Vector3::new(x, 0.0, 0.0));
+            }
+        }
+    }
+    // Hull: box sections (z, half width, bottom, top) from the nose tip to
+    // the flat tail.
+    let sections = [
+        (-0.5f32, 0.22f32, 0.35f32, 0.95f32),
+        (0.5, 0.22, 0.35, 0.85),
+        // Past the rear wheel (z 1.25), so the tail is the rearmost part.
+        (1.38, 0.1, 0.45, 0.65),
+    ];
+    let hull_center = Vector3::new(0.0, 0.65, 0.2);
+    let ring = |(z, w, yb, yt): (f32, f32, f32, f32)| {
+        [
+            Vector3::new(w, yb, z),
+            Vector3::new(w, yt, z),
+            Vector3::new(-w, yt, z),
+            Vector3::new(-w, yb, z),
+        ]
+    };
+    let tip = vertices.len();
+    vertices.push(Vector3::new(0.0, 0.62, -1.35));
+    let mut rings = Vec::new();
+    for s in sections {
+        rings.push(vertices.len());
+        vertices.extend(ring(s));
+    }
+    let out = |vs: &[Vector3], tri: [usize; 3]| {
+        (vs[tri[0]] + vs[tri[1]] + vs[tri[2]]) / 3.0 - hull_center
+    };
+    for k in 0..4 {
+        let tri = [tip, rings[0] + k, rings[0] + (k + 1) % 4];
+        let o = out(&vertices, tri);
+        facing(&vertices, &mut indices, tri, o);
+    }
+    for pair in rings.windows(2) {
+        for k in 0..4 {
+            let n = (k + 1) % 4;
+            for tri in [
+                [pair[0] + k, pair[1] + k, pair[1] + n],
+                [pair[0] + k, pair[1] + n, pair[0] + n],
+            ] {
+                let o = out(&vertices, tri);
+                facing(&vertices, &mut indices, tri, o);
+            }
+        }
+    }
+    let tail = rings[2];
+    for tri in [[tail, tail + 1, tail + 2], [tail, tail + 2, tail + 3]] {
+        facing(&vertices, &mut indices, tri, Vector3::new(0.0, 0.0, 1.0));
+    }
+    // Canopy: a low four-sided pyramid on the hull's top.
+    let apex = vertices.len();
+    vertices.push(Vector3::new(0.0, 1.12, -0.05));
+    let rim = vertices.len();
+    vertices.extend([
+        Vector3::new(0.16, 0.92, -0.35),
+        Vector3::new(0.16, 0.88, 0.3),
+        Vector3::new(-0.16, 0.88, 0.3),
+        Vector3::new(-0.16, 0.92, -0.35),
+    ]);
+    for k in 0..4 {
+        let tri = [apex, rim + k, rim + (k + 1) % 4];
+        let o = out(&vertices, tri) + Vector3::new(0.0, 1.0, 0.0);
+        facing(&vertices, &mut indices, tri, o);
+    }
+    normalize_model(Mesh { vertices, indices })
 }
