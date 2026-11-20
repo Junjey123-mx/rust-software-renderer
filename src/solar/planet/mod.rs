@@ -2,6 +2,7 @@
 //! the laboratory 6 `celestial::Body` enum (which keeps its own CLI and
 //! viewer).
 
+pub mod icosphere;
 pub mod material;
 
 pub use material::{PlanetMaterial, PreparedPlanet};
