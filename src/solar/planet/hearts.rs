@@ -160,8 +160,10 @@ pub fn heart_sdf(p: P2, size: f32) -> f32 {
     ))
 }
 
-const CANYON: Vector3 = hex(0x0B0414);
-const PLATEAU: Vector3 = hex(0x2A0F3D);
+const CANYON: Vector3 = hex(0x1A0B2E);
+const PLATEAU: Vector3 = hex(0x5A2C85);
+/// Glow of the terrace ramps (the steps read on the night side too).
+const RAMP: Vector3 = hex(0x2EC4FF);
 const LINE: Vector3 = hex(0xFF2E63);
 const PULSE: Vector3 = hex(0xFFD1E0);
 const HEART: Vector3 = hex(0xFF0A54);
@@ -178,9 +180,42 @@ pub struct PreparedHearts {
     pub time: f32,
 }
 
+/// Glitch steps per second: the bands change this often.
+pub const GLITCH_STEPS: f32 = 8.0;
+/// Latitude bands of the glitch, pole to pole.
+pub const GLITCH_BANDS: f32 = 40.0;
+
+fn unit_hash(seed: u32, i: i32, j: i32) -> f32 {
+    (crate::shading::noise::hash3(i, j, 0x9117, seed) >> 8) as f32 / (1u32 << 24) as f32
+}
+
+/// The glitch of the latitude `lat` (radians) at time `t`: the shift of
+/// the grid along the longitude and the extra shift of its red channel,
+/// both in cells. The clock is cut into `GLITCH_STEPS` steps per second and
+/// the sphere into `GLITCH_BANDS` latitude bands; a band glitches during a
+/// step when a hash of both falls under `glitch_rate`. Deterministic for a
+/// given time (frozen while paused) and `(0, 0)` with `glitch` at 0.
+pub fn glitch_offset(lat: f32, t: f32, p: &NeonGridParams) -> (f32, f32) {
+    if p.glitch.is_nan() || p.glitch <= 0.0 || !lat.is_finite() || !t.is_finite() {
+        return (0.0, 0.0);
+    }
+    let step = (t * GLITCH_STEPS).floor() as i32;
+    let band = ((lat / PI + 0.5) * GLITCH_BANDS).floor() as i32;
+    if unit_hash(1, step, band) >= p.glitch_rate {
+        return (0.0, 0.0);
+    }
+    let shift = (unit_hash(2, step, band) - 0.5) * 1.5 * p.glitch;
+    (shift, 0.25 * p.glitch)
+}
+
 /// Emissive parts of the grid at the unit `n`: the line, the pulse that
 /// runs along it and the heart at the crossing, each in `[0, 1]`.
 pub fn grid_pattern(n: Vector3, t: f32, p: &NeonGridParams) -> (f32, f32, f32) {
+    grid_pattern_shifted(n, t, p, 0.0)
+}
+
+/// `grid_pattern` with the grid moved `shift` cells along the longitude.
+pub fn grid_pattern_shifted(n: Vector3, t: f32, p: &NeonGridParams, shift: f32) -> (f32, f32, f32) {
     let width = p.line_width;
     if p.detail.is_nan() || p.detail <= 0.0 || width.is_nan() || width <= 0.0 {
         return (0.0, 0.0, 0.0);
@@ -188,7 +223,7 @@ pub fn grid_pattern(n: Vector3, t: f32, p: &NeonGridParams) -> (f32, f32, f32) {
     let cells = p.cells.max(1.0);
     let lat = n.y.clamp(-1.0, 1.0).asin();
     let lon = n.z.atan2(n.x);
-    let (u, v) = (lon / TAU * cells, lat / PI * (cells / 2.0));
+    let (u, v) = (lon / TAU * cells + shift, lat / PI * (cells / 2.0));
     let (fu, fv) = (
         (u + 0.5).rem_euclid(1.0) - 0.5,
         (v + 0.5).rem_euclid(1.0) - 0.5,
@@ -222,8 +257,26 @@ impl PreparedHearts {
         } else {
             0.0
         };
-        let base = mix3(CANYON, PLATEAU, level) * lit;
-        let (line, pulse, heart) = grid_pattern(n, self.time, &self.params);
-        base + LINE * line + PULSE * pulse + HEART * heart
+        let ramp = smoothstep(0.02, 0.15, 1.0 - terrace.dot(n)) * 0.5;
+        let base = mix3(CANYON, PLATEAU, level) * lit + RAMP * ramp;
+        // The glitch moves the grid of a band and splits its red channel;
+        // it never touches the geometry (or the depth).
+        let lat = n.y.clamp(-1.0, 1.0).asin();
+        let (shift, split) = glitch_offset(lat, self.time, &self.params);
+        let glow =
+            |(line, pulse, heart): (f32, f32, f32)| LINE * line + PULSE * pulse + HEART * heart;
+        let emissive = glow(grid_pattern_shifted(n, self.time, &self.params, shift));
+        let red = if split != 0.0 {
+            glow(grid_pattern_shifted(
+                n,
+                self.time,
+                &self.params,
+                shift + split,
+            ))
+            .x
+        } else {
+            emissive.x
+        };
+        base + Vector3::new(red, emissive.y, emissive.z)
     }
 }
