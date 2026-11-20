@@ -6,6 +6,7 @@ use crate::shading::sphere::rotate_axis;
 use crate::solar::ShipState;
 use crate::solar::clock::MAX_STEP;
 use crate::solar::input::{Look, SolarAction};
+use crate::solar::ship::TurnState;
 use crate::solar::system::ScaleProfile;
 use raylib::math::Vector3;
 
@@ -146,6 +147,53 @@ pub fn thrust_accel(input: &FlightInput, ship: &ShipState) -> Vector3 {
     travel(input, ship.forward, ship.right()) * THRUST_ACCEL
 }
 
+/// Rate of the mouse turn easing, per second: about 63 % of a mouse
+/// movement is applied after 1/12 s (design).
+pub const TURN_EASE: f32 = 12.0;
+
+/// Takes the share `1 - exp(-k dt)` of the pending turn out of `turn` and
+/// returns it as (yaw, pitch). The share depends on the elapsed time only,
+/// so a mouse movement turns the ship alike at any frame rate; it never
+/// exceeds the pending turn (`k = 0` turns nothing).
+pub fn ease_turn(turn: &mut TurnState, k: f32, dt: f32) -> (f32, f32) {
+    let alpha = if k.is_finite() && dt.is_finite() {
+        (1.0 - (-k.max(0.0) * dt.max(0.0)).exp()).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let applied = (turn.yaw * alpha, turn.pitch * alpha);
+    turn.yaw -= applied.0;
+    turn.pitch -= applied.1;
+    applied
+}
+
+/// Turn of this frame around `reference_up`: the scripted rates, plus the
+/// mouse look directly (pre-project flight) or eased into (inertial
+/// flight). The mouse delta is per frame and never scaled by `dt`.
+fn frame_turn(ship: &mut ShipState, input: &FlightInput, dt: f32) -> (f32, f32) {
+    let turn = ship.turn_speed * dt;
+    let (yaw, pitch) = if ship.inertia {
+        ship.turn.yaw += input.look.yaw;
+        ship.turn.pitch += input.look.pitch;
+        ease_turn(&mut ship.turn, TURN_EASE, dt)
+    } else {
+        (input.look.yaw, input.look.pitch)
+    };
+    (input.yaw * turn + yaw, input.pitch * turn + pitch)
+}
+
+/// Drops the pending pitch the limits would never let the nose take, so a
+/// mouse pushed past the limit does not wind up.
+fn clamp_pending_pitch(ship: &mut ShipState, reference_up: Vector3) {
+    if ship.inertia {
+        let e = nose_elevation(ship, reference_up);
+        ship.turn.pitch = ship
+            .turn
+            .pitch
+            .clamp(MIN_PITCH.min(e) - e, MAX_PITCH.max(e) - e);
+    }
+}
+
 /// Space flight: turn (yaw around the orbital plane's normal, pitch within
 /// the limits), then move. Pre-project flight moves along the nose and
 /// sideways by `travel * move_speed * dt`, times up to `BOOST` as the boost
@@ -154,13 +202,9 @@ pub fn thrust_accel(input: &FlightInput, ship: &ShipState) -> Vector3 {
 /// without input the ship coasts. No collisions here.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
-    let turn = ship.turn_speed * dt;
-    steer(
-        ship,
-        SPACE_UP,
-        input.yaw * turn + input.look.yaw,
-        input.pitch * turn + input.look.pitch,
-    );
+    let (yaw, pitch) = frame_turn(ship, input, dt);
+    steer(ship, SPACE_UP, yaw, pitch);
+    clamp_pending_pitch(ship, SPACE_UP);
     ramp_boost(ship, input.boost, dt);
     let boost = 1.0 + (BOOST - 1.0) * ship.boost;
     let way = travel(input, ship.forward, ship.right());
@@ -438,13 +482,9 @@ fn local_motion(
     let Some(frame) = local_frame(ship, planet, radius) else {
         return;
     };
-    let turn = ship.turn_speed * dt;
-    steer(
-        ship,
-        frame.normal,
-        input.yaw * turn + input.look.yaw,
-        input.pitch * turn + input.look.pitch,
-    );
+    let (yaw, pitch) = frame_turn(ship, input, dt);
+    steer(ship, frame.normal, yaw, pitch);
+    clamp_pending_pitch(ship, frame.normal);
     let Some(frame) = local_frame(ship, planet, radius) else {
         return;
     };

@@ -51,6 +51,16 @@ pub struct ShipState {
     /// and the ship keeps moving without input. `false` keeps the
     /// pre-project flight, where the keys move the ship directly.
     pub inertia: bool,
+    /// Mouse turn still to apply, radians (inertial flight eases into it).
+    pub turn: TurnState,
+}
+
+/// Mouse turn the ship has not applied yet: the mouse adds to it and the
+/// flight controller eases it out (`flight::ease_turn`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct TurnState {
+    pub yaw: f32,
+    pub pitch: f32,
 }
 
 impl ShipState {
@@ -67,6 +77,7 @@ impl ShipState {
             thrust: 0.0,
             velocity: Vector3::zero(),
             inertia: false,
+            turn: TurnState::default(),
         }
     }
 
