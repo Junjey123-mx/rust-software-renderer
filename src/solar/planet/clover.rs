@@ -284,7 +284,60 @@ planet_params! {
         slope_rock: 0.22, 0.0, 1.0, "slope (1 - cos to the vertical) where grass gives way to rock";
         snow_line: 0.86, 0.0, 1.0, "share of the highest peak above which snow lies";
         water_gloss: 90.0, 4.0, 400.0, "specular exponent of the sea";
+        wave_speed: 1.0, 0.0, 4.0, "speed of the two wave trains (0 = still water)";
+        wave_strength: 0.06, 0.0, 0.3, "tilt of the water normal by the waves";
+        foam: 0.8, 0.0, 1.0, "opacity of the foam lines along the coast";
     }
+}
+
+/// Common period of the waves and the foam, seconds: every phase repeats
+/// after it, so time is wrapped into it (no precision loss at large `t`).
+pub const WAVE_PERIOD: f32 = 60.0;
+/// The two wave trains: direction (object space), spatial frequency on
+/// the unit sphere, whole cycles per period and amplitude share.
+const WAVES: [(Vector3, f32, f32, f32); 2] = [
+    (Vector3::new(0.95, 0.29, 0.1), 70.0, 9.0, 1.0),
+    (Vector3::new(-0.19, 0.37, 0.91), 115.0, 14.0, 0.6),
+];
+/// Width of the foam band off the coast, radians.
+pub const FOAM_BAND: f32 = 0.02;
+const FOAM_COLOR: Vector3 = hex(0xEAF6FF);
+
+/// `t` scaled by `speed` and wrapped into the wave period (0 if not finite).
+fn wave_time(t: f32, speed: f32) -> f32 {
+    let t = (t * speed).rem_euclid(WAVE_PERIOD);
+    if t.is_finite() { t } else { 0.0 }
+}
+
+/// Water normal at the unit `n` and time `t`: two wave trains of different
+/// direction and frequency tilt it along their tangential directions.
+pub fn wave_normal(n: Vector3, t: f32, p: &CloverParams) -> Vector3 {
+    let t = wave_time(t, p.wave_speed);
+    let mut tilt = Vector3::zero();
+    for (dir, k, cycles, share) in WAVES {
+        let along = dir - n * n.dot(dir);
+        let phase = k * n.dot(dir) - TAU * cycles * t / WAVE_PERIOD;
+        tilt += along * (phase.cos() * p.wave_strength * share);
+    }
+    let w = (n - tilt).normalized();
+    if w.x.is_finite() && w.y.is_finite() && w.z.is_finite() {
+        w
+    } else {
+        n
+    }
+}
+
+/// Foam at `coast_d` radians from the coast (negative at sea) and time
+/// `t`: lines rolling towards the shore inside `FOAM_BAND`, fading out to
+/// sea. 0 on land and beyond the band.
+pub fn foam(coast_d: f32, t: f32) -> f32 {
+    if !(coast_d < 0.0 && coast_d > -FOAM_BAND) {
+        return 0.0;
+    }
+    let x = -coast_d / FOAM_BAND;
+    let t = wave_time(t, 1.0);
+    let lines = 0.5 + 0.5 * (x * 18.0 + TAU * 6.0 * t / WAVE_PERIOD).sin();
+    (1.0 - x) * (0.35 + 0.65 * lines)
 }
 
 impl CloverParams {
@@ -356,7 +409,15 @@ impl PreparedClover {
         };
         let h = self.field.height(n);
         if h <= self.field.sea {
-            return self.water(n, self.field.sea - h, eye);
+            let depth = self.field.sea - h;
+            let water = self.water(wave_normal(n, self.time, &self.params), depth, eye);
+            // Only the shallow ring pays for the coast distance.
+            if depth > 0.01 || self.params.foam <= 0.0 {
+                return water;
+            }
+            let f = foam(self.field.coast_distance(n), self.time) * self.params.foam;
+            let lit = FOAM_COLOR * (AMBIENT + (1.0 - AMBIENT) * lambert(n, self.light));
+            return mix3(water, lit, f);
         }
         let bumped = HeightField::Clover(self.field).normal(n, NORMAL_EPS);
         let normal = (n + (bumped - n) * self.params.bump.clamp(0.0, 1.0)).normalized();
