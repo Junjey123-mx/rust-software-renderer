@@ -15,6 +15,7 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::attach::props::{PROP_SIZE, PropLayers, ScatterRule, bake, scatter};
+use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::card_ring::CardRing;
@@ -128,6 +129,9 @@ pub struct SolarScene {
     /// Surface props baked into sectors (`None`: none), drawn on the host
     /// an `AttachmentKind::Props` names.
     pub props: Option<PropLayers>,
+    /// Waterfalls of the clover planet (`None`: none), drawn on the host an
+    /// `AttachmentKind::Waterfalls` names.
+    pub waterfalls: Option<WaterfallSet>,
     /// What rides on which body, by id, in draw order: the royal crown on
     /// the star and the card ring around House of Cards. The geometry
     /// itself lives in `crown` and `cards`; an attachment without its
@@ -204,6 +208,7 @@ impl SolarScene {
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
             props: None,
+            waterfalls: None,
             attachments: vec![
                 AttachmentSpec {
                     kind: AttachmentKind::RoyalCrown,
@@ -350,6 +355,21 @@ impl SolarScene {
             kind: AttachmentKind::Props,
             host: self.bodies[index].id,
         });
+        let per_mountain = params.waterfalls.round().clamp(0.0, 1.0) as u8;
+        if per_mountain > 0 {
+            if let HeightField::Clover(clover) = field {
+                self.waterfalls = Some(WaterfallSet::for_clover(
+                    &clover,
+                    per_mountain,
+                    seed,
+                    SPHERE_RADIUS,
+                ));
+            }
+            self.attachments.push(AttachmentSpec {
+                kind: AttachmentKind::Waterfalls,
+                host: self.bodies[index].id,
+            });
+        }
         Ok(())
     }
 
@@ -421,6 +441,10 @@ impl SolarScene {
                         .props
                         .as_ref()
                         .map(|p| crate::solar::attach::Attachment::Props(p).extent()),
+                    AttachmentKind::Waterfalls => self
+                        .waterfalls
+                        .as_ref()
+                        .map(|w| crate::solar::attach::Attachment::Waterfalls(w).extent()),
                 };
                 reach = reach.max(extent.unwrap_or(1.0));
             }

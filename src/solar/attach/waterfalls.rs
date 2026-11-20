@@ -3,7 +3,7 @@
 //! it meets the water, a little above the slope. Positions are in planet
 //! radii (the planet's radius is 1).
 
-use crate::geometry::Mesh;
+use crate::geometry::{Mesh, Vertex};
 use crate::shading::lighting::lambert;
 use crate::shading::math::{hex, mix3, smoothstep};
 use crate::shading::noise::{gradient3, hash3};
@@ -232,5 +232,78 @@ impl WaterfallShader {
         let foam = self.foam * smoothstep(0.7, 1.0, v);
         let color = mix3(water, FALL_FOAM, foam.clamp(0.0, 1.0));
         color * (0.25 + 0.6 * lambert(face_normal, self.light) + 0.15)
+    }
+}
+
+/// One waterfall ready to draw, in the host's mesh space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedWaterfall {
+    /// The clover it falls from.
+    pub mountain: usize,
+    /// The ribbon scaled to the host's mesh (top, bottom and width too).
+    pub fall: Waterfall,
+    /// Its triangles, one `Vertex` per corner.
+    pub soup: Vec<Vertex>,
+    /// Bounding sphere of the ribbon.
+    pub bound_center: Vector3,
+    pub bound_radius: f32,
+    /// Outward direction at its middle, for the far-side test.
+    pub normal: Vector3,
+}
+
+/// The waterfalls of a clover planet.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WaterfallSet {
+    pub falls: Vec<PlacedWaterfall>,
+}
+
+impl WaterfallSet {
+    /// One fall per mountain of `field` (`per_mountain` above 1 counts as
+    /// 1: a single steepest edge per mountain; 0 gives none), scaled to a
+    /// host mesh of radius `radius`. A mountain whose descent finds no sea
+    /// gets no fall.
+    pub fn for_clover(field: &CloverField, per_mountain: u8, seed: u32, radius: f32) -> Self {
+        if per_mountain == 0 {
+            return Self::default();
+        }
+        let falls = (0..field.centers.len())
+            .filter_map(|m| {
+                let w = waterfall_from(field, m, seed).ok()?;
+                let mesh = Mesh {
+                    vertices: w.mesh.vertices.iter().map(|&v| v * radius).collect(),
+                    indices: w.mesh.indices.clone(),
+                };
+                let soup = mesh.expand_vertices(Vector3::one());
+                let bound_center = (w.top + w.bottom) * (0.5 * radius);
+                let bound_radius = mesh
+                    .vertices
+                    .iter()
+                    .map(|&v| (v - bound_center).length())
+                    .fold(0.0, f32::max);
+                Some(PlacedWaterfall {
+                    mountain: m,
+                    fall: Waterfall {
+                        top: w.top * radius,
+                        bottom: w.bottom * radius,
+                        width: w.width * radius,
+                        mesh: Arc::new(mesh),
+                    },
+                    soup,
+                    bound_center,
+                    bound_radius,
+                    normal: bound_center.normalized(),
+                })
+            })
+            .collect();
+        Self { falls }
+    }
+
+    /// Farthest vertex from the host center, mesh units (0 without falls).
+    pub fn reach(&self) -> f32 {
+        self.falls
+            .iter()
+            .flat_map(|f| f.fall.mesh.vertices.iter())
+            .map(|v| v.length())
+            .fold(0.0, f32::max)
     }
 }

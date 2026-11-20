@@ -141,8 +141,14 @@ const P3_SCALED_A_J: [(&str, u64); 10] = [
     ("J", 0x927e6b592e39779f),
 ];
 
-/// Clover planet scenarios of the scaled benchmark, captured on C49.
-const P3_CLOVER_K: [(&str, u64); 2] = [("K", 0x9427292fd696b285), ("K2", 0x679e53072378afad)];
+/// Clover planet scenarios of the scaled benchmark, captured on C49. C52
+/// adds the waterfalls (K changes, K2 is too far to show them) and K3, a
+/// mountain and its waterfall up close.
+const P3_CLOVER_K: [(&str, u64); 3] = [
+    ("K", 0xd0c2be192736fcd5),
+    ("K2", 0x679e53072378afad),
+    ("K3", 0xebb053bfd9cb501c),
+];
 
 #[test]
 fn p3_scaled_a_j_match() {

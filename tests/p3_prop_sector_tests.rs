@@ -5,11 +5,10 @@
 use raylib::math::Vector3;
 use rust_software_renderer::pipeline::{OrbitCamera, OrbitView, ViewPreset, Viewport};
 use rust_software_renderer::solar::attach::props::{
-    PropLayers, SECTOR_COUNT, SECTOR_FACING, ScatterRule, bake, scatter,
+    PropLayers, SECTOR_COUNT, ScatterRule, bake, beyond_horizon, scatter,
 };
 use rust_software_renderer::solar::attach::{AttachmentKind, AttachmentSpec};
 use rust_software_renderer::solar::effects::EffectShader;
-use rust_software_renderer::solar::instance::eye_towards;
 use rust_software_renderer::solar::planet::{CloverField, HeightField};
 use rust_software_renderer::solar::system::{PlanetId, SystemSpec};
 use rust_software_renderer::solar::{SPHERE_RADIUS, SolarMeshes, SolarScene};
@@ -110,19 +109,16 @@ fn layer_rotates_with_host() {
 #[test]
 fn back_hemisphere_sectors_culled() {
     let s = scene(2.5);
-    let t = s.bodies[1].transform;
     let props = s.props.as_ref().unwrap();
     let projection = s.projection();
+    // C52 replaced the facing cosine (-0.3 at the sector's center, which
+    // also dropped sectors whose near edge still showed in a low flight)
+    // with the horizon test of `patch_hidden`.
     let facing = props
         .layers
         .iter()
         .flat_map(|l| &l.sectors)
-        .filter(|sec| {
-            let center = t.position + t.to_world_dir(sec.bound_center) * t.scale;
-            t.to_world_dir(sec.normal)
-                .dot(eye_towards(&projection, center))
-                >= SECTOR_FACING
-        })
+        .filter(|sec| !s.patch_hidden(1, &projection, sec.bound_center, sec.bound_radius))
         .count();
     let draws = prop_draws(&s);
     assert!(draws <= facing, "{draws} > {facing}");
@@ -202,4 +198,28 @@ fn props_frame_dump() {
         )
         .unwrap();
     }
+}
+
+#[test]
+fn horizon_keeps_near_edges() {
+    let up = Vector3::new(0.0, 1.0, 0.0);
+    let at = |deg: f32| {
+        let a = deg.to_radians();
+        Vector3::new(a.sin(), a.cos(), 0.0)
+    };
+    let cell = 37f32.to_radians();
+    // Low flight (0.12 radii up): a sector centered 50 degrees away has its
+    // near edge 13 degrees away, well inside the 27 degree horizon.
+    assert!(!beyond_horizon(up, 1.12, at(50.0), cell, 1.1, 1.0));
+    // Opposite side: hidden.
+    assert!(beyond_horizon(up, 1.12, at(150.0), cell, 1.1, 1.0));
+    // A tall model just past the horizon still shows.
+    assert!(!beyond_horizon(up, 1.12, at(30.0), 0.0, 1.1, 1.0));
+    assert!(beyond_horizon(up, 1.12, at(30.0), 0.0, 1.0, 1.0));
+    // Under the orthographic camera the horizon is at 90 degrees.
+    assert!(!beyond_horizon(up, f32::INFINITY, at(89.0), 0.0, 1.0, 1.0));
+    assert!(beyond_horizon(up, f32::INFINITY, at(91.0), 0.0, 1.0, 1.0));
+    // An eye inside the occluder (or not a number) hides nothing.
+    assert!(!beyond_horizon(up, 0.9, at(170.0), 0.0, 1.0, 1.0));
+    assert!(!beyond_horizon(up, f32::NAN, at(170.0), 0.0, 1.0, 1.0));
 }

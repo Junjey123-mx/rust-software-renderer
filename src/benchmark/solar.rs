@@ -80,10 +80,12 @@ pub const LOD_SCENARIOS: [(&str, &str); 6] = [
 ];
 
 /// Project 3 clover cases, scaled system only: the clover planet up close
-/// (relief, sea, trees and rocks) and from afar.
-pub const CLOVER_SCENARIOS: [(&str, &str); 2] = [
+/// (relief, sea, trees and rocks), from afar, and facing a mountain with
+/// its waterfall.
+pub const CLOVER_SCENARIOS: [(&str, &str); 3] = [
     ("K", "close flight over the clover planet"),
     ("K2", "clover planet from afar"),
+    ("K3", "clover mountain and waterfall up close"),
 ];
 
 /// Test relief of the `L` scenarios (benchmark only).
@@ -244,7 +246,7 @@ pub fn scenario_scene_on(
             let h = height(&s, house, 0.7);
             hover(&mut s, house, h, 0.5)
         }
-        "K" | "K2" if scaled => {
+        "K" | "K2" | "K3" if scaled => {
             let clover = s.body_index(PlanetId("clover")).ok_or("no clover planet")?;
             if id == "K" {
                 // Over the clover's land, nose down towards its mountains.
@@ -257,6 +259,31 @@ pub fn scenario_scene_on(
                 s.ship.position = c - (s.ship.position - c);
                 s.ship.forward = -s.ship.forward;
                 s.ship.up = -s.ship.up;
+            } else if id == "K3" {
+                // Over the sea below the most sunlit waterfall, facing it
+                // and its mountain.
+                let t = s.bodies[clover].transform;
+                let world = |v: Vector3| t.position + t.to_world_dir(v) * t.scale;
+                let sun = (s.center - t.position).normalized();
+                let falls = &s.waterfalls.as_ref().ok_or("no waterfalls")?.falls;
+                let fall = falls
+                    .iter()
+                    .max_by(|a, b| {
+                        let lit = |f: &&crate::solar::attach::waterfalls::PlacedWaterfall| {
+                            t.to_world_dir(f.normal).dot(sun)
+                        };
+                        lit(a).total_cmp(&lit(b))
+                    })
+                    .ok_or("no waterfalls")?;
+                let (top, bottom) = (world(fall.fall.top), world(fall.fall.bottom));
+                let out = (bottom - t.position).normalized();
+                let away = bottom - top;
+                let away = (away - out * away.dot(out)).normalized();
+                let r = s.radius_of(clover);
+                s.ship.position = bottom + away * (0.3 * r) + out * (0.12 * r);
+                s.ship.forward = ((top + bottom) * 0.5 - s.ship.position).normalized();
+                s.ship.up = out;
+                s.ship.renormalize();
             } else {
                 // 12 radii away, in front of it.
                 let p = s.bodies[clover].transform.position;

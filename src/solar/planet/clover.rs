@@ -290,6 +290,7 @@ planet_params! {
         wave_speed: 1.0, 0.0, 4.0, "speed of the two wave trains (0 = still water)";
         wave_strength: 0.06, 0.0, 0.3, "tilt of the water normal by the waves";
         foam: 0.8, 0.0, 1.0, "opacity of the foam lines along the coast";
+        waterfalls: 1.0, 0.0, 1.0, "waterfalls per mountain (0 = none, rounded)";
     }
 }
 

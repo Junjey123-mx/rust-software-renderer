@@ -4,6 +4,7 @@
 use crate::pipeline::Transform;
 use crate::solar::SPHERE_RADIUS;
 use crate::solar::attach::props::PropLayers;
+use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::card_ring::CardRing;
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::system::{PlanetId, SpecError};
@@ -19,6 +20,9 @@ pub enum AttachmentKind {
     /// Surface props baked into sectors (`props::bake`, at most one set
     /// per host).
     Props,
+    /// The clover's waterfalls (`waterfalls::WaterfallSet`, at most one
+    /// set per host).
+    Waterfalls,
 }
 
 /// One attachment and the id of the body it rides on.
@@ -34,6 +38,7 @@ pub enum Attachment<'a> {
     RoyalCrown(&'a RoyalCrown),
     CardRing(&'a CardRing),
     Props(&'a PropLayers),
+    Waterfalls(&'a WaterfallSet),
 }
 
 impl Attachment<'_> {
@@ -45,6 +50,7 @@ impl Attachment<'_> {
             Self::CardRing(ring) => ring.extent(),
             // Baked on the unit-scale planet of radius `SPHERE_RADIUS`.
             Self::Props(props) => (props.reach() / SPHERE_RADIUS).max(1.0),
+            Self::Waterfalls(falls) => (falls.reach() / SPHERE_RADIUS).max(1.0),
         }
     }
 }

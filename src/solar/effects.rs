@@ -9,17 +9,17 @@
 use crate::geometry::Vertex;
 use crate::pipeline::{
     FragmentView, NormalSource, RenderError, ShadedOptions, ShadedStats, SurfaceSample, Transform,
-    Uniforms, render_shaded_with_scratch,
+    Uniforms, ViewProjection, render_shaded_with_scratch,
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::shading::lighting::lambert;
+use crate::solar::SPHERE_RADIUS;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
-use crate::solar::attach::props::{PROP_MIN_PX, SECTOR_FACING};
+use crate::solar::attach::props::{PROP_MIN_PX, beyond_horizon};
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
-use crate::solar::instance::eye_towards;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
 use crate::solar::thrusters::{FlameShader, NOZZLES, flame_length, flame_matrix};
 use raylib::math::Vector3;
@@ -103,6 +103,53 @@ impl SolarScene {
         }
     }
 
+    /// Whether the surface patch of body `host` bounded by the sphere at
+    /// `bound_center` of `bound_radius` (object space, on the mesh of
+    /// radius `SPHERE_RADIUS`) is hidden behind the body for this frame's
+    /// eye (`beyond_horizon`). The body occludes as its lowest surface: the
+    /// sea, or the deepest ground, less 0.02 radii for the chords of the
+    /// coarsest mesh. Never hidden with `culling` off.
+    pub fn patch_hidden(
+        &self,
+        host: usize,
+        projection: &ViewProjection,
+        bound_center: Vector3,
+        bound_radius: f32,
+    ) -> bool {
+        if !self.culling {
+            return false;
+        }
+        let t = self.bodies[host].transform;
+        let radius = self.radius_of(host);
+        let (to_eye, eye) = match projection {
+            ViewProjection::Perspective(camera) => {
+                let d = camera.eye - t.position;
+                (d.normalized(), d.length() / radius)
+            }
+            ViewProjection::Orbit(view) => (view.camera.eye_direction(), f32::INFINITY),
+        };
+        let lowest = self
+            .relief_of(host)
+            .map_or(1.0, |r| match r.field.sea_level() {
+                Some(sea) => 1.0 + sea,
+                None => 1.0 - r.field.max_height(),
+            });
+        let distance = bound_center.length();
+        let angle = if bound_radius < distance {
+            (bound_radius / distance).asin()
+        } else {
+            std::f32::consts::PI
+        };
+        beyond_horizon(
+            to_eye,
+            eye,
+            t.to_world_dir(bound_center).normalized(),
+            angle,
+            (distance + bound_radius) / SPHERE_RADIUS,
+            lowest - 0.02,
+        )
+    }
+
     /// Every effect draw that can appear on a `width` x `height` frame.
     pub fn effect_draws(&self, width: u32, height: u32, threads: usize) -> Vec<EffectDraw<'_>> {
         let mut draws = Vec::new();
@@ -153,16 +200,18 @@ impl SolarScene {
                     for layer in &props.layers {
                         for sector in &layer.sectors {
                             let center = t.position + t.to_world_dir(sector.bound_center) * t.scale;
-                            let normal = t.to_world_dir(sector.normal);
-                            // Sectors on the far hemisphere, then out of view.
-                            if normal.dot(eye_towards(&projection, center)) < SECTOR_FACING
-                                || !self.sphere_in_view(
-                                    center,
-                                    sector.bound_radius * t.scale,
-                                    width,
-                                    height,
-                                )
-                            {
+                            // Sectors past the horizon, then out of view.
+                            if self.patch_hidden(
+                                host,
+                                &projection,
+                                sector.bound_center,
+                                sector.bound_radius,
+                            ) || !self.sphere_in_view(
+                                center,
+                                sector.bound_radius * t.scale,
+                                width,
+                                height,
+                            ) {
                                 continue;
                             }
                             draws.push(EffectDraw {
@@ -175,6 +224,45 @@ impl SolarScene {
                                 }),
                             });
                         }
+                    }
+                }
+                AttachmentKind::Waterfalls => {
+                    let Some(set) = &self.waterfalls else {
+                        continue;
+                    };
+                    let projection = self.projection();
+                    // Hidden with the props while the planet is small.
+                    if self.radius_px(host, &projection, height) < PROP_MIN_PX {
+                        continue;
+                    }
+                    let t = self.bodies[host].transform;
+                    let model = Uniforms {
+                        model_matrix: t.matrix(),
+                    };
+                    let light = t.to_object_dir(self.light_at(t.position)).normalized();
+                    for placed in &set.falls {
+                        let center = t.position + t.to_world_dir(placed.bound_center) * t.scale;
+                        if self.patch_hidden(
+                            host,
+                            &projection,
+                            placed.bound_center,
+                            placed.bound_radius,
+                        ) || !self.sphere_in_view(
+                            center,
+                            placed.bound_radius * t.scale,
+                            width,
+                            height,
+                        ) {
+                            continue;
+                        }
+                        draws.push(EffectDraw {
+                            mesh: &placed.soup,
+                            model,
+                            options: solid_options(threads),
+                            shader: EffectShader::Waterfall(
+                                placed.fall.shader(light, self.clock.time),
+                            ),
+                        });
                     }
                 }
                 AttachmentKind::CardRing => {

@@ -139,9 +139,28 @@ pub const PROP_SIZE: f32 = 0.05;
 pub const SECTOR_COUNT: usize = 12;
 /// Below this projected radius of the host (pixels) no prop is drawn.
 pub const PROP_MIN_PX: f32 = 60.0;
-/// A sector is drawn while its normal faces the eye at least this much
-/// (cosine; slightly negative keeps the sectors on the horizon).
-pub const SECTOR_FACING: f32 = -0.3;
+
+/// Whether a patch on a planet is hidden behind it: every point within
+/// `angle` radians of the unit `dir` and at most `top` radii from the
+/// center lies past the horizon of an eye `eye` radii away along the unit
+/// `to_eye` (infinitely far under the orthographic camera), the planet
+/// occluding as a sphere of `occluder` radii. Conservative: a patch whose
+/// center is past the horizon but whose near edge (or a tall model on it)
+/// still shows is kept.
+pub fn beyond_horizon(
+    to_eye: Vector3,
+    eye: f32,
+    dir: Vector3,
+    angle: f32,
+    top: f32,
+    occluder: f32,
+) -> bool {
+    if eye.is_nan() || eye <= occluder || occluder <= 0.0 {
+        return false;
+    }
+    let horizon = (occluder / eye).acos() + (occluder / top.max(occluder)).acos();
+    dir.dot(to_eye).clamp(-1.0, 1.0).acos() - angle > horizon
+}
 
 /// Colored part of a model: each part is its own layer, since the shaded
 /// stage carries no vertex color.
