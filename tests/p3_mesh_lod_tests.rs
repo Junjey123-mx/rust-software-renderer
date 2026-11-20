@@ -141,7 +141,12 @@ fn lab6_spheres_unchanged() {
     let mut plain = scene();
     look_at_planet(&mut plain, 2.5);
     let mut flat = plain.clone();
-    for i in 0..flat.bodies.len() {
+    let built = flat.meshes.relief.builds();
+    // The clover planet keeps its relief (C49); the rest are spheres.
+    let spheres: Vec<usize> = (0..flat.bodies.len())
+        .filter(|&i| flat.relief_of(i).is_none())
+        .collect();
+    for &i in &spheres {
         flat.set_relief(i, HeightField::Flat).unwrap();
         assert_eq!(flat.lod_level(i, 500.0), None);
     }
@@ -154,10 +159,11 @@ fn lab6_spheres_unchanged() {
         stats
             .per_body
             .iter()
+            .filter(|b| spheres.contains(&b.index))
             .all(|b| !b.visible || b.triangles == 192),
         "{:?}",
         stats.per_body
     );
-    assert_eq!(flat.meshes.relief.builds(), 0);
+    assert_eq!(flat.meshes.relief.builds(), built);
     assert!(plain.set_relief(99, field()).is_err());
 }

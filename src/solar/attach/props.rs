@@ -130,6 +130,10 @@ pub fn scatter(field: &HeightField, rule: &ScatterRule, seed: u32) -> Vec<PropPo
     poses
 }
 
+/// Size of the surface models on their planet, in planet radii (about
+/// the height of a tree).
+pub const PROP_SIZE: f32 = 0.05;
+
 /// Sectors of a prop layer: the 12 vertices of the icosahedron, each prop
 /// going to the nearest one.
 pub const SECTOR_COUNT: usize = 12;

@@ -56,13 +56,14 @@ pub const HELD: [(KeyboardKey, SolarAction); 7] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 10] = [
+pub const PRESSED: [(KeyboardKey, SolarAction); 11] = [
     (KeyboardKey::KEY_P, SolarAction::TogglePause),
     (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
     (KeyboardKey::KEY_L, SolarAction::ToggleLocal),
     (KeyboardKey::KEY_F1, SolarAction::Warp(0)),
     (KeyboardKey::KEY_F2, SolarAction::Warp(1)),
     (KeyboardKey::KEY_F3, SolarAction::Warp(2)),
+    (KeyboardKey::KEY_F4, SolarAction::Warp(3)),
     (KeyboardKey::KEY_H, SolarAction::ToggleHud),
     (KeyboardKey::KEY_C, SolarAction::ToggleCulling),
     (KeyboardKey::KEY_X, SolarAction::ToggleDampers),

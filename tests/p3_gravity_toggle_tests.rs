@@ -91,7 +91,8 @@ fn toggle_keeps_scene_and_camera() {
     assert!(status_line(&s, 0.0, 60.0).ends_with("grav on"));
     // The sources are the planets with mu, where they are now.
     let sources = s.gravity_sources();
-    assert_eq!(sources.len(), 2);
+    // Crimson Entrance, the clover planet (C49) and House of Cards.
+    assert_eq!(sources.len(), 3);
     assert_eq!(sources[0].center, s.bodies[1].transform.position);
     assert_eq!(sources[0].mu, s.bodies[1].mu);
 }

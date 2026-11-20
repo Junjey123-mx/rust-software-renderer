@@ -116,10 +116,7 @@ pub fn status_line(scene: &SolarScene, speed: f32, fps: f32) -> String {
         Some(i) => {
             let altitude = (scene.ship.position - scene.bodies[i].transform.position).length()
                 - scene.radius_of(i);
-            format!(
-                "{} altitude {altitude:.2}",
-                scene.bodies[i].body().display_name()
-            )
+            format!("{} altitude {altitude:.2}", scene.bodies[i].name)
         }
         None => "no planet".to_string(),
     };
@@ -188,10 +185,7 @@ pub fn apply_toggles(scene: &mut SolarScene, actions: &[SolarAction]) -> Vec<Str
                 Err(reason) => format!("Local flight unavailable: {reason}"),
             }),
             &SolarAction::Warp(index) if warp_to(scene, index) => {
-                messages.push(format!(
-                    "Warped to {}",
-                    scene.bodies[index].body().display_name()
-                ));
+                messages.push(format!("Warped to {}", scene.bodies[index].name));
             }
             _ => {}
         }
@@ -263,7 +257,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1-F4 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
@@ -341,7 +335,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         if hud {
             let stats = scene.last_stats();
             let mut lines = hud_lines(&stats, rl.get_fps() as f32);
-            let names: Vec<&str> = scene.bodies.iter().map(|b| b.body().name()).collect();
+            let names: Vec<&str> = scene.bodies.iter().map(|b| b.id.0).collect();
             lines.extend(planet_lines(&stats, &names));
             drop(stats);
             lines.push(format!("GRAV {}", on_off(scene.gravity).to_uppercase()));

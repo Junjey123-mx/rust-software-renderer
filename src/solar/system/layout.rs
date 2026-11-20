@@ -17,6 +17,11 @@ pub const FIFTH_SLOT_RESERVED_EXTENT: f32 = 1.95;
 fn max_relief(geometry: GeometrySpec) -> f32 {
     match geometry {
         GeometrySpec::Sphere => 0.0,
+        // The tallest clover peak any seed can raise, and a tree on it.
+        GeometrySpec::Clover => {
+            crate::solar::planet::clover::CLOVER_PEAK_BOUND
+                + 1.2 * crate::solar::attach::props::PROP_SIZE
+        }
     }
 }
 

@@ -17,6 +17,9 @@ pub const MIN_CENTER_ANGLE: f32 = 70.0 * std::f32::consts::PI / 180.0;
 pub const CLOVER_HEIGHT: f32 = 0.12;
 /// Share of a mountain's height given to its rocky noise.
 const ROCK_NOISE: f32 = 0.12;
+/// Highest ground any seed can raise, radii (`max_height` of the tallest
+/// mountain, 1.25 times `CLOVER_HEIGHT` with its noise).
+pub const CLOVER_PEAK_BOUND: f32 = CLOVER_HEIGHT * 1.25 * (1.0 + ROCK_NOISE);
 
 /// Height field of the clover planet.
 #[derive(Debug, Clone, Copy, PartialEq)]

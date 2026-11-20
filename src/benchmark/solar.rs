@@ -12,6 +12,7 @@ use crate::solar::camera::CameraRig;
 use crate::solar::flight::FlightMode;
 use crate::solar::planet::{HeightField, TestField};
 use crate::solar::skybox::StarField;
+use crate::solar::system::PlanetId;
 use crate::solar::{CameraMode, FrameStats, SolarMeshes, SolarScene};
 use raylib::math::Vector3;
 use std::error::Error;
@@ -76,6 +77,13 @@ pub const LOD_SCENARIOS: [(&str, &str); 6] = [
     ("L2F", "relief mid-range with level 5 forced"),
     ("L3", "relief grazing with automatic LOD"),
     ("L3F", "relief grazing with level 5 forced"),
+];
+
+/// Project 3 clover cases, scaled system only: the clover planet up close
+/// (relief, sea, trees and rocks) and from afar.
+pub const CLOVER_SCENARIOS: [(&str, &str); 2] = [
+    ("K", "close flight over the clover planet"),
+    ("K2", "clover planet from afar"),
 ];
 
 /// Test relief of the `L` scenarios (benchmark only).
@@ -147,8 +155,8 @@ pub fn lod_levels(scene: &SolarScene) -> String {
                 .find(|s| s.index == i)
                 .and_then(|s| s.lod);
             match lod {
-                Some(l) => format!("{}:L{l}", b.body().name()),
-                None => format!("{}:-", b.body().name()),
+                Some(l) => format!("{}:L{l}", b.id.0),
+                None => format!("{}:-", b.id.0),
             }
         })
         .collect::<Vec<_>>()
@@ -219,7 +227,7 @@ pub fn scenario_scene_on(
         "A" => s.bodies.clear(),
         "B" => {
             s.bodies
-                .retain(|b| b.body() == crate::celestial::Body::CrimsonEntrance);
+                .retain(|b| b.id.0 == crate::celestial::Body::CrimsonEntrance.name());
             s.rig = CameraRig::Orbit;
             s.view.camera.target = s.bodies[0].transform.position;
             s.view.camera.zoom = 2.5;
@@ -231,8 +239,31 @@ pub fn scenario_scene_on(
             hover(&mut s, 1, h, 0.5)
         }
         "F" => {
-            let h = height(&s, 2, 0.7);
-            hover(&mut s, 2, h, 0.5)
+            // House of Cards by id: the clover sits before it in Project 3.
+            let house = s.body_index(PlanetId("house")).ok_or("no House of Cards")?;
+            let h = height(&s, house, 0.7);
+            hover(&mut s, house, h, 0.5)
+        }
+        "K" | "K2" if scaled => {
+            let clover = s.body_index(PlanetId("clover")).ok_or("no clover planet")?;
+            if id == "K" {
+                // Over the clover's land, nose down towards its mountains.
+                // `hover` flies over the night side; turning the pose 180°
+                // about the ship's right axis through the planet's center
+                // brings it over the day side.
+                let h = height(&s, clover, 0.45);
+                hover(&mut s, clover, h, 0.55);
+                let c = s.bodies[clover].transform.position;
+                s.ship.position = c - (s.ship.position - c);
+                s.ship.forward = -s.ship.forward;
+                s.ship.up = -s.ship.up;
+            } else {
+                // 12 radii away, in front of it.
+                let p = s.bodies[clover].transform.position;
+                s.ship.position = p - Vector3::new(0.0, 0.0, 12.0 * s.radius_of(clover));
+                s.ship.forward = Vector3::new(0.0, 0.0, 1.0);
+                s.ship.up = Vector3::new(0.0, 1.0, 0.0);
+            }
         }
         "G" => s.ship.yaw(std::f32::consts::PI),
         // Crimson Entrance cut about in half by the left edge (found by a
@@ -303,8 +334,16 @@ pub fn run_solar_benchmark_on(
         ..ShadedOptions::default()
     };
     let mut rows = Vec::new();
-    let relief = if scaled { &LOD_SCENARIOS[..] } else { &[] };
-    for &(id, name) in SCENARIOS.iter().chain(relief) {
+    let p3: Vec<(&str, &str)> = if scaled {
+        LOD_SCENARIOS
+            .iter()
+            .chain(&CLOVER_SCENARIOS)
+            .copied()
+            .collect()
+    } else {
+        Vec::new()
+    };
+    for &(id, name) in SCENARIOS.iter().chain(&p3) {
         let scene = scenario_scene_on(id, config, scaled)?;
         let mut fb = Framebuffer::new(config.width, config.height);
         let mut times = Vec::new();

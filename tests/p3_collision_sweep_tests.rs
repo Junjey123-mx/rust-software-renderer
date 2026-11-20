@@ -128,9 +128,9 @@ fn moving_planet_relative_velocity() {
 
 #[test]
 fn variable_radius() {
-    // The star (5.40) and House of Cards (1.75): each stops the ship at its
-    // own radius.
-    for i in [0, 2] {
+    // The star (5.40) and House of Cards (1.75, index 3 since C49 put the
+    // clover planet at index 2): each stops the ship at its own radius.
+    for i in [0, 3] {
         let mut s = scene();
         s.gravity = false;
         let distance = s.radius_of(i) + 6.0;

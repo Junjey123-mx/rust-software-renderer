@@ -8,10 +8,14 @@
 //!
 //! `P3_SCALED_A_J` fingerprints the same scenarios on the Project 3 system
 //! at the project scale (`scenario_scene_on(.., true)`): B, C and D were
-//! captured in C23, the rest in C24 once the scenarios follow the layout.
+//! captured in C23, the rest in C24 once the scenarios follow the layout,
+//! all recaptured in C49 with the clover planet. `P3_CLOVER_K` adds the
+//! clover planet scenarios K and K2 (C49).
 
 use rust_software_renderer::benchmark::SolarBenchConfig;
-use rust_software_renderer::benchmark::solar::{SCENARIOS, scenario_scene, scenario_scene_on};
+use rust_software_renderer::benchmark::solar::{
+    CLOVER_SCENARIOS, SCENARIOS, scenario_scene, scenario_scene_on,
+};
 use rust_software_renderer::pipeline::ShadedOptions;
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
@@ -120,19 +124,25 @@ fn scaled_hash(id: &str) -> u64 {
 }
 
 /// Project 3 system at the project scale: B, C and D captured on C23, the
-/// others on C24.
+/// others on C24. Recaptured on C49, which adds the clover planet between
+/// Crimson Entrance and House of Cards (House moves from 36 to 40, so the
+/// layout, the world radius and the spawn grow): A, C, D, F, G, H and I
+/// change; B, E and J (Crimson Entrance alone or close up) do not.
 const P3_SCALED_A_J: [(&str, u64); 10] = [
-    ("A", 0xc45cefa3d2a9ddcc),
+    ("A", 0x1dbb86321bfc4240),
     ("B", 0xe59e2a67ca2766b7),
-    ("C", 0x1c464b6c8d4dc9d1),
-    ("D", 0xee1ab5d5ddd77b56),
+    ("C", 0xe17dad3e5c94910e),
+    ("D", 0x6f0809c2c61bdadb),
     ("E", 0xf94f0363bdf79a8e),
-    ("F", 0xf9fde6c318a39b8d),
-    ("G", 0xd04d0613d738e4a5),
-    ("H", 0xee1ab5d5ddd77b56),
-    ("I", 0x7c27712dab665184),
+    ("F", 0xbad58159c18ffe26),
+    ("G", 0x833fb13d759a35d5),
+    ("H", 0x6f0809c2c61bdadb),
+    ("I", 0x0150a9073accf154),
     ("J", 0x927e6b592e39779f),
 ];
+
+/// Clover planet scenarios of the scaled benchmark, captured on C49.
+const P3_CLOVER_K: [(&str, u64); 2] = [("K", 0x9427292fd696b285), ("K2", 0x679e53072378afad)];
 
 #[test]
 fn p3_scaled_a_j_match() {
@@ -150,4 +160,19 @@ fn p3_scaled_a_j_match() {
     for ((id, h), (_, legacy)) in got.iter().zip(LEGACY_A_J).skip(1) {
         assert_ne!(*h, legacy, "{id}");
     }
+}
+
+#[test]
+fn p3_clover_k_match() {
+    let got: Vec<(&str, u64)> = CLOVER_SCENARIOS
+        .iter()
+        .map(|&(id, _)| (id, scaled_hash(id)))
+        .collect();
+    if std::env::var_os("P3_PRINT_BASELINE").is_some() {
+        for (id, h) in &got {
+            println!("    (\"{id}\", {h:#018x}),");
+        }
+    }
+    assert_eq!(got, P3_CLOVER_K);
+    assert_ne!(got[0].1, got[1].1);
 }

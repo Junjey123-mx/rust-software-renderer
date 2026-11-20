@@ -62,7 +62,7 @@ fn render(s: &SolarScene) {
 }
 
 fn names(s: &SolarScene) -> Vec<&'static str> {
-    s.bodies.iter().map(|b| b.body().name()).collect()
+    s.bodies.iter().map(|b| b.id.0).collect()
 }
 
 #[test]
@@ -82,8 +82,13 @@ fn per_body_lod_matches_selection() {
         assert_eq!(relief.lod, Some(lod_for(px)), "d {d}");
         let level = relief.lod.unwrap() as u32;
         assert_eq!(relief.triangles, 20 * 4usize.pow(level));
-        // Sphere bodies carry no level.
-        for b in stats.per_body.iter().filter(|b| b.index != 1) {
+        // Sphere bodies carry no level (the clover planet has its own
+        // relief since C49).
+        for b in stats
+            .per_body
+            .iter()
+            .filter(|b| s.relief_of(b.index).is_none())
+        {
             assert_eq!(b.lod, None);
             assert_eq!(b.triangles, if b.visible { 192 } else { 0 });
         }
@@ -101,10 +106,17 @@ fn csv_lod_column_filled() {
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            if i == 1 {
-                format!("{name}:L{level}")
-            } else {
-                format!("{name}:-")
+            let stats = s.last_stats();
+            let own = stats
+                .per_body
+                .iter()
+                .find(|b| b.index == i)
+                .and_then(|b| b.lod);
+            match (i, own) {
+                (1, _) => format!("{name}:L{level}"),
+                // The clover planet's own relief (C49).
+                (_, Some(l)) if s.relief_of(i).is_some() => format!("{name}:L{l}"),
+                _ => format!("{name}:-"),
             }
         })
         .collect();

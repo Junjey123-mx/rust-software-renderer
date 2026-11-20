@@ -14,19 +14,21 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
-use crate::solar::attach::props::PropLayers;
+use crate::solar::attach::props::{PROP_SIZE, PropLayers, ScatterRule, bake, scatter};
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::card_ring::CardRing;
 use crate::solar::effects::EffectShader;
 use crate::solar::flight::{
-    FlightInput, FlightMode, FlightScale, LocalTarget, local_step_scaled, toggle_local_scaled,
+    FlightInput, FlightMode, FlightScale, LocalTarget, local_step_over, local_step_scaled,
+    toggle_local_scaled,
 };
 use crate::solar::instance::{
     Quality, adapted_material, prepare_instance, projected_radius_px, render_instance_scratch,
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::physics::{CollisionShape, GravitySource};
+use crate::solar::planet::clover::CloverParams;
 use crate::solar::planet::geometry::{LodState, Relief, lod_for, lod_step};
 use crate::solar::planet::{HeightField, PlanetMaterial, PreparedPlanet};
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
@@ -272,23 +274,26 @@ impl SolarScene {
         spec: &SystemSpec,
     ) -> Result<Self, SpecError> {
         spec.validate()?;
-        let instance = |material: &PlanetMaterial, scale: f32, spin: f32| {
-            // A Project 3 material has no laboratory 6 body to stand on yet.
-            let PlanetMaterial::Lab6(material) = *material else {
-                return Err(SpecError::Unsupported("planet.material"));
-            };
-            Ok(BodyInstance {
-                material,
-                ..BodyInstance::new(
-                    material.body(),
-                    Transform::new(Vector3::zero(), scale),
-                    spin,
-                )
-            })
+        let instance = |material: &PlanetMaterial, scale: f32, spin: f32| -> BodyInstance {
+            let transform = Transform::new(Vector3::zero(), scale);
+            match *material {
+                PlanetMaterial::Lab6(material) => BodyInstance {
+                    material,
+                    ..BodyInstance::new(material.body(), transform, spin)
+                },
+                // A Project 3 surface: the laboratory 6 material underneath
+                // is never drawn (`surface` is), it only fills the slot.
+                surface => BodyInstance {
+                    surface: Some(surface),
+                    ..BodyInstance::new(Body::CrimsonEntrance, transform, spin)
+                },
+            }
         };
         let mut bodies = vec![BodyInstance {
             mu: spec.star.mu,
-            ..instance(&spec.star.material, spec.star.scale, spec.star.spin)?
+            id: spec.star.id,
+            name: spec.star.name,
+            ..instance(&spec.star.material, spec.star.scale, spec.star.spin)
         }];
         for p in &spec.planets {
             if p.host.is_some() {
@@ -296,18 +301,56 @@ impl SolarScene {
             }
             let orbit = Orbit::from_linear(p.orbit_radius, p.orbit_speed, p.phase)
                 .map_err(|_| SpecError::OutOfRange("planet.orbit_speed", p.orbit_speed))?;
+            // The clover's field follows the planet seed.
+            let material = match p.material {
+                PlanetMaterial::Clover(params) => PlanetMaterial::Clover(CloverParams {
+                    seed: p.seed as f32,
+                    ..params
+                }),
+                other => other,
+            };
             bodies.push(
                 BodyInstance {
                     mu: p.mu,
-                    ..instance(&p.material, p.scale, p.spin)?
+                    id: p.id,
+                    name: p.name,
+                    ..instance(&material, p.scale, p.spin)
                 }
                 .with_orbit(orbit),
             );
         }
         let mut scene = Self::new(meshes, view, light_world);
         scene.bodies = bodies;
+        for i in 0..scene.bodies.len() {
+            if let Some(PlanetMaterial::Clover(params)) = scene.bodies[i].surface {
+                scene.add_clover_surface(i, &params)?;
+            }
+        }
         scene.update();
         Ok(scene)
+    }
+
+    /// Relief, trees and rocks of the clover planet at body `index`, built
+    /// once here (never while drawing).
+    fn add_clover_surface(&mut self, index: usize, params: &CloverParams) -> Result<(), SpecError> {
+        let field = HeightField::Clover(params.field());
+        self.set_relief(index, field)
+            .map_err(|_| SpecError::Unsupported("clover relief"))?;
+        let seed = params.field().seed;
+        let mut poses = scatter(&field, &ScatterRule::TREES, seed);
+        poses.extend(scatter(&field, &ScatterRule::ROCKS, seed ^ 0x5eed));
+        self.props = Some(bake(
+            &poses,
+            &field,
+            SPHERE_RADIUS,
+            PROP_SIZE * SPHERE_RADIUS,
+            seed,
+        ));
+        self.attachments.push(AttachmentSpec {
+            kind: AttachmentKind::Props,
+            host: self.bodies[index].id,
+        });
+        Ok(())
     }
 
     /// The Project 3 system (`SystemSpec::project3`) at the project scale.
@@ -418,9 +461,12 @@ impl SolarScene {
     pub fn collision_shapes(&self) -> Vec<CollisionShape> {
         (0..self.bodies.len())
             .map(|i| {
+                // A relief body collides at its highest ground in space
+                // flight (local flight follows the ground itself).
+                let relief = self.relief_of(i).map_or(0.0, |r| r.field.max_height());
                 CollisionShape::new(
                     self.bodies[i].transform.position,
-                    self.radius_of(i),
+                    self.radius_of(i) * (1.0 + relief),
                     self.ship.radius(),
                     self.body_velocity(i),
                 )
@@ -516,15 +562,30 @@ impl SolarScene {
             self.radius_of(planet),
         );
         let scale = self.flight_scale(planet);
-        local_step_scaled(
-            &mut self.ship,
-            &mut self.flight,
-            position,
-            radius,
-            input,
-            dt,
-            &scale,
-        );
+        let transform = self.bodies[planet].transform;
+        match self.relief_of(planet).map(|r| r.field) {
+            // Over relief the clearance is kept above the ground below the
+            // ship (read in the planet's turning object space).
+            Some(field) => local_step_over(
+                &mut self.ship,
+                &mut self.flight,
+                position,
+                radius,
+                input,
+                dt,
+                &scale,
+                |d| radius * field.surface_radius(transform.to_object_dir(d).normalized()),
+            ),
+            None => local_step_scaled(
+                &mut self.ship,
+                &mut self.flight,
+                position,
+                radius,
+                input,
+                dt,
+                &scale,
+            ),
+        }
     }
 
     /// `L`: toggles local flight; the ship is never moved by the toggle.
@@ -760,14 +821,14 @@ impl SolarScene {
                 light_world: self.light_for(body),
                 ..shared
             };
-            let base = prepare_instance(&drawn, &frame);
-            let prepared = match self.relief_of(i) {
-                Some(r) => PreparedPlanet::Relief {
-                    base,
+            let prepared = match (body.surface, self.relief_of(i)) {
+                (Some(surface), _) => surface.prepare(&drawn, &frame),
+                (None, Some(r)) => PreparedPlanet::Relief {
+                    base: prepare_instance(&drawn, &frame),
                     field: r.field,
                     bump: r.bump,
                 },
-                None => PreparedPlanet::Lab6(base),
+                (None, None) => PreparedPlanet::Lab6(prepare_instance(&drawn, &frame)),
             };
             jobs.push(Job::Body(Box::new(prepared), drawn.transform));
             let model = Uniforms {
@@ -993,7 +1054,7 @@ impl SolarScene {
 
     /// Index of the body with stable id `id`.
     pub fn body_index(&self, id: PlanetId) -> Option<usize> {
-        self.bodies.iter().position(|b| b.body().name() == id.0)
+        self.bodies.iter().position(|b| b.id == id)
     }
 
     /// Pose of the body with id `id` this frame: its transform (center,

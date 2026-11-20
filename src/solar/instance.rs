@@ -9,6 +9,8 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::Orbit;
+use crate::solar::planet::PlanetMaterial;
+use crate::solar::system::PlanetId;
 use raylib::math::Vector3;
 
 /// Shader uniforms of one instance: the laboratory six shaders expect the
@@ -50,6 +52,13 @@ pub struct BodyInstance {
     pub debug: DebugView,
     /// Gravitational parameter of the body (0: no pull), from the spec.
     pub mu: f32,
+    /// Id of the body in the system spec (a laboratory 6 body's own name).
+    pub id: PlanetId,
+    /// Display name.
+    pub name: &'static str,
+    /// A Project 3 surface drawn instead of `material` (`None`: the
+    /// laboratory 6 body as it always was).
+    pub surface: Option<PlanetMaterial>,
 }
 
 impl BodyInstance {
@@ -61,6 +70,9 @@ impl BodyInstance {
             orbit: None,
             debug: DebugView::None,
             mu: 0.0,
+            id: PlanetId(body.name()),
+            name: body.display_name(),
+            surface: None,
         }
     }
 

@@ -6,6 +6,7 @@ use crate::solar::SPHERE_RADIUS;
 use crate::solar::flight::THRUST_ACCEL;
 use crate::solar::physics::design_mu;
 use crate::solar::planet::PlanetMaterial;
+use crate::solar::planet::clover::CloverParams;
 use std::collections::HashSet;
 
 /// Stable identity of a body (also its `--set` prefix).
@@ -17,6 +18,8 @@ pub struct PlanetId(pub &'static str);
 pub enum GeometrySpec {
     /// The course sphere (`assets/models/sphere.obj`).
     Sphere,
+    /// The clover relief (`planet::clover`) with its trees and rocks.
+    Clover,
 }
 
 /// Geometry attached to a body (rings, crowns, loops); none yet.
@@ -178,6 +181,29 @@ pub const SPEC_PARAMS: [&str; 6] = [
 ];
 
 impl SystemSpec {
+    /// `--set <id>.<param>` on a Project 3 material (the clover's
+    /// `CloverParams`; its `seed` is the planet seed). `Ok(false)` leaves a
+    /// laboratory 6 body's parameter to its shader.
+    fn apply_material_set(&mut self, id: &str, param: &str, value: f32) -> Result<bool, SpecError> {
+        let Some(p) = self.planets.iter_mut().find(|p| p.id.0 == id) else {
+            return Ok(false);
+        };
+        let PlanetMaterial::Clover(params) = &mut p.material else {
+            return Ok(false);
+        };
+        let spec = CloverParams::SPECS
+            .iter()
+            .find(|s| s.name == param)
+            .ok_or(SpecError::Unsupported("clover material parameter"))?;
+        params
+            .set(param, value)
+            .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
+        if param == "seed" {
+            p.seed = params.seed.round() as u32;
+        }
+        Ok(true)
+    }
+
     /// Applies `--set <id>.<param>=<value>` when `param` is one of
     /// `SPEC_PARAMS` and returns `Ok(true)`; any other parameter is left to
     /// the shader (`Ok(false)`). Values are checked here (finite; radii
@@ -188,7 +214,7 @@ impl SystemSpec {
             return Ok(false);
         };
         let Some(&param) = SPEC_PARAMS.iter().find(|&&p| p == param) else {
-            return Ok(false);
+            return self.apply_material_set(id, param, value);
         };
         finite(param, value)?;
         match param {
@@ -264,10 +290,30 @@ impl SystemSpec {
     pub fn project3() -> Self {
         let mut spec = Self::preproject3();
         spec.star.scale = 5.40 / SPHERE_RADIUS;
-        for (p, (radius, orbit, speed)) in spec
-            .planets
-            .iter_mut()
-            .zip([(1.10, 14.0, 1.0), (1.75, 36.0, 0.75)])
+        // Crimson -> Clover -> (room for Hearts) -> House of Cards.
+        let clover = CloverParams::default();
+        spec.planets.insert(
+            1,
+            PlanetSpec {
+                id: PlanetId("clover"),
+                name: "Clover Haven",
+                scale: 1.0,
+                orbit_radius: 0.0,
+                orbit_speed: 0.0,
+                phase: 2.4,
+                spin: 0.12,
+                seed: clover.seed as u32,
+                mu: 0.0,
+                material: PlanetMaterial::Clover(clover),
+                geometry: GeometrySpec::Clover,
+                attachments: Vec::new(),
+                host: None,
+            },
+        );
+        for (p, (radius, orbit, speed)) in
+            spec.planets
+                .iter_mut()
+                .zip([(1.10, 14.0, 1.0), (1.45, 21.0, 0.9), (1.75, 40.0, 0.75)])
         {
             p.scale = radius / SPHERE_RADIUS;
             p.orbit_radius = orbit;
