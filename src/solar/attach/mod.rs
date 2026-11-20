@@ -2,6 +2,7 @@
 //! contract instead of an `Option` field per decoration.
 
 pub mod landmark;
+pub mod path;
 pub mod prop_meshes;
 pub mod props;
 pub mod spec;
