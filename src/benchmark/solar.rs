@@ -10,6 +10,7 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::camera::CameraRig;
 use crate::solar::flight::FlightMode;
+use crate::solar::planet::{HeightField, TestField};
 use crate::solar::skybox::StarField;
 use crate::solar::{CameraMode, FrameStats, SolarMeshes, SolarScene};
 use raylib::math::Vector3;
@@ -63,6 +64,26 @@ pub const CULLING_SCENARIOS: [(&str, &str); 2] = [
     ("G2", "planet cut by the screen edge"),
     ("G3", "camera turned 90 degrees"),
 ];
+
+/// Project 3 relief cases, scaled system only: Crimson Entrance with a test
+/// relief far (level 2), mid-range (level 4) and grazing (level 4 at
+/// 800x600, 5 on taller frames), each with the automatic level and then
+/// with level 5 forced (A/B side by side).
+pub const LOD_SCENARIOS: [(&str, &str); 6] = [
+    ("L1", "relief far with automatic LOD"),
+    ("L1F", "relief far with level 5 forced"),
+    ("L2", "relief mid-range with automatic LOD"),
+    ("L2F", "relief mid-range with level 5 forced"),
+    ("L3", "relief grazing with automatic LOD"),
+    ("L3F", "relief grazing with level 5 forced"),
+];
+
+/// Test relief of the `L` scenarios (benchmark only).
+pub const BENCH_RELIEF: HeightField = HeightField::Test(TestField {
+    amplitude: 0.04,
+    frequency: 6.0,
+    sea_level: Some(0.0),
+});
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SolarBenchRow {
@@ -227,6 +248,27 @@ pub fn scenario_scene_on(
             let clearance = s.flight_scale(1).clearance;
             hover(&mut s, 1, clearance, 0.8)
         }
+        "L1" | "L1F" | "L2" | "L2F" | "L3" | "L3F" if scaled => {
+            s.set_relief(1, BENCH_RELIEF)?;
+            if id.ends_with('F') {
+                s.lod_force = Some(5);
+            }
+            match &id[..2] {
+                // In front of the planet, 15 and 2 radii from its center.
+                "L1" | "L2" => {
+                    let d = if id.starts_with("L1") { 15.0 } else { 2.0 };
+                    let p = s.bodies[1].transform.position;
+                    s.ship.position = p - Vector3::new(0.0, 0.0, d * s.radius_of(1));
+                    s.ship.forward = Vector3::new(0.0, 0.0, 1.0);
+                    s.ship.up = Vector3::new(0.0, 1.0, 0.0);
+                }
+                // J's grazing flight.
+                _ => {
+                    let clearance = s.flight_scale(1).clearance;
+                    hover(&mut s, 1, clearance, 0.8)
+                }
+            }
+        }
         other => return Err(format!("unknown solar scenario '{other}'").into()),
     }
     Ok(s)
@@ -261,7 +303,8 @@ pub fn run_solar_benchmark_on(
         ..ShadedOptions::default()
     };
     let mut rows = Vec::new();
-    for (id, name) in SCENARIOS {
+    let relief = if scaled { &LOD_SCENARIOS[..] } else { &[] };
+    for &(id, name) in SCENARIOS.iter().chain(relief) {
         let scene = scenario_scene_on(id, config, scaled)?;
         let mut fb = Framebuffer::new(config.width, config.height);
         let mut times = Vec::new();

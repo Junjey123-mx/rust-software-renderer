@@ -159,6 +159,8 @@ pub struct SolarScene {
     pub lod_live: bool,
     /// Level of each body across frames when `lod_live` is on.
     lod_states: RefCell<Vec<LodState>>,
+    /// One level for every relief body, whatever its size (benchmark A/B).
+    pub lod_force: Option<u8>,
     /// Center of the orbits (the star).
     pub center: Vector3,
     /// Unit direction towards the light, world space.
@@ -211,6 +213,7 @@ impl SolarScene {
             relief: Vec::new(),
             lod_live: false,
             lod_states: RefCell::new(Vec::new()),
+            lod_force: None,
             culling: true,
             quality: Quality::Full,
             clock: SimulationClock::default(),
@@ -890,6 +893,9 @@ impl SolarScene {
     /// body. With `lod_live` it moves that body's hysteresis state.
     pub fn lod_level(&self, index: usize, px: f32) -> Option<u8> {
         self.relief_of(index)?;
+        if let Some(level) = self.lod_force {
+            return Some(level);
+        }
         if !self.lod_live {
             return Some(lod_for(px));
         }
