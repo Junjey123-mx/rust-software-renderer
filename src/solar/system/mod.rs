@@ -1,6 +1,7 @@
 //! Project 3 system description: validated data for the star and every
 //! planet (identity, orbit, spin, seed, material, geometry and gravity).
 
+pub mod layout;
 pub mod scale;
 pub mod spec;
 
