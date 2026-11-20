@@ -60,10 +60,11 @@ pub fn tangent_uv(n: Vector3, center: Vector3) -> Option<P2> {
 
 /// Signed distance to a clover of lobe radius `lobe_r` (negative inside):
 /// three circles at 120 degrees around the origin and a widening stem
-/// below, joined with a smooth minimum.
+/// below, joined with a smooth minimum. A hub inside the lobes keeps the
+/// middle high, so no lake is trapped where the lobes meet.
 pub fn clover_sdf(p: P2, lobe_r: f32, stem: f32) -> f32 {
     let k = lobe_r * 0.35;
-    let mut d = f32::INFINITY;
+    let mut d = circle(p, (0.0, 0.0), lobe_r * 0.6);
     for a in [90.0f32, 210.0, 330.0] {
         let a = a.to_radians();
         let c = (a.cos() * lobe_r * 0.95, a.sin() * lobe_r * 0.95);
@@ -180,6 +181,27 @@ impl CloverField {
             }
         }
         h
+    }
+
+    /// Whether the ground at `n` stands above the sea.
+    pub fn is_land(&self, n: Vector3) -> bool {
+        self.height(n) > self.sea
+    }
+
+    /// Signed angular distance from `n` to the coast, radians: positive on
+    /// land, negative at sea. Estimated as the height over the sea divided
+    /// by the slope (central differences 1e-3 rad wide), so it is exact
+    /// close to the coast, where the material and the foam read it.
+    pub fn coast_distance(&self, n: Vector3) -> f32 {
+        const EPS: f32 = 1e-3;
+        let t1 = tangent(n);
+        let t2 = n.cross(t1);
+        let at = |d: Vector3| self.height((n + d * EPS).normalized());
+        let du = (at(t1) - at(-t1)) / (2.0 * EPS);
+        let dv = (at(t2) - at(-t2)) / (2.0 * EPS);
+        let slope = du.hypot(dv).max(1e-4);
+        let d = (self.height(n) - self.sea) / slope;
+        if d.is_finite() { d } else { 0.0 }
     }
 
     /// Bound of `height`, radii.
