@@ -4,7 +4,7 @@ Proyecto del curso **Gráficas por Computadora** — **Universidad del Valle de 
 
 Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado), una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado y, sobre todo ello, el **Laboratorio 6: planetas y estrellas con shaders**: tres cuerpos celestes con fragment shaders procedurales sobre la misma esfera.
 
-- [Proyecto 3 — Space Travel (entrega provisional)](#proyecto-3--space-travel-entrega-provisional)
+- [Proyecto 3 — Space Travel](#proyecto-3--space-travel)
 - [Laboratorio 6 — Planetas y estrellas con shaders](#laboratorio-6--planetas-y-estrellas-con-shaders)
 - [Camino al Proyecto 3 — Sistema solar navegable](#camino-al-proyecto-3--sistema-solar-navegable)
 - [Vista interactiva (opcional)](#vista-interactiva-de-la-nave-mejora-opcional)
@@ -17,38 +17,97 @@ Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de mode
 
 ---
 
-## Proyecto 3 — Space Travel (entrega provisional)
+## Proyecto 3 — Space Travel
 
-Entrega del proyecto final sobre la escena `--scene solar` del [Camino al Proyecto 3](#camino-al-proyecto-3--sistema-solar-navegable): The King's Crown, Crimson Entrance y House of Cards con la nave propia, todo con el rasterizador en CPU de este repositorio. Esta sección es **provisional**: deja el proyecto entregable (requisitos R1–R5) antes de las mejoras opcionales de la rúbrica, que se documentarán aquí a medida que se cierren. El estado de cada requisito habilitante y su evidencia está en [docs/project3_delivery_contract.md](docs/project3_delivery_contract.md).
+Sistema solar navegable dibujado por completo con el rasterizador por CPU de este repositorio: la estrella The King's Crown, cuatro planetas (Crimson Entrance, Clover Haven, Neon Hearts y House of Cards) y la nave propia del Laboratorio 3. raylib solo abre la ventana, lee teclado y ratón y presenta el framebuffer. La arquitectura y las fórmulas de escala, órbitas y gravedad están en [docs/project3.md](docs/project3.md). El estado de los requisitos habilitantes R1–R5 está en [docs/project3_delivery_contract.md](docs/project3_delivery_contract.md).
 
-▶ [Recorrido continuo](docs/videos/project3/00-provisional-tour.mp4) · 32 s, 800×600, 30 fps, **sin warp, sin cambio de cámara y sin cortes**:
-- vuelo espacial desde fuera del sistema, con una ráfaga de velocidad de la luz;
-- acercamiento continuo a Crimson Entrance;
-- vuelta completa alrededor del planeta en vuelo local (más de 2π; lo comprueba `tests/p3_recording_tests.rs`);
-- alejamiento con turbo.
+▶ [Recorrido final](docs/videos/project3/01-final-tour.mp4) · 56 s, 800×600, 30 fps, **un solo plano sin viaje rápido, sin cambio de cámara y sin cortes**, con la gravedad encendida:
 
-El clip sale del guion `--timeline tour` ([`src/solar/record.rs`](src/solar/record.rs)): la nave arranca en un punto calculado en forma cerrada para que una línea recta llegue junto a la posición futura del planeta en su órbita.
+1. vuelo espacial desde fuera del sistema, con ráfagas de velocidad de la luz;
+2. acercamiento continuo a Crimson Entrance y una vuelta completa en vuelo local (más de 2π);
+3. pasada junto al planeta trébol (montañas, árboles, rocas y cascada);
+4. pasada junto a Neon Hearts (rejilla neón, pirámide-corazón, ciudad, naves y motos de luz con estelas);
+5. alejamiento a velocidad de la luz.
+
+![Recorrido final](docs/videos/project3/01-final-tour.gif)
+
+El clip sale del guion `--timeline final-tour` ([`src/solar/record.rs`](src/solar/record.rs)). La nave se pilota con las mismas acciones que un jugador: teclas de vuelo y giros de ratón. [`tests/p3_final_tour_tests.rs`](tests/p3_final_tour_tests.rs) comprueba:
+
+- que no hay cortes;
+- que la vuelta local supera 2π;
+- que el camino es continuo a 30 y 60 FPS sin entrar en ningún cuerpo;
+- que el clip dura a lo sumo 60 s.
+
+### Capturas
+
+Las capturas salen del framebuffer de CPU.
+
+| | |
+|---|---|
+| ![Trébol de cerca](docs/screenshots/project3/01-clover-close.png) Trébol de cerca | ![Cascada del trébol](docs/screenshots/project3/02-clover-waterfall.png) Montaña y cascada |
+| ![Ciudad de Hearts](docs/screenshots/project3/03-hearts-city.png) Pirámide y ciudad de Hearts | ![Sistema](docs/screenshots/project3/04-system-orbit.png) El sistema con la nave |
+| ![Gravedad](docs/screenshots/project3/05-gravity-on-off.png) Nave en deriva cada 1 s: sin gravedad (recta) y con gravedad (se curva hacia el planeta) | ![HUD](docs/screenshots/project3/06-hud-counters.png) HUD: descarte, triángulos y nivel de detalle por planeta |
 
 ### Cómo ejecutar
 
 ```bash
 cargo run --release -- --scene solar                       # pilotar la nave (cámara Follow)
 cargo run --release -- --scene solar --camera orbit        # sistema completo desde la cámara orbital
-cargo run --release -- --scene solar --record 32 --fps 30 --timeline tour | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - recorrido.mp4
-docs/videos/project3/encode.sh                             # regenera el clip (tras cargo build --release)
-cargo test                                                 # todas las pruebas
+cargo run --release -- --scene solar --record 56 --fps 30 --timeline final-tour | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - recorrido.mp4
+docs/videos/project3/encode.sh                             # regenera 01-final-tour.mp4 y .gif (tras cargo build --release)
+cargo test --release                                       # todas las pruebas
 ```
 
 | Entrada | Acción |
 |---|---|
-| Ratón, `W` `A` `S` `D` | Orientar la nave; avanzar, retroceder y desplazarse de lado |
+| Ratón, `W` `A` `S` `D` | Orientar la nave; avanzar, retroceder y desplazarse de lado (aceleración y frenado progresivos) |
 | `SPACE` (mantener) | Velocidad de la luz, solo en vuelo espacial |
+| `E` / `Q` | Subir / bajar; en vuelo local, alejarse / acercarse al suelo |
 | `L` | Entrar o salir del vuelo local sobre el planeta más cercano |
-| `E` / `Q` | Alejarse / acercarse al planeta en vuelo local |
-| `F1` `F2` `F3` | Viaje rápido junto a cada cuerpo (no se usa en el video) |
+| `F1` `F2` `F3` `F4` | Viaje rápido junto a cada planeta (no se usa en el video) |
+| `G` | Gravedad encendida / apagada |
+| `X` | Amortiguadores inerciales encendidos / apagados |
+| `C` | Descarte fuera de la vista encendido / apagado |
+| `H` | HUD con contadores |
 | `V` | Cámara Follow ↔ cámara Orbit |
 | `P` | Pausa de órbitas y materiales |
 | `TAB`, `ESC` | Capturar o liberar el ratón; `ESC` con el ratón libre sale |
+
+### Puntos reclamados
+
+La lista sale solo de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs/project3_rubric_claims.md). Cada fila tiene su suite, su comando y su captura.
+
+| Rubro | Seguro | Dónde verlo |
+|---|---:|---|
+| Planetas (4 de 5, sin la estrella) | 40 | Video; capturas 01–04 |
+| Tipos de modelo sobre la superficie (árboles, rocas, edificios neón, pirámide) | 20 | Capturas 01–03 |
+| Distribución procedural con semilla y ruido | 10 | [Semillas 7 y 8](docs/results/project3/geometry/seed_7_vs_8.png) |
+| Posición y orientación sobre la superficie al girar | 5 | [Orientación al girar](docs/results/project3/geometry/orientation_spin.png) |
+| Shaders propios distinguibles (4) | 24 | Capturas 01–04; Laboratorio 6 |
+| Shader animado | 8 | Video (agua del trébol, glitch de Hearts) |
+| Mapeo de normales (normal del campo y bump procedural) | 4 de 8 | [Bump apagado / encendido](docs/results/project3/geometry/normals_bump_0_1.png) |
+| Deformación de la geometría con ruido | 10 | [Relieve plano / con campo](docs/results/project3/geometry/relief_flat_vs_field.png) |
+| Subdivisión procedural antes de rasterizar | 10 | [Niveles 2 y 5](docs/results/project3/geometry/subdivision_l2_l5.png) |
+| Vuelo local alrededor de un planeta | 8 | Video (vuelta a Crimson Entrance) |
+| Aceleración, frenado y giro progresivos | 8 | Video |
+| Atracción gravitatoria | 10 | Captura 05 |
+| Descarte fuera de la vista | 7 | Captura 06; [benchmark](docs/results/project3/benchmark_final.md) |
+| Niveles de detalle según la distancia | 8 | Captura 06; [benchmark](docs/results/project3/benchmark_final.md) |
+| Coherencia visual (juicio docente) | 3 de 5 | Video y capturas |
+| Claridad de la experiencia (juicio docente) | 3 de 5 | HUD, controles y este README |
+
+- **Colisión con los planetas (4):** implementada y probada, pero sin captura propia; se demuestra en vivo y no se reclama como segura.
+- **Totales:** 178 seguros y 190 condicionados, sobre el máximo de 200 del menú.
+- **Quinto planeta:** sigue en `ART_PENDING_APPROVAL` ([decisión](docs/project3_fifth_planet_decision.md)), así que el techo es 190.
+
+**Ningún total está garantizado:** cada rubro suma solo si el profesor lo acepta en la demostración, y la nota es min(100, puntos aceptados).
+
+### Limitaciones
+
+- **Colisión a FPS muy bajos:** la forma de colisión adelanta al planeta hasta un cuadro de su órbita (0.035 u a 10 FPS; [gravity_evidence.md](docs/results/project3/gravity_evidence.md)).
+- **Escenas pesadas:** el escenario medido más lento tarda 92.9 ms por cuadro con todos los núcleos a 800×600. Es el relieve rasante con el nivel 5 forzado, solo para comparar; con el nivel elegido por distancia, la misma vista tarda 82.8 ms ([benchmark_final.md](docs/results/project3/benchmark_final.md)).
+- **FPS del HUD en la captura 06:** es 1 / tiempo de `render_frame`, sin la presentación de la ventana.
+- **Video:** en cada pasada el planeta queda debajo de la cámara Follow por unos segundos.
 
 ### Integrantes y contribuciones
 
@@ -59,14 +118,24 @@ cargo test                                                 # todas las pruebas
 ### Recursos externos
 
 - **raylib 5.5** (crate `raylib`): solo ventana, teclado, ratón y presentación del framebuffer como textura. No se usa para dibujo 3D, cámaras, shaders de GPU ni física.
-- **`assets/models/sphere.obj`**: esfera del docente, sin modificar, compartida por los tres cuerpos.
-- **`assets/models/Laboratorio3.obj`**: la nave `NaveBimotor` del Laboratorio 3, exportada desde Blender, sin modificar.
-- **ffmpeg**: herramienta externa para codificar los videos; el programa no la usa.
-- No se cargan texturas, imágenes ni modelos de terceros y no hay otros *crates*.
+- **`assets/models/sphere.obj`:** esfera del docente, sin modificar, compartida por los cuerpos.
+- **`assets/models/Laboratorio3.obj`:** la nave `NaveBimotor` del Laboratorio 3, exportada desde Blender, sin modificar.
+- **Geometría propia:** árboles, rocas, edificios, pirámide-corazón, naves neón, motos de luz y estelas se generan por código en este repositorio. No se cargan modelos de terceros.
+- **ffmpeg:** codifica los videos y el GIF. El programa no lo usa.
+- **Python con Pillow:** solo compone las imágenes comparativas de la documentación (captura 05 y `docs/results/project3/geometry/`). El programa no lo usa.
+- No se cargan texturas ni imágenes, y no hay otros *crates*.
 
 ### Declaración de asistencia de IA
 
-Este proyecto se desarrolló con asistencia de inteligencia artificial: **Claude Code (Anthropic)** se usó como asistente de programación para proponer la arquitectura, escribir e iterar el código y las pruebas, ejecutar mediciones y redactar documentación, incluida esta sección. El autor dirigió el trabajo, fijó el alcance y las decisiones de diseño, y revisa el resultado antes de publicarlo; los commits se hacen con su identidad.
+Este proyecto se desarrolló con asistencia de inteligencia artificial: **Claude Code (Anthropic)** se usó como asistente de programación para:
+
+- proponer la arquitectura;
+- escribir e iterar el código y las pruebas;
+- guionizar y grabar el recorrido;
+- generar las capturas y ejecutar mediciones;
+- redactar documentación, incluida esta sección.
+
+El autor dirigió el trabajo, fijó el alcance y las decisiones de diseño, y revisa el resultado antes de publicarlo. Los commits se hacen con su identidad.
 
 ---
 
