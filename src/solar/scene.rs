@@ -26,7 +26,7 @@ use crate::solar::instance::{
     shade_instance,
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
-use crate::solar::physics::GravitySource;
+use crate::solar::physics::{CollisionShape, GravitySource};
 use crate::solar::planet::PlanetMaterial;
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
@@ -373,6 +373,32 @@ impl SolarScene {
             .enumerate()
             .filter(|(_, b)| b.mu > 0.0)
             .map(|(i, b)| GravitySource::new(b.transform.position, b.mu, self.radius_of(i)))
+            .collect()
+    }
+
+    /// World velocity of body `index` now: along its orbit at the clock's
+    /// speed, zero while paused or without an orbit.
+    pub fn body_velocity(&self, index: usize) -> Vector3 {
+        match self.bodies[index].orbit {
+            Some(o) if !self.clock.paused => {
+                let r = self.bodies[index].transform.position - self.center;
+                r.cross(Vector3::new(0.0, o.speed * self.clock.speed, 0.0))
+            }
+            _ => Vector3::zero(),
+        }
+    }
+
+    /// Every body (the star too) as a collision sphere for the ship.
+    pub fn collision_shapes(&self) -> Vec<CollisionShape> {
+        (0..self.bodies.len())
+            .map(|i| {
+                CollisionShape::new(
+                    self.bodies[i].transform.position,
+                    self.radius_of(i),
+                    self.ship.radius(),
+                    self.body_velocity(i),
+                )
+            })
             .collect()
     }
 

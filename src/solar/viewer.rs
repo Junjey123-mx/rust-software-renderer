@@ -217,8 +217,8 @@ pub fn fly(
             };
             match scene.flight {
                 FlightMode::Space => {
-                    let sources = scene.gravity_sources();
-                    space_step_in(&mut scene.ship, &input, dt, &sources)
+                    let (sources, shapes) = (scene.gravity_sources(), scene.collision_shapes());
+                    space_step_in(&mut scene.ship, &input, dt, &sources, &shapes)
                 }
                 FlightMode::Local { .. } => scene.local_step(&input, dt),
             }
