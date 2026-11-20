@@ -57,6 +57,13 @@ pub const SCENARIOS: [(&str, &str); 10] = [
     ("J", "lowest flight over Crimson Entrance"),
 ];
 
+/// Project 3 culling cases, outside A-J (whose rows, CSV and frozen
+/// fingerprints stay as they are); `scenario_scene` builds them too.
+pub const CULLING_SCENARIOS: [(&str, &str); 2] = [
+    ("G2", "planet cut by the screen edge"),
+    ("G3", "camera turned 90 degrees"),
+];
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SolarBenchRow {
     pub id: &'static str,
@@ -156,6 +163,11 @@ pub fn scenario_scene(id: &str, config: &SolarBenchConfig) -> Result<SolarScene,
         "E" => hover(&mut s, 1, 0.7, 0.5),
         "F" => hover(&mut s, 2, 0.7, 0.5),
         "G" => s.ship.yaw(std::f32::consts::PI),
+        // Crimson Entrance cut about in half by the left edge (found by a
+        // sweep: the whole planet covers about 4000 pixels at 800x600, 2300
+        // stay on screen, 66 of them on the first column).
+        "G2" => s.ship.yaw(-0.38),
+        "G3" => s.ship.yaw(std::f32::consts::FRAC_PI_2),
         "I" => {
             s.stars = StarField::generate(s.stars.seed, 0);
             s.nebula.intensity = 0.0;
