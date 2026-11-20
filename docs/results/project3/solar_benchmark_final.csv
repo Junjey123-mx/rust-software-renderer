@@ -1,0 +1,105 @@
+system,variant,scenario,name,threads,runs,rounds_per_run,bodies,fragments_shaded,median_of_medians_ms,min_run_median_ms,max_run_median_ms,min_round_ms,max_round_ms,peak_rss_kb,objects_tested,objects_culled,draws,triangles_submitted,triangles_culled,lod_levels,commit
+legacy,auto,A,spacecraft alone,1,3,7,0,25993,5.193,5.170,8.514,5.140,9.198,54248,1,0,4,894,56,,a3d4c3f
+legacy,auto,B,one planet,1,3,7,1,23469,86.118,86.008,86.311,85.932,95.875,54248,2,0,5,1086,279,entrance:-,a3d4c3f
+legacy,auto,C,distant system with three bodies,1,3,7,3,13183,17.419,17.377,17.507,17.368,17.625,54248,5,0,35,3402,1425,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,D,full system with the spacecraft,1,3,7,3,43312,32.702,32.681,33.130,32.598,43.079,54248,5,0,35,3402,1405,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,E,close approach to Crimson Entrance,1,3,7,3,62738,131.240,131.156,131.413,131.115,161.991,54248,5,1,14,2650,962,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,F,close approach to House of Cards,1,3,7,3,108900,57.161,56.875,76.723,56.798,81.451,54248,5,2,16,1558,432,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,G,camera facing empty space,1,3,7,3,25993,5.154,5.154,5.194,5.116,5.281,54248,5,4,4,894,56,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,H,full system with the star field,1,3,7,3,43312,32.718,32.637,32.732,32.550,33.067,54248,5,0,35,3402,1405,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,I,full system without the sky (stars and nebula),1,3,7,3,43312,31.044,31.039,31.112,30.985,31.232,54248,5,0,35,3402,1405,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,J,lowest flight over Crimson Entrance,1,3,7,3,132873,291.724,291.510,292.025,291.233,334.624,54248,5,1,14,2650,968,crown:-;entrance:-;house:-,a3d4c3f
+p3,auto,A,spacecraft alone,1,3,7,0,25998,5.171,5.171,5.174,5.117,5.745,54248,1,0,4,894,56,,a3d4c3f
+p3,auto,B,one planet,1,3,7,1,5538,25.090,25.074,25.091,24.974,28.903,54248,2,1,1,192,108,entrance:-,a3d4c3f
+p3,auto,C,distant system with three bodies,1,3,7,5,5221,9.085,9.082,9.122,9.054,9.469,54248,7,0,47,4786,1906,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,D,full system with the spacecraft,1,3,7,5,40043,23.017,22.903,23.174,22.817,33.590,54248,7,0,46,4752,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,E,close approach to Crimson Entrance,1,3,7,5,99575,315.623,315.084,336.871,315.018,386.074,54248,7,2,24,3680,1312,crown:-;entrance:-;clover:-;hearts:L2;house:-,a3d4c3f
+p3,auto,F,close approach to House of Cards,1,3,7,5,111919,51.714,51.704,51.785,51.575,53.921,54248,7,4,14,1630,477,crown:-;entrance:-;clover:L2;hearts:-;house:-,a3d4c3f
+p3,auto,G,camera facing empty space,1,3,7,5,25998,5.202,5.186,8.628,5.134,8.925,54248,7,6,4,894,56,crown:-;entrance:-;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,H,full system with the star field,1,3,7,5,40043,22.991,22.821,29.999,22.778,32.744,54248,7,0,46,4752,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,I,full system without the sky (stars and nebula),1,3,7,5,40043,21.285,21.274,28.742,21.180,31.488,54248,7,0,46,4752,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,J,lowest flight over Crimson Entrance,1,3,7,5,228224,678.160,669.665,693.579,653.490,780.559,54248,7,2,24,3680,1316,crown:-;entrance:-;clover:-;hearts:L2;house:-,a3d4c3f
+p3,auto,L1,relief far with automatic LOD,1,3,7,5,60383,57.417,57.245,57.613,57.093,76.996,54248,7,3,14,2778,1030,crown:-;entrance:L2;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L1F,relief far with level 5 forced,1,3,7,5,60452,61.725,61.661,62.029,61.484,63.235,54248,7,3,14,22938,11749,crown:-;entrance:L5;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L2,relief mid-range with automatic LOD,1,3,7,5,151672,532.076,531.766,532.384,529.446,621.113,54248,7,5,5,6014,3522,crown:-;entrance:L4;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L2F,relief mid-range with level 5 forced,1,3,7,5,151824,536.131,535.709,536.282,535.221,616.242,54248,7,5,5,21374,13947,crown:-;entrance:L5;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L3,relief grazing with automatic LOD,1,3,7,5,238522,738.757,729.289,765.820,727.571,845.591,54248,7,2,24,8608,4902,crown:-;entrance:L4;clover:-;hearts:L2;house:-,a3d4c3f
+p3,auto,L3F,relief grazing with level 5 forced,1,3,7,5,238694,738.059,737.589,760.552,736.316,785.072,55480,7,2,24,44128,26507,crown:-;entrance:L5;clover:-;hearts:L5;house:-,a3d4c3f
+p3,auto,K,close flight over the clover planet,1,3,7,5,211563,183.030,182.898,183.061,182.721,224.793,54248,7,4,38,17890,9964,crown:-;entrance:-;clover:L4;hearts:-;house:-,a3d4c3f
+p3,auto,K2,clover planet from afar,1,3,7,5,31741,9.569,9.551,9.593,9.518,9.717,54248,7,5,7,1746,480,crown:-;entrance:-;clover:L2;hearts:-;house:-,a3d4c3f
+p3,auto,K3,clover mountain and waterfall up close,1,3,7,5,245913,145.496,143.806,145.602,143.017,227.509,54248,7,5,11,26630,19051,crown:-;entrance:-;clover:L5;hearts:-;house:-,a3d4c3f
+p3,auto,M,close flight over the hearts pyramid and city,1,3,7,5,235336,227.935,227.859,233.130,227.784,347.866,54248,7,5,43,39408,20141,crown:-;entrance:-;clover:-;hearts:L4;house:-,a3d4c3f
+p3,auto,M2,hearts planet from afar,1,3,7,5,48031,34.071,34.062,41.397,34.009,55.843,54248,7,1,25,4000,1442,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,A,spacecraft alone,1,3,7,0,25998,5.157,5.146,5.408,5.115,5.529,54248,1,0,4,894,56,,a3d4c3f
+p3,no-culling,B,one planet,1,3,7,1,5538,25.278,25.219,25.306,25.152,25.496,54248,2,0,5,1086,268,entrance:-,a3d4c3f
+p3,no-culling,C,distant system with three bodies,1,3,7,5,5221,9.113,9.055,9.124,9.043,9.253,54248,7,0,47,4786,1906,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,D,full system with the spacecraft,1,3,7,5,40043,23.380,23.049,26.090,22.809,32.719,54248,7,0,47,4786,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,E,close approach to Crimson Entrance,1,3,7,5,99575,318.845,318.427,318.997,318.041,413.831,54248,7,0,73,22150,10486,crown:-;entrance:-;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,F,close approach to House of Cards,1,3,7,5,111919,58.127,58.116,58.556,57.928,59.584,54248,7,0,76,40840,20311,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,G,camera facing empty space,1,3,7,5,25998,11.772,11.770,11.882,11.752,11.989,54248,7,0,102,57918,57080,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,H,full system with the star field,1,3,7,5,40043,22.874,22.795,23.153,22.733,23.241,54248,7,0,47,4786,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,I,full system without the sky (stars and nebula),1,3,7,5,40043,21.274,21.185,21.278,21.099,22.629,54248,7,0,47,4786,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,J,lowest flight over Crimson Entrance,1,3,7,5,228224,654.392,654.125,667.281,653.830,779.367,54248,7,0,47,5746,2370,crown:-;entrance:-;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L1,relief far with automatic LOD,1,3,7,5,60383,62.142,62.074,62.682,61.975,79.727,54248,7,0,76,41642,39364,crown:-;entrance:L2;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L1F,relief far with level 5 forced,1,3,7,5,60452,72.615,72.597,73.859,72.324,104.968,54248,7,0,76,102122,80454,crown:-;entrance:L5;clover:L5;hearts:L5;house:-,a3d4c3f
+p3,no-culling,L2,relief mid-range with automatic LOD,1,3,7,5,151672,539.652,538.966,539.904,538.325,609.146,54248,7,0,102,63806,52154,crown:-;entrance:L4;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L2F,relief mid-range with level 5 forced,1,3,7,5,151824,574.222,556.948,574.600,550.229,606.306,54248,7,0,102,118526,92611,crown:-;entrance:L5;clover:L5;hearts:L5;house:-,a3d4c3f
+p3,no-culling,L3,relief grazing with automatic LOD,1,3,7,5,238522,768.776,729.006,769.017,728.395,825.862,54248,7,0,47,10674,5956,crown:-;entrance:L4;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L3F,relief grazing with level 5 forced,1,3,7,5,238694,757.837,748.459,798.034,739.845,932.825,54248,7,0,47,65394,37507,crown:-;entrance:L5;clover:L5;hearts:L5;house:-,a3d4c3f
+p3,no-culling,K,close flight over the clover planet,1,3,7,5,211563,190.982,190.568,191.306,190.126,264.568,54248,7,0,102,65496,33378,crown:-;entrance:-;clover:L4;hearts:L4;house:-,a3d4c3f
+p3,no-culling,K2,clover planet from afar,1,3,7,5,31741,15.461,15.364,15.608,15.330,15.799,54248,7,0,76,41514,39266,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,K3,clover mountain and waterfall up close,1,3,7,5,245913,150.715,150.345,160.391,150.086,182.702,54248,7,0,102,78078,64021,crown:-;entrance:-;clover:L5;hearts:L2;house:-,a3d4c3f
+p3,no-culling,M,close flight over the hearts pyramid and city,1,3,7,5,235336,230.312,230.045,230.480,229.903,294.199,54248,7,0,102,58674,39373,crown:-;entrance:-;clover:L2;hearts:L4;house:-,a3d4c3f
+p3,no-culling,M2,hearts planet from afar,1,3,7,5,48031,34.291,34.284,39.846,34.134,42.926,54248,7,0,47,4786,1822,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+legacy,auto,A,spacecraft alone,20,3,7,0,25993,7.162,6.294,10.537,5.923,11.971,54912,1,0,4,894,56,,a3d4c3f
+legacy,auto,B,one planet,20,3,7,1,23469,19.880,13.898,22.244,13.064,24.510,54912,2,0,5,1086,279,entrance:-,a3d4c3f
+legacy,auto,C,distant system with three bodies,20,3,7,3,13183,10.979,7.873,13.787,7.155,15.956,54912,5,0,35,3402,1425,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,D,full system with the spacecraft,20,3,7,3,43312,18.209,12.594,19.277,11.313,22.802,54912,5,0,35,3402,1405,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,E,close approach to Crimson Entrance,20,3,7,3,62738,22.024,21.274,27.693,20.609,34.139,54912,5,1,14,2650,962,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,F,close approach to House of Cards,20,3,7,3,108900,15.992,15.761,20.587,14.768,24.590,54912,5,2,16,1558,432,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,G,camera facing empty space,20,3,7,3,25993,8.856,6.199,10.260,5.740,11.803,54912,5,4,4,894,56,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,H,full system with the star field,20,3,7,3,43312,18.239,12.212,19.216,11.252,20.894,54912,5,0,35,3402,1405,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,I,full system without the sky (stars and nebula),20,3,7,3,43312,16.466,16.134,16.618,9.553,17.727,54912,5,0,35,3402,1405,crown:-;entrance:-;house:-,a3d4c3f
+legacy,auto,J,lowest flight over Crimson Entrance,20,3,7,3,132873,42.148,40.702,58.645,39.551,68.865,54912,5,1,14,2650,968,crown:-;entrance:-;house:-,a3d4c3f
+p3,auto,A,spacecraft alone,20,3,7,0,25998,7.661,6.206,8.290,5.931,9.760,54912,1,0,4,894,56,,a3d4c3f
+p3,auto,B,one planet,20,3,7,1,5538,10.367,10.260,10.444,7.928,11.950,54912,2,1,1,192,108,entrance:-,a3d4c3f
+p3,auto,C,distant system with three bodies,20,3,7,5,5221,6.920,6.684,7.650,5.622,7.908,54912,7,0,47,4786,1906,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,D,full system with the spacecraft,20,3,7,5,40043,15.788,15.703,17.024,13.589,17.983,54912,7,0,46,4752,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,E,close approach to Crimson Entrance,20,3,7,5,99575,38.529,38.150,40.721,37.418,61.139,54912,7,2,24,3680,1312,crown:-;entrance:-;clover:-;hearts:L2;house:-,a3d4c3f
+p3,auto,F,close approach to House of Cards,20,3,7,5,111919,15.105,14.909,23.565,14.199,24.974,54912,7,4,14,1630,477,crown:-;entrance:-;clover:L2;hearts:-;house:-,a3d4c3f
+p3,auto,G,camera facing empty space,20,3,7,5,25998,10.030,8.722,10.085,5.797,11.726,54912,7,6,4,894,56,crown:-;entrance:-;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,H,full system with the star field,20,3,7,5,40043,16.277,16.129,20.250,13.986,21.622,54912,7,0,46,4752,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,I,full system without the sky (stars and nebula),20,3,7,5,40043,13.725,12.154,13.900,9.006,16.317,54912,7,0,46,4752,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,auto,J,lowest flight over Crimson Entrance,20,3,7,5,228224,74.739,73.909,76.126,72.037,88.839,54912,7,2,24,3680,1316,crown:-;entrance:-;clover:-;hearts:L2;house:-,a3d4c3f
+p3,auto,L1,relief far with automatic LOD,20,3,7,5,60383,22.129,20.685,24.014,14.720,25.012,54912,7,3,14,2778,1030,crown:-;entrance:L2;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L1F,relief far with level 5 forced,20,3,7,5,60452,27.674,19.877,29.666,18.562,30.282,54912,7,3,14,22938,11749,crown:-;entrance:L5;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L2,relief mid-range with automatic LOD,20,3,7,5,151672,65.952,65.339,68.465,62.555,78.098,54912,7,5,5,6014,3522,crown:-;entrance:L4;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L2F,relief mid-range with level 5 forced,20,3,7,5,151824,72.417,68.704,77.710,67.947,98.121,54912,7,5,5,21374,13947,crown:-;entrance:L5;clover:-;hearts:-;house:-,a3d4c3f
+p3,auto,L3,relief grazing with automatic LOD,20,3,7,5,238522,82.822,81.918,84.098,81.193,105.254,54912,7,2,24,8608,4902,crown:-;entrance:L4;clover:-;hearts:L2;house:-,a3d4c3f
+p3,auto,L3F,relief grazing with level 5 forced,20,3,7,5,238694,92.919,91.742,93.351,89.360,134.349,55836,7,2,24,44128,26507,crown:-;entrance:L5;clover:-;hearts:L5;house:-,a3d4c3f
+p3,auto,K,close flight over the clover planet,20,3,7,5,211563,36.561,36.364,36.592,36.088,55.181,55068,7,4,38,17890,9964,crown:-;entrance:-;clover:L4;hearts:-;house:-,a3d4c3f
+p3,auto,K2,clover planet from afar,20,3,7,5,31741,6.910,6.842,9.748,6.563,10.439,55068,7,5,7,1746,480,crown:-;entrance:-;clover:L2;hearts:-;house:-,a3d4c3f
+p3,auto,K3,clover mountain and waterfall up close,20,3,7,5,245913,38.058,36.909,41.110,36.258,61.179,55068,7,5,11,26630,19051,crown:-;entrance:-;clover:L5;hearts:-;house:-,a3d4c3f
+p3,auto,M,close flight over the hearts pyramid and city,20,3,7,5,235336,47.781,47.631,68.155,47.265,78.775,55068,7,5,43,39408,20141,crown:-;entrance:-;clover:-;hearts:L4;house:-,a3d4c3f
+p3,auto,M2,hearts planet from afar,20,3,7,5,48031,13.128,11.791,18.327,11.110,20.587,55068,7,1,25,4000,1442,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,A,spacecraft alone,20,3,7,0,25998,8.550,7.852,9.553,6.120,10.788,55068,1,0,4,894,56,,a3d4c3f
+p3,no-culling,B,one planet,20,3,7,1,5538,10.964,10.824,11.455,10.356,13.444,55068,2,0,5,1086,268,entrance:-,a3d4c3f
+p3,no-culling,C,distant system with three bodies,20,3,7,5,5221,7.326,5.603,7.807,5.336,8.265,55068,7,0,47,4786,1906,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,D,full system with the spacecraft,20,3,7,5,40043,15.816,11.473,15.948,10.227,18.533,55068,7,0,47,4786,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,E,close approach to Crimson Entrance,20,3,7,5,99575,41.432,41.270,42.060,40.409,65.416,55068,7,0,73,22150,10486,crown:-;entrance:-;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,F,close approach to House of Cards,20,3,7,5,111919,21.558,21.146,24.244,20.748,33.354,55068,7,0,76,40840,20311,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,G,camera facing empty space,20,3,7,5,25998,17.141,17.051,20.823,12.955,23.924,55068,7,0,102,57918,57080,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,H,full system with the star field,20,3,7,5,40043,16.201,15.958,18.357,14.376,20.155,55068,7,0,47,4786,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,I,full system without the sky (stars and nebula),20,3,7,5,40043,15.516,13.543,15.648,11.986,18.564,55068,7,0,47,4786,1818,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,J,lowest flight over Crimson Entrance,20,3,7,5,228224,75.687,73.301,80.190,72.935,98.926,55068,7,0,47,5746,2370,crown:-;entrance:-;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L1,relief far with automatic LOD,20,3,7,5,60383,20.484,20.202,20.782,19.364,24.366,55068,7,0,76,41642,39364,crown:-;entrance:L2;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L1F,relief far with level 5 forced,20,3,7,5,60452,36.967,30.870,47.538,30.080,49.500,55068,7,0,76,102122,80454,crown:-;entrance:L5;clover:L5;hearts:L5;house:-,a3d4c3f
+p3,no-culling,L2,relief mid-range with automatic LOD,20,3,7,5,151672,74.319,73.827,78.920,72.041,109.131,55068,7,0,102,63806,52154,crown:-;entrance:L4;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L2F,relief mid-range with level 5 forced,20,3,7,5,151824,86.171,83.960,89.656,83.034,123.149,55068,7,0,102,118526,92611,crown:-;entrance:L5;clover:L5;hearts:L5;house:-,a3d4c3f
+p3,no-culling,L3,relief grazing with automatic LOD,20,3,7,5,238522,82.889,82.294,86.155,81.008,95.583,55068,7,0,47,10674,5956,crown:-;entrance:L4;clover:L3;hearts:L2;house:-,a3d4c3f
+p3,no-culling,L3F,relief grazing with level 5 forced,20,3,7,5,238694,94.622,93.258,95.113,92.627,101.692,55688,7,0,47,65394,37507,crown:-;entrance:L5;clover:L5;hearts:L5;house:-,a3d4c3f
+p3,no-culling,K,close flight over the clover planet,20,3,7,5,211563,45.374,44.530,61.509,43.857,70.783,55068,7,0,102,65496,33378,crown:-;entrance:-;clover:L4;hearts:L4;house:-,a3d4c3f
+p3,no-culling,K2,clover planet from afar,20,3,7,5,31741,13.116,12.710,16.779,12.447,18.647,55068,7,0,76,41514,39266,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f
+p3,no-culling,K3,clover mountain and waterfall up close,20,3,7,5,245913,43.834,43.687,44.329,43.334,59.065,55068,7,0,102,78078,64021,crown:-;entrance:-;clover:L5;hearts:L2;house:-,a3d4c3f
+p3,no-culling,M,close flight over the hearts pyramid and city,20,3,7,5,235336,50.213,50.180,64.458,49.748,83.265,55068,7,0,102,58674,39373,crown:-;entrance:-;clover:L2;hearts:L4;house:-,a3d4c3f
+p3,no-culling,M2,hearts planet from afar,20,3,7,5,48031,18.859,18.265,20.075,15.007,20.507,55068,7,0,47,4786,1822,crown:-;entrance:-;clover:L2;hearts:L2;house:-,a3d4c3f

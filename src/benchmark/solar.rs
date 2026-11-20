@@ -383,14 +383,7 @@ pub fn run_solar_benchmark_on(
     if config.rounds == 0 {
         return Err("the solar benchmark needs at least one round".into());
     }
-    let threads = match config.threads {
-        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
-        n => n,
-    };
-    let options = ShadedOptions {
-        threads,
-        ..ShadedOptions::default()
-    };
+    let threads = resolve_threads(config.threads);
     let mut rows = Vec::new();
     let p3: Vec<(&str, &str)> = if scaled {
         LOD_SCENARIOS
@@ -404,40 +397,178 @@ pub fn run_solar_benchmark_on(
     };
     for &(id, name) in SCENARIOS.iter().chain(&p3) {
         let scene = scenario_scene_on(id, config, scaled)?;
-        let mut fb = Framebuffer::new(config.width, config.height);
-        let mut times = Vec::new();
-        let mut fragments = 0;
-        for round in 0..config.warmup + config.rounds {
-            let start = Instant::now();
-            fragments = scene.render_frame(&mut fb, TriangleMode::FilledScanline, options)?;
-            let ms = start.elapsed().as_secs_f64() * 1e3;
-            if round >= config.warmup {
-                times.push(ms);
-            }
-        }
-        times.sort_by(f64::total_cmp);
-        let lod_levels = lod_levels(&scene);
-        rows.push(SolarBenchRow {
-            id,
-            name,
-            width: config.width,
-            height: config.height,
-            threads,
-            rounds: config.rounds,
-            bodies: scene.bodies.len(),
-            fragments_shaded: fragments,
-            median_ms: percentile(&times, 0.5),
-            p95_ms: percentile(&times, 0.95),
-            min_ms: times[0],
-            max_ms: times[times.len() - 1],
-            peak_rss_kb: peak_rss_kb(),
-            stats: scene.last_stats().clone(),
-            lod_levels,
-            seed: scene.stars.seed,
-            commit: commit_from_env(),
-        });
+        rows.push(time_scene(id, name, &scene, config, threads)?);
     }
     Ok(rows)
+}
+
+/// `threads`, or every core for 0.
+fn resolve_threads(threads: usize) -> usize {
+    match threads {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        n => n,
+    }
+}
+
+/// Times `config.rounds` frames of `scene` after `config.warmup`.
+fn time_scene(
+    id: &'static str,
+    name: &'static str,
+    scene: &SolarScene,
+    config: &SolarBenchConfig,
+    threads: usize,
+) -> Result<SolarBenchRow, Box<dyn Error>> {
+    let options = ShadedOptions {
+        threads,
+        ..ShadedOptions::default()
+    };
+    let mut fb = Framebuffer::new(config.width, config.height);
+    let mut times = Vec::new();
+    let mut fragments = 0;
+    for round in 0..config.warmup + config.rounds {
+        let start = Instant::now();
+        fragments = scene.render_frame(&mut fb, TriangleMode::FilledScanline, options)?;
+        let ms = start.elapsed().as_secs_f64() * 1e3;
+        if round >= config.warmup {
+            times.push(ms);
+        }
+    }
+    times.sort_by(f64::total_cmp);
+    Ok(SolarBenchRow {
+        id,
+        name,
+        width: config.width,
+        height: config.height,
+        threads,
+        rounds: config.rounds,
+        bodies: scene.bodies.len(),
+        fragments_shaded: fragments,
+        median_ms: percentile(&times, 0.5),
+        p95_ms: percentile(&times, 0.95),
+        min_ms: times[0],
+        max_ms: times[times.len() - 1],
+        peak_rss_kb: peak_rss_kb(),
+        stats: scene.last_stats().clone(),
+        lod_levels: lod_levels(scene),
+        seed: scene.stars.seed,
+        commit: commit_from_env(),
+    })
+}
+
+/// One case of the final benchmark (C75): a scenario on one system
+/// (`legacy`: the pre-project system, `p3`: the Project 3 one at its
+/// scale), with culling (`auto`) or without it (`no-culling`), timed once
+/// per run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinalBenchRow {
+    pub system: &'static str,
+    pub variant: &'static str,
+    pub runs: Vec<SolarBenchRow>,
+}
+
+/// Every case of the final benchmark: A-J on both systems, then every
+/// Project 3 scenario (A-J, L, K, M) with culling and without it.
+pub fn final_cases() -> Vec<(&'static str, &'static str, &'static str, &'static str)> {
+    let p3: Vec<(&str, &str)> = SCENARIOS
+        .iter()
+        .chain(&LOD_SCENARIOS)
+        .chain(&CLOVER_SCENARIOS)
+        .chain(&HEARTS_SCENARIOS)
+        .copied()
+        .collect();
+    let legacy = SCENARIOS.iter().map(|&(id, n)| ("legacy", "auto", id, n));
+    let auto = p3.iter().map(|&(id, n)| ("p3", "auto", id, n));
+    let off = p3.iter().map(|&(id, n)| ("p3", "no-culling", id, n));
+    legacy.chain(auto).chain(off).collect()
+}
+
+/// The final benchmark: `runs` passes over `final_cases`, every other pass
+/// in reverse order (so no case always runs first or last).
+pub fn run_final_benchmark(
+    config: &SolarBenchConfig,
+    runs: usize,
+) -> Result<Vec<FinalBenchRow>, Box<dyn Error>> {
+    if config.rounds == 0 || runs == 0 {
+        return Err("the final benchmark needs at least one run and one round".into());
+    }
+    let threads = resolve_threads(config.threads);
+    let cases = final_cases();
+    let mut rows: Vec<FinalBenchRow> = cases
+        .iter()
+        .map(|&(system, variant, _, _)| FinalBenchRow {
+            system,
+            variant,
+            runs: Vec::new(),
+        })
+        .collect();
+    for run in 0..runs {
+        let mut order: Vec<usize> = (0..cases.len()).collect();
+        if run % 2 == 1 {
+            order.reverse();
+        }
+        for k in order {
+            let (system, variant, id, name) = cases[k];
+            let mut scene = scenario_scene_on(id, config, system == "p3")?;
+            scene.culling = variant == "auto";
+            let row = time_scene(id, name, &scene, config, threads)?;
+            rows[k].runs.push(row);
+        }
+    }
+    Ok(rows)
+}
+
+/// Columns of the final benchmark CSV, in order.
+pub const FINAL_CSV_HEADER: &str = "system,variant,scenario,name,threads,runs,rounds_per_run,bodies,fragments_shaded,median_of_medians_ms,min_run_median_ms,max_run_median_ms,min_round_ms,max_round_ms,peak_rss_kb,objects_tested,objects_culled,draws,triangles_submitted,triangles_culled,lod_levels,commit";
+
+/// Appends `rows` to the final CSV at `path` (the header first when the
+/// file is new), one line per case: the median of the run medians and the
+/// spread of the runs and rounds.
+pub fn append_final_csv(rows: &[FinalBenchRow], path: &Path) -> Result<(), Box<dyn Error>> {
+    let new = !path.exists();
+    let mut out = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    if new {
+        writeln!(out, "{FINAL_CSV_HEADER}")?;
+    }
+    for row in rows {
+        let Some(last) = row.runs.last() else {
+            continue;
+        };
+        let mut medians: Vec<f64> = row.runs.iter().map(|r| r.median_ms).collect();
+        medians.sort_by(f64::total_cmp);
+        let min_round = row.runs.iter().map(|r| r.min_ms).fold(f64::MAX, f64::min);
+        let max_round = row.runs.iter().map(|r| r.max_ms).fold(0.0, f64::max);
+        let rss = row.runs.iter().filter_map(|r| r.peak_rss_kb).max();
+        writeln!(
+            out,
+            "{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{},{},{},{},{},{}",
+            row.system,
+            row.variant,
+            last.id,
+            last.name,
+            last.threads,
+            row.runs.len(),
+            last.rounds,
+            last.bodies,
+            last.fragments_shaded,
+            percentile(&medians, 0.5),
+            medians[0],
+            medians[medians.len() - 1],
+            min_round,
+            max_round,
+            rss.map_or(String::new(), |kb| kb.to_string()),
+            last.stats.objects_tested,
+            last.stats.objects_culled,
+            last.stats.draws,
+            last.stats.triangles_submitted,
+            last.stats.triangles_culled,
+            last.lod_levels,
+            last.commit
+        )?;
+    }
+    Ok(())
 }
 
 pub fn write_solar_csv(rows: &[SolarBenchRow], path: &Path) -> Result<(), Box<dyn Error>> {
