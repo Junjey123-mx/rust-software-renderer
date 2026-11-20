@@ -44,6 +44,7 @@ pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Bo
     scene.apply_overrides(&lab6.sets)?;
     scene.camera_mode = lab6.camera.unwrap_or_default();
     scene.quality = lab6.solar_quality.unwrap_or_default();
+    scene.culling = !lab6.no_culling;
     let seed = lab6.star_seed.unwrap_or(DEFAULT_SEED);
     scene.nebula = Nebula::new(seed, lab6.nebula.unwrap_or(1.0));
     scene.stars = StarField::generate_with(
@@ -93,10 +94,11 @@ pub fn status_line(scene: &SolarScene, speed: f32, fps: f32) -> String {
         None => "no planet".to_string(),
     };
     format!(
-        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS | tris {}",
+        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS | tris {}{}",
         scene.flight.name(),
         scene.rig.name(),
-        scene.last_stats().triangles_submitted
+        scene.last_stats().triangles_submitted,
+        if scene.culling { "" } else { " | culling off" }
     )
 }
 
@@ -127,6 +129,13 @@ pub fn apply_toggles(scene: &mut SolarScene, actions: &[SolarAction]) -> Vec<Str
             SolarAction::ToggleCamera => {
                 scene.rig = scene.rig.toggled();
                 messages.push(format!("Camera rig: {}", scene.rig.name()));
+            }
+            SolarAction::ToggleCulling => {
+                scene.culling = !scene.culling;
+                messages.push(format!(
+                    "Frustum culling {}",
+                    if scene.culling { "on" } else { "off" }
+                ));
             }
             SolarAction::ToggleLocal => messages.push(match scene.toggle_local() {
                 Ok(mode) => format!("Flight mode: {}", mode.name()),
@@ -204,7 +213,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, C frustum culling, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()

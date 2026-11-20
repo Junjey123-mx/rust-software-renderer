@@ -53,6 +53,9 @@ pub struct CelestialArgs {
     pub mouse_sensitivity: Option<(f32, f32)>,
     /// `--invert-mouse`: moving the mouse up lowers the nose.
     pub invert_mouse: bool,
+    /// `--no-culling`: the solar scene draws every object, even out of view
+    /// (comparisons and tests; the image does not change).
+    pub no_culling: bool,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -211,6 +214,7 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
                 out.mouse_sensitivity = Some((x, y));
             }
             "--invert-mouse" => out.invert_mouse = true,
+            "--no-culling" => out.no_culling = true,
             other => {
                 if other == "--mode" {
                     out.mode_explicit = true;
@@ -249,6 +253,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     }
     if !solar && (lab6.mouse_sensitivity.is_some() || lab6.invert_mouse) {
         return Err("--mouse-sensitivity and --invert-mouse require --scene solar".into());
+    }
+    if !solar && lab6.no_culling {
+        return Err("--no-culling requires --scene solar".into());
     }
     if !solar
         && (lab6.stars.is_some()
@@ -291,6 +298,7 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         solar_timeline: None,
         mouse_sensitivity: None,
         invert_mouse: false,
+        no_culling: false,
         record: if solar { None } else { lab6.record },
         fps: if solar { None } else { lab6.fps },
         ..lab6.clone()

@@ -116,6 +116,9 @@ pub struct SolarScene {
     scratch: RefCell<RenderScratch>,
     /// Counters of the last `render_frame` (`last_stats`).
     stats: RefCell<FrameStats>,
+    /// View test of every object (frustum culling). Off, everything is
+    /// drawn and clipped by the rasterizer: the same image with more work.
+    pub culling: bool,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
     /// Center of the orbits (the star).
@@ -143,6 +146,7 @@ impl SolarScene {
             thrusters: Some(Thrusters::default()),
             scratch: RefCell::new(RenderScratch::new()),
             stats: RefCell::new(FrameStats::default()),
+            culling: true,
             quality: Quality::Full,
             clock: SimulationClock::default(),
             center: Vector3::zero(),
@@ -613,8 +617,12 @@ impl SolarScene {
 
     /// Whether a world sphere can appear on a `width` x `height` framebuffer
     /// through this frame's camera (frustum under perspective, the screen
-    /// rectangle under the orthographic orbit camera).
+    /// rectangle under the orthographic orbit camera). Always true with
+    /// `culling` off.
     pub fn sphere_in_view(&self, center: Vector3, radius: f32, width: u32, height: u32) -> bool {
+        if !self.culling {
+            return true;
+        }
         let radius = radius * Self::CULL_MARGIN;
         match self.projection() {
             ViewProjection::Perspective(camera) => {

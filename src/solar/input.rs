@@ -36,6 +36,8 @@ pub enum SolarAction {
     Warp(usize),
     /// Shows or hides the render counters of the viewer (`H`).
     ToggleHud,
+    /// Turns the view test (frustum culling) of the scene on or off (`C`).
+    ToggleCulling,
 }
 
 /// Held keys and the action they produce.
@@ -50,7 +52,7 @@ pub const HELD: [(KeyboardKey, SolarAction); 7] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 7] = [
+pub const PRESSED: [(KeyboardKey, SolarAction); 8] = [
     (KeyboardKey::KEY_P, SolarAction::TogglePause),
     (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
     (KeyboardKey::KEY_L, SolarAction::ToggleLocal),
@@ -58,6 +60,7 @@ pub const PRESSED: [(KeyboardKey, SolarAction); 7] = [
     (KeyboardKey::KEY_F2, SolarAction::Warp(1)),
     (KeyboardKey::KEY_F3, SolarAction::Warp(2)),
     (KeyboardKey::KEY_H, SolarAction::ToggleHud),
+    (KeyboardKey::KEY_C, SolarAction::ToggleCulling),
 ];
 
 /// Frees the captured mouse or captures a free one.
