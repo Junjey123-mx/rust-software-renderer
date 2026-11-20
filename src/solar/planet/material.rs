@@ -7,8 +7,10 @@
 use crate::celestial::{CelestialMaterial, PreparedShader};
 use crate::pipeline::{FragmentView, SurfaceSample, Transform};
 use crate::solar::instance::{
-    BodyInstance, FrameContext, Quality, adapted_material, prepare_instance, shade_instance,
+    BodyInstance, FrameContext, Quality, adapted_material, eye_towards, instance_uniforms,
+    prepare_instance, shade_instance,
 };
+use crate::solar::planet::clover::{CloverParams, PreparedClover};
 use crate::solar::planet::field::{HeightField, NORMAL_EPS};
 use raylib::math::Vector3;
 
@@ -18,6 +20,9 @@ pub enum PlanetMaterial {
     /// A laboratory 6 body (The King's Crown, Crimson Entrance, House of
     /// Cards) with its own validated parameters.
     Lab6(CelestialMaterial),
+    /// The clover planet: its own shader over its own height field (land
+    /// by height and slope, a sea with Fresnel and a star glint).
+    Clover(CloverParams),
 }
 
 /// A material with its per-frame values computed, ready for the fragments.
@@ -31,6 +36,7 @@ pub enum PreparedPlanet {
         field: HeightField,
         bump: f32,
     },
+    Clover(PreparedClover),
 }
 
 /// Object-space shading normal of a relief at `object_position`: the
@@ -65,6 +71,17 @@ impl PlanetMaterial {
                 },
                 frame,
             )),
+            Self::Clover(params) => {
+                let transform = instance.transform;
+                let eye = eye_towards(&frame.projection, transform.position);
+                let u = instance_uniforms(&transform, frame.time, frame.light_world, eye);
+                PreparedPlanet::Clover(PreparedClover {
+                    field: params.field(),
+                    params: *params,
+                    light: u.light_direction,
+                    time: frame.time,
+                })
+            }
         }
     }
 
@@ -73,6 +90,7 @@ impl PlanetMaterial {
     pub fn adapted(&self, quality: Quality, radius_px: f32) -> Self {
         match self {
             Self::Lab6(material) => Self::Lab6(adapted_material(material, quality, radius_px)),
+            Self::Clover(_) => *self,
         }
     }
 }
@@ -92,6 +110,10 @@ impl PreparedPlanet {
             }
             // Bump off (or NaN): the shader exactly as on the sphere.
             Self::Relief { base, .. } => shade_instance(base, transform, s, v),
+            Self::Clover(clover) => {
+                let eye = transform.to_object_dir(v.view_direction).normalized();
+                clover.shade(s.object_position, eye)
+            }
         }
     }
 }

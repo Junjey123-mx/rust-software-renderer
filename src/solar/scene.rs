@@ -268,19 +268,22 @@ impl SolarScene {
     ) -> Result<Self, SpecError> {
         spec.validate()?;
         let instance = |material: &PlanetMaterial, scale: f32, spin: f32| {
-            let PlanetMaterial::Lab6(material) = *material;
-            BodyInstance {
+            // A Project 3 material has no laboratory 6 body to stand on yet.
+            let PlanetMaterial::Lab6(material) = *material else {
+                return Err(SpecError::Unsupported("planet.material"));
+            };
+            Ok(BodyInstance {
                 material,
                 ..BodyInstance::new(
                     material.body(),
                     Transform::new(Vector3::zero(), scale),
                     spin,
                 )
-            }
+            })
         };
         let mut bodies = vec![BodyInstance {
             mu: spec.star.mu,
-            ..instance(&spec.star.material, spec.star.scale, spec.star.spin)
+            ..instance(&spec.star.material, spec.star.scale, spec.star.spin)?
         }];
         for p in &spec.planets {
             if p.host.is_some() {
@@ -291,7 +294,7 @@ impl SolarScene {
             bodies.push(
                 BodyInstance {
                     mu: p.mu,
-                    ..instance(&p.material, p.scale, p.spin)
+                    ..instance(&p.material, p.scale, p.spin)?
                 }
                 .with_orbit(orbit),
             );

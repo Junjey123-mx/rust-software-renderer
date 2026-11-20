@@ -2,10 +2,12 @@
 //! and a stem, smoothly joined) at the corners of a tetrahedron turned by
 //! the seed, rising out of a low fbm seabed. Heights are in planet radii.
 
-use crate::shading::math::smoothstep;
+use crate::celestial::{ParamSpec, check_range, find_spec};
+use crate::shading::lighting::{blinn_phong, fresnel, lambert};
+use crate::shading::math::{hex, mix3, smoothstep};
 use crate::shading::noise::{fbm, hash3};
 use crate::shading::sdf::{P2, circle, smooth_min, triangle};
-use crate::solar::planet::field::tangent;
+use crate::solar::planet::field::{HeightField, NORMAL_EPS, tangent};
 use raylib::math::Vector3;
 use std::f32::consts::TAU;
 
@@ -110,8 +112,8 @@ impl CloverField {
             centers,
             turns,
             heights,
-            lobe_r: 0.16,
-            stem: 0.14,
+            lobe_r: 0.2,
+            stem: 0.16,
             sea: 0.02,
             seed,
         }
@@ -225,5 +227,140 @@ impl CloverField {
         bits.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
             (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3)
         })
+    }
+}
+
+/// The `params!` pattern of the laboratory 6 materials, replicated here so
+/// `celestial/` stays untouched: a struct of `f32` fields with a `SPECS`
+/// table, `Default`, `get` and range-checked `set`.
+macro_rules! planet_params {
+    ($ty:ident { $($field:ident : $default:expr, $min:expr, $max:expr, $help:expr;)* }) => {
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        pub struct $ty {
+            $(pub $field: f32,)*
+        }
+
+        impl Default for $ty {
+            fn default() -> Self {
+                Self { $($field: $default,)* }
+            }
+        }
+
+        impl $ty {
+            pub const SPECS: &'static [ParamSpec] = &[
+                $(ParamSpec {
+                    name: stringify!($field),
+                    default: $default,
+                    min: $min,
+                    max: $max,
+                    help: $help,
+                },)*
+            ];
+
+            pub fn get(&self, name: &str) -> Option<f32> {
+                match name {
+                    $(stringify!($field) => Some(self.$field),)*
+                    _ => None,
+                }
+            }
+
+            pub fn set(&mut self, name: &str, value: f32) -> Result<(), String> {
+                let spec = find_spec(Self::SPECS, name)?;
+                check_range(spec, value)?;
+                match name {
+                    $(stringify!($field) => self.$field = value,)*
+                    _ => unreachable!("spec table and fields match"),
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+planet_params! {
+    CloverParams {
+        seed: 7.0, 0.0, 9999.0, "seed of the clover centers, turns and heights (rounded)";
+        bump: 1.0, 0.0, 1.0, "share of the relief normal in the lighting";
+        slope_rock: 0.22, 0.0, 1.0, "slope (1 - cos to the vertical) where grass gives way to rock";
+        snow_line: 0.86, 0.0, 1.0, "share of the highest peak above which snow lies";
+        water_gloss: 90.0, 4.0, 400.0, "specular exponent of the sea";
+    }
+}
+
+impl CloverParams {
+    /// The height field these parameters describe.
+    pub fn field(&self) -> CloverField {
+        CloverField::new(self.seed.round().max(0.0) as u32)
+    }
+}
+
+const GRASS: Vector3 = hex(0x4CAF50);
+const MOSS: Vector3 = hex(0x2F6B3A);
+const ROCK: Vector3 = hex(0x7D7266);
+const SNOW: Vector3 = hex(0xF4F6FA);
+const SAND: Vector3 = hex(0xD9C98E);
+const SHALLOW: Vector3 = hex(0x1E9FB0);
+const DEEP: Vector3 = hex(0x0A2F66);
+const SKY: Vector3 = hex(0x9FD4FF);
+/// Light that reaches the night side (a dim sky glow).
+const AMBIENT: f32 = 0.035;
+
+/// Clover material with its per-frame values: the field, the parameters
+/// and the light and time of this frame, in the planet's object space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreparedClover {
+    pub field: CloverField,
+    pub params: CloverParams,
+    /// Unit direction towards the star, object space.
+    pub light: Vector3,
+    pub time: f32,
+}
+
+impl PreparedClover {
+    /// Ground color at the unit `n` with shading normal `normal` and
+    /// height `h`: grass low, moss higher, rock on steep slopes and high
+    /// up, snow on the gentle tops, sand on the shore.
+    pub fn land_albedo(&self, n: Vector3, normal: Vector3, h: f32) -> Vector3 {
+        let f = &self.field;
+        let top = (f.max_height() - f.sea).max(1e-3);
+        let t = ((h - f.sea) / top).clamp(0.0, 1.0);
+        let slope = 1.0 - normal.dot(n);
+        let p = &self.params;
+        let mut c = mix3(GRASS, MOSS, smoothstep(0.25, 0.65, t));
+        c = mix3(c, ROCK, smoothstep(0.7, 0.92, t));
+        c = mix3(c, ROCK, smoothstep(p.slope_rock * 0.6, p.slope_rock, slope));
+        let snow = smoothstep(p.snow_line, p.snow_line + 0.08, t)
+            * (1.0 - smoothstep(p.slope_rock, p.slope_rock * 1.6, slope));
+        c = mix3(c, SNOW, snow);
+        mix3(SAND, c, smoothstep(0.0, 0.004, h - f.sea))
+    }
+
+    /// Water color at the unit `n`, `depth` radii under the sea, with
+    /// water normal `normal` and unit `eye` direction (object space).
+    pub fn water(&self, normal: Vector3, depth: f32, eye: Vector3) -> Vector3 {
+        let base = mix3(SHALLOW, DEEP, smoothstep(0.0, 0.03, depth));
+        let diffuse = lambert(normal, self.light);
+        let rim = fresnel(normal, eye, 5.0) * diffuse.max(0.1);
+        let glint = blinn_phong(normal, self.light, eye, self.params.water_gloss);
+        base * (AMBIENT + (1.0 - AMBIENT) * diffuse) + SKY * (0.35 * rim) + Vector3::one() * glint
+    }
+
+    /// Color of the surface point `object_position` seen from the unit
+    /// `eye` direction (object space).
+    pub fn shade(&self, object_position: Vector3, eye: Vector3) -> Vector3 {
+        let len = object_position.length();
+        let n = if len.is_finite() && len > 0.0 {
+            object_position / len
+        } else {
+            Vector3::new(0.0, 1.0, 0.0)
+        };
+        let h = self.field.height(n);
+        if h <= self.field.sea {
+            return self.water(n, self.field.sea - h, eye);
+        }
+        let bumped = HeightField::Clover(self.field).normal(n, NORMAL_EPS);
+        let normal = (n + (bumped - n) * self.params.bump.clamp(0.0, 1.0)).normalized();
+        let albedo = self.land_albedo(n, normal, h);
+        albedo * (AMBIENT + (1.0 - AMBIENT) * lambert(normal, self.light))
     }
 }
