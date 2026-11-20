@@ -75,6 +75,11 @@ impl PlanetSpec {
     }
 }
 
+/// `orbit_radius` that lets `OrbitLayout::solve` choose the radius (the
+/// smallest that keeps the gap, rounded up to 0.5). A scene cannot be
+/// built from it directly: `validate` asks for a positive radius.
+pub const AUTO_ORBIT: f32 = 0.0;
+
 /// The star and its planets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SystemSpec {
@@ -93,6 +98,13 @@ pub enum SpecError {
     Unsupported(&'static str),
     /// A `--set` prefix that names no body of the system.
     UnknownBody,
+    /// An orbit whose shell would reach the previous one (or the star's):
+    /// `radius` is below the smallest radius `min` that keeps the gap.
+    OrbitOverlap {
+        planet: PlanetId,
+        radius: f32,
+        min: f32,
+    },
 }
 
 impl std::fmt::Display for SpecError {
@@ -104,6 +116,15 @@ impl std::fmt::Display for SpecError {
             Self::UnknownHost(id) => write!(f, "unknown host '{}'", id.0),
             Self::Unsupported(what) => write!(f, "{what} is not supported yet"),
             Self::UnknownBody => write!(f, "no body of the system has this id"),
+            Self::OrbitOverlap {
+                planet,
+                radius,
+                min,
+            } => write!(
+                f,
+                "orbit of '{}' ({radius}) reaches its inner neighbor (needs {min})",
+                planet.0
+            ),
         }
     }
 }
