@@ -97,11 +97,15 @@ fn oriented_along_tangent() {
         let (next, _, _) = traffic.world_pose(i, time + 0.01, &host);
         assert!((next - center).normalized().dot(forward) > 0.99, "{i}");
     }
-    // The ships in view are drawn with the neon shader.
+    // The ships in view are drawn with the neon shader (since C67 the
+    // lightcycles use it too: their mesh is left out).
     let neon = s
         .effect_draws(config.width, config.height, 1)
         .iter()
-        .filter(|d| matches!(d.shader, EffectShader::Neon(_)))
+        .filter(|d| {
+            matches!(d.shader, EffectShader::Neon(_))
+                && !std::ptr::eq(d.mesh.as_ptr(), traffic.cycle_mesh.as_ptr())
+        })
         .count();
     assert!(neon > 0 && neon <= traffic.ships.len(), "{neon}");
 }

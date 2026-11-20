@@ -159,8 +159,9 @@ const P3_CLOVER_K: [(&str, u64); 3] = [
 
 /// Hearts planet scenarios of the scaled benchmark, captured on C61: the
 /// pyramid and the city up close (M) and the planet 12 radii away (M2).
-/// Recaptured on C65: both show the neon ships now.
-const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0x6401a3c8bcc7d5df), ("M2", 0x13e2c975371f51c9)];
+/// Recaptured on C65: both show the neon ships now. C67 adds the
+/// lightcycles: M changes, M2 (planet under 60 px) does not.
+const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0xe19c3e8f74e32e60), ("M2", 0x13e2c975371f51c9)];
 
 #[test]
 fn p3_scaled_a_j_match() {

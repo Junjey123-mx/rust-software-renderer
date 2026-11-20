@@ -255,6 +255,8 @@ pub struct PropLayer {
 #[derive(Debug, Clone, Default)]
 pub struct PropLayers {
     pub layers: Vec<PropLayer>,
+    /// Unit direction of every baked prop (where vehicles must not go).
+    pub sites: Vec<Vector3>,
 }
 
 impl PropLayers {
@@ -372,5 +374,8 @@ pub fn bake(
             }),
         }
     }
-    PropLayers { layers }
+    PropLayers {
+        layers,
+        sites: poses.iter().map(|p| p.dir).collect(),
+    }
 }

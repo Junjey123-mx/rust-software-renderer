@@ -369,9 +369,13 @@ impl SolarScene {
         }
         for (k, p) in spec.planets.iter().enumerate() {
             for a in &p.attachments {
-                let PlanetAttachment::Traffic { ships, seed, .. } = *a;
-                if ships > 0 {
-                    scene.add_traffic(k + 1, ships, seed);
+                let PlanetAttachment::Traffic {
+                    ships,
+                    cycles,
+                    seed,
+                } = *a;
+                if ships > 0 || cycles > 0 {
+                    scene.add_traffic(k + 1, ships, cycles, seed);
                 }
             }
         }
@@ -452,29 +456,39 @@ impl SolarScene {
     }
 
     /// `ships` neon ships over body `index`, `NEON_SIZE` of the spacecraft,
-    /// their routes clear of its landmark.
-    fn add_traffic(&mut self, index: usize, ships: u8, seed: u32) {
+    /// and `cycles` lightcycles on its ground, every route clear of its
+    /// landmark and the cycles clear of its city.
+    fn add_traffic(&mut self, index: usize, ships: u8, cycles: u8, seed: u32) {
         let host = self.bodies[index].id;
+        let on_host = |kind| {
+            self.attachments
+                .iter()
+                .any(|a| a.kind == kind && a.host == host)
+        };
+        let sites = match &self.city {
+            Some(city) if on_host(AttachmentKind::City) => city.sites.clone(),
+            _ => Vec::new(),
+        };
         let field = self.relief_of(index).map_or(HeightField::Flat, |r| r.field);
-        let landmark_here = self
-            .attachments
-            .iter()
-            .any(|a| a.kind == AttachmentKind::Landmark && a.host == host);
+        let landmark_here = on_host(AttachmentKind::Landmark);
         let exclude = self
             .landmark
             .as_ref()
             .filter(|_| landmark_here)
             .map(|l| (l.dir, TRAFFIC_CLEARANCE));
         let ship_radius = NEON_SIZE * MESH_RADIUS * SHIP_SCALE;
-        self.traffic = Some(Traffic::new(
-            &self.meshes,
-            field,
-            ships,
-            seed,
-            ship_radius,
-            self.radius_of(index),
-            exclude,
-        ));
+        self.traffic = Some(
+            Traffic::new(
+                &self.meshes,
+                field,
+                ships,
+                seed,
+                ship_radius,
+                self.radius_of(index),
+                exclude,
+            )
+            .with_cycles(cycles, seed, &sites, exclude),
+        );
         self.attachments.push(AttachmentSpec {
             kind: AttachmentKind::Traffic,
             host,

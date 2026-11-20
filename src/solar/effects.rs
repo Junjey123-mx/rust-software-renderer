@@ -18,7 +18,7 @@ use crate::solar::SPHERE_RADIUS;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
 use crate::solar::attach::props::{PROP_MIN_PX, PropLayers, PropPart, beyond_horizon};
-use crate::solar::attach::traffic::{NEON_BODY, NEON_EDGE, NEON_FRESNEL, NeonShader};
+use crate::solar::attach::traffic::{CYCLE_EDGE, NEON_BODY, NEON_EDGE, NEON_FRESNEL, NeonShader};
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
 use crate::solar::instance::{eye_towards, projected_radius_px};
@@ -284,6 +284,42 @@ impl SolarScene {
                                 edge: NEON_EDGE,
                                 light: to_ship(self.light_at(center)),
                                 view: to_ship(eye_towards(&projection, center)),
+                                fresnel: NEON_FRESNEL,
+                            }),
+                        });
+                    }
+                    // Lightcycles: like the props, hidden while the planet
+                    // is small, then one test each.
+                    if traffic.cycles.is_empty()
+                        || self.radius_px(host, &projection, height) < PROP_MIN_PX
+                    {
+                        continue;
+                    }
+                    let r = traffic.cycle_radius(&t);
+                    for i in 0..traffic.cycles.len() {
+                        let (base, forward, up) = traffic.cycle_pose(i, self.clock.time, &t);
+                        let center = base + up * r;
+                        let local = t.to_object_dir(center - t.position) / t.scale;
+                        if self.patch_hidden(host, &projection, local, r / t.scale)
+                            || !self.sphere_in_view(center, r, width, height)
+                        {
+                            continue;
+                        }
+                        let right = forward.cross(up).normalized();
+                        let to_cycle = |v: Vector3| {
+                            Vector3::new(v.dot(right), v.dot(up), -v.dot(forward)).normalized()
+                        };
+                        draws.push(EffectDraw {
+                            mesh: &traffic.cycle_mesh,
+                            model: Uniforms {
+                                model_matrix: traffic.cycle_matrix(i, self.clock.time, &t),
+                            },
+                            options: solid_options(threads),
+                            shader: EffectShader::Neon(NeonShader {
+                                body: NEON_BODY,
+                                edge: CYCLE_EDGE,
+                                light: to_cycle(self.light_at(center)),
+                                view: to_cycle(eye_towards(&projection, center)),
                                 fresnel: NEON_FRESNEL,
                             }),
                         });

@@ -11,6 +11,7 @@ use crate::shading::math::hex;
 use crate::shading::noise::hash3;
 use crate::solar::attach::path::Path;
 use crate::solar::planet::HeightField;
+use crate::solar::shapes::frame_matrix;
 use crate::solar::ship::{MESH_CENTER, MESH_RADIUS, ShipState};
 use crate::solar::{SPHERE_RADIUS, SolarMeshes};
 use raylib::math::{Matrix, Vector3};
@@ -33,6 +34,22 @@ pub const NEON_EDGE: Vector3 = hex(0x22E6FF);
 pub const NEON_FRESNEL: f32 = 2.5;
 /// Seeded tries for a route clear of an excluded cone.
 const ROUTE_TRIES: u32 = 32;
+/// Lightcycle height over the ground, planet radii.
+pub const CYCLE_ALTITUDE: f32 = 0.01;
+/// Lightcycle bounding radius, planet radii.
+pub const CYCLE_SIZE: f32 = 0.03;
+/// Angular radius band of the cycles' loops, radians.
+const CYCLE_LOOP: (f32, f32) = (0.07, 0.13);
+/// Ground speed of a lightcycle, planet radii per second.
+const CYCLE_SPEED: f32 = 0.18;
+/// Closest a cycle's route comes to a building site, radians: the widest
+/// building's half diagonal (0.037 R) plus the cycle's half width, with
+/// room for the loop's curve (the cycle's ends stay on its route).
+pub const CYCLE_MARGIN: f32 = 0.06;
+/// Seeded tries for a lightcycle loop clear of the city.
+const CYCLE_TRIES: u32 = 128;
+/// Rim of the lightcycles.
+pub const CYCLE_EDGE: Vector3 = hex(0xFFA62B);
 
 /// Pushes the triangle `[a, b, c]` wound to face away from `inside`.
 fn push_out(m: &mut Mesh, [a, b, c]: [Vector3; 3], inside: Vector3) {
@@ -184,10 +201,33 @@ fn lerp((a, b): (f32, f32), x: f32) -> f32 {
     a + (b - a) * x
 }
 
-/// The traffic of one planet: its ships on their routes over `field`.
+/// True when no point of `path` (128 samples of one lap) comes within
+/// `margin` radians of a site (unit directions).
+pub fn route_clear_of_buildings(path: &Path, sites: &[Vector3], margin: f32) -> bool {
+    let (period, cos) = (path.period(), margin.cos());
+    (0..128).all(|k| {
+        let d = path.direction(period * k as f32 / 128.0);
+        sites.iter().all(|s| s.dot(d) < cos)
+    })
+}
+
+/// A uniform unit direction from two values in `[0, 1)`.
+fn sphere_point(a: f32, b: f32) -> Vector3 {
+    let z = 2.0 * a - 1.0;
+    let (s, c) = (TAU * b).sin_cos();
+    let r = (1.0 - z * z).max(0.0).sqrt();
+    Vector3::new(r * c, z, r * s)
+}
+
+/// The traffic of one planet: its ships and lightcycles on their routes
+/// over `field`.
 #[derive(Debug, Clone)]
 pub struct Traffic {
     pub ships: Vec<(Path, NeonShip)>,
+    /// Lightcycle loops on the ground (`with_cycles`).
+    pub cycles: Vec<Path>,
+    /// The shared lightcycle mesh (`SolarMeshes::lightcycle`).
+    pub cycle_mesh: Arc<Vec<Vertex>>,
     /// The host's ground (`Flat` for a sphere).
     pub field: HeightField,
     /// Farthest reach from the host center, host radii.
@@ -214,10 +254,7 @@ impl Traffic {
             .filter_map(|i| {
                 (0..ROUTE_TRIES).find_map(|k| {
                     let h = |j: i32| unit_hash(seed, i, j + 8 * k as i32);
-                    let z = 2.0 * h(0) - 1.0;
-                    let (s, c) = (TAU * h(1)).sin_cos();
-                    let r = (1.0 - z * z).max(0.0).sqrt();
-                    let axis = Vector3::new(r * c, z, r * s);
+                    let axis = sphere_point(h(0), h(1));
                     // Angular distance from the cone's center to the
                     // circle: |asin(axis . dir)|.
                     if let Some((dir, angle)) = exclude
@@ -238,19 +275,92 @@ impl Traffic {
             .collect();
         Self {
             ships,
+            cycles: Vec::new(),
+            cycle_mesh: Arc::clone(&meshes.lightcycle),
             field,
             reach: 1.0 + field.max_height() + SHIP_ALTITUDE.1 + ship_radius / host_radius,
         }
     }
 
-    /// Center, nose and top of ship `i` at time `t`, world space, on a host
-    /// placed by `host`.
-    pub fn world_pose(&self, i: usize, t: f32, host: &Transform) -> (Vector3, Vector3, Vector3) {
-        let p = self.ships[i].0.pose(t, &self.field, SPHERE_RADIUS);
+    /// Adds `cycles` lightcycles on seeded loops (`Path::Ring`,
+    /// `CYCLE_ALTITUDE` over the ground) that keep `CYCLE_MARGIN` from
+    /// every site and stay out of the `exclude` cone. A cycle whose
+    /// `CYCLE_TRIES` loops all fail is left out, with a warning on stderr.
+    pub fn with_cycles(
+        mut self,
+        cycles: u8,
+        seed: u32,
+        sites: &[Vector3],
+        exclude: Option<(Vector3, f32)>,
+    ) -> Self {
+        for i in 0..u32::from(cycles.min(MAX_TRAFFIC)) {
+            let route = (0..CYCLE_TRIES).find_map(|k| {
+                let h = |j: i32| unit_hash(seed ^ 0xc1c1e, i, j + 8 * k as i32);
+                let axis = sphere_point(h(0), h(1));
+                let radius = lerp(CYCLE_LOOP, h(2));
+                if let Some((dir, angle)) = exclude
+                    && axis.dot(dir.normalized()).clamp(-1.0, 1.0).acos() < angle + radius
+                {
+                    return None;
+                }
+                let sign = if h(3) < 0.5 { -1.0 } else { 1.0 };
+                let path = Path::Ring {
+                    axis,
+                    radius,
+                    speed: sign * CYCLE_SPEED / radius.sin(),
+                    phase: TAU * h(4),
+                    altitude: CYCLE_ALTITUDE,
+                };
+                route_clear_of_buildings(&path, sites, CYCLE_MARGIN).then_some(path)
+            });
+            match route {
+                Some(path) => self.cycles.push(path),
+                None => eprintln!(
+                    "warning: lightcycle {i} left out: no loop clear of the city in {CYCLE_TRIES} tries"
+                ),
+            }
+        }
+        if !self.cycles.is_empty() {
+            let top = 1.0 + self.field.max_height() + CYCLE_ALTITUDE + 2.0 * CYCLE_SIZE;
+            self.reach = self.reach.max(top);
+        }
+        self
+    }
+
+    /// Center, heading and top of `path` at time `t`, world space, on a
+    /// host placed by `host`.
+    fn place(&self, path: &Path, t: f32, host: &Transform) -> (Vector3, Vector3, Vector3) {
+        let p = path.pose(t, &self.field, SPHERE_RADIUS);
         (
             host.position + host.to_world_dir(p.pos) * host.scale,
             host.to_world_dir(p.tangent).normalized(),
             host.to_world_dir(p.up).normalized(),
         )
+    }
+
+    /// Center, nose and top of ship `i` at time `t`, world space, on a host
+    /// placed by `host`.
+    pub fn world_pose(&self, i: usize, t: f32, host: &Transform) -> (Vector3, Vector3, Vector3) {
+        self.place(&self.ships[i].0, t, host)
+    }
+
+    /// Ground point under lightcycle `i` (plus its altitude), heading and
+    /// top at time `t`, world space.
+    pub fn cycle_pose(&self, i: usize, t: f32, host: &Transform) -> (Vector3, Vector3, Vector3) {
+        self.place(&self.cycles[i], t, host)
+    }
+
+    /// World bounding radius of a lightcycle on `host`.
+    pub fn cycle_radius(&self, host: &Transform) -> f32 {
+        CYCLE_SIZE * SPHERE_RADIUS * host.scale
+    }
+
+    /// Model matrix of lightcycle `i` at time `t`: the mesh's base on its
+    /// pose, nose (`-Z`) along the heading, `+Y` up.
+    pub fn cycle_matrix(&self, i: usize, t: f32, host: &Transform) -> Matrix {
+        let (base, forward, up) = self.cycle_pose(i, t, host);
+        let k = self.cycle_radius(host);
+        let right = forward.cross(up).normalized();
+        frame_matrix(right * k, up * k, -forward * k, base)
     }
 }

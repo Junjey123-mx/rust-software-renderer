@@ -27,6 +27,15 @@ pub enum Path {
         phase: f32,
         altitude: f32,
     },
+    /// The small circle `radius` radians around `axis`: a loop around a
+    /// block of the city.
+    Ring {
+        axis: Vector3,
+        radius: f32,
+        speed: f32,
+        phase: f32,
+        altitude: f32,
+    },
 }
 
 /// Where a vehicle is on its route: position (the host's mesh space),
@@ -42,14 +51,18 @@ pub struct PathPose {
 impl Path {
     fn speed(&self) -> f32 {
         match *self {
-            Self::GreatCircle { speed, .. } | Self::Latitude { speed, .. } => speed,
+            Self::GreatCircle { speed, .. }
+            | Self::Latitude { speed, .. }
+            | Self::Ring { speed, .. } => speed,
         }
     }
 
     /// Height over the ground, planet radii.
     pub fn altitude(&self) -> f32 {
         match *self {
-            Self::GreatCircle { altitude, .. } | Self::Latitude { altitude, .. } => altitude,
+            Self::GreatCircle { altitude, .. }
+            | Self::Latitude { altitude, .. }
+            | Self::Ring { altitude, .. } => altitude,
         }
     }
 
@@ -58,12 +71,17 @@ impl Path {
         TAU / self.speed().abs()
     }
 
+    /// Unit direction from the host center at time `t`.
+    pub fn direction(&self, t: f32) -> Vector3 {
+        self.frame(t).0
+    }
+
     /// Unit direction from the host center and unit heading at time `t`.
     fn frame(&self, t: f32) -> (Vector3, Vector3) {
         let (speed, phase) = match *self {
-            Self::GreatCircle { speed, phase, .. } | Self::Latitude { speed, phase, .. } => {
-                (speed, phase)
-            }
+            Self::GreatCircle { speed, phase, .. }
+            | Self::Latitude { speed, phase, .. }
+            | Self::Ring { speed, phase, .. } => (speed, phase),
         };
         // Wrapped, so a long run keeps its precision; a still route keeps
         // its phase.
@@ -84,6 +102,13 @@ impl Path {
                     Vector3::new(cl * c, sl, cl * s),
                     Vector3::new(-s, 0.0, c) * sign,
                 )
+            }
+            Self::Ring { axis, radius, .. } => {
+                let axis = axis.normalized();
+                let u = tangent(axis);
+                let v = axis.cross(u);
+                let (sr, cr) = radius.sin_cos();
+                (axis * cr + (u * c + v * s) * sr, (v * c - u * s) * sign)
             }
         }
     }
