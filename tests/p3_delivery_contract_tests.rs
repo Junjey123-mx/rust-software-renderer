@@ -69,6 +69,27 @@ fn cumple_rows_have_existing_evidence() {
     }
 }
 
+/// The R5 video of a row: the final tour, not the provisional clip.
+fn r5_video(row: &Row) -> Option<&str> {
+    row.evidence
+        .iter()
+        .map(String::as_str)
+        .find(|p| p.ends_with(".mp4"))
+}
+
+#[test]
+fn r5_video_is_final_tour() {
+    let rows = rows();
+    let r5 = rows.iter().find(|r| r.id == "R5").unwrap();
+    assert_eq!(r5_video(r5), Some("docs/videos/project3/01-final-tour.mp4"));
+    // Negative case: a row with only the provisional clip.
+    let old = contract_rows(
+        "| R5 | video | CUMPLE | `docs/videos/project3/00-provisional-tour.mp4` | x |",
+    )
+    .unwrap();
+    assert_ne!(r5_video(&old[0]), r5_video(r5));
+}
+
 #[test]
 fn malformed_tables_are_rejected() {
     assert!(contract_rows("| R1 | only | three |").is_err());

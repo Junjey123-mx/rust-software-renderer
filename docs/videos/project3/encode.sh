@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Regenerates the Project 3 delivery clip from the renderer: the continuous
-# tour (`--timeline tour`) with no quick travel, no camera switch and no
-# cut: space flight, approach, a full lap of local flight around Crimson
-# Entrance and a boosted departure.
+# Regenerates the Project 3 delivery clips from the renderer, continuous
+# tours with no quick travel, no camera switch and no cut.
 #
-#   docs/videos/project3/encode.sh            00-provisional-tour.mp4
-#   docs/videos/project3/encode.sh tour       the same
+#   docs/videos/project3/encode.sh            01-final-tour.mp4 / .gif
+#   docs/videos/project3/encode.sh final      the same (`--timeline final-tour`:
+#                                             space flight, approach, a full lap
+#                                             of local flight around Crimson
+#                                             Entrance, fly-bys of the clover and
+#                                             Hearts, boosted departure)
+#   docs/videos/project3/encode.sh tour       00-provisional-tour.mp4
+#                                             (`--timeline tour`)
 #
 # Run from the repository root after `cargo build --release`. Derived from
 # docs/videos/preproject3/encode.sh: frames come from `--scene solar
@@ -14,16 +18,18 @@
 # functional test (libx264, h264_nvenc, h264_vaapi, h264_qsv, libopenh264;
 # H264_ENCODER and VAAPI_DEVICE may be given). The file is written to a
 # temporary directory and checked (codec, size, frame rate, frame count,
-# full decode) before it replaces the previous clip in OUT.
+# full decode, 20 to 60 s for the final tour) before it replaces the
+# previous clip in OUT. The GIF is made from the same intermediate.
 set -euo pipefail
 
 BIN="${BIN:-./target/release/rust-software-renderer}"
 OUT="${OUT:-docs/videos/project3}"
-NAME="${NAME:-00-provisional-tour}"
 FPS=30
 QP="${QP:-32}"
-# TOUR_SECONDS in src/solar/record.rs.
+# TOUR_SECONDS and FINAL_TOUR_SECONDS in src/solar/record.rs.
 TOUR_SECONDS="${TOUR_SECONDS:-32}"
+FINAL_SECONDS="${FINAL_SECONDS:-56}"
+GIF_FPS="${GIF_FPS:-6}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -43,7 +49,7 @@ check() {
 }
 
 FILTERS="$(ffmpeg -hide_banner -filters 2>/dev/null)"
-for f in null; do grep -q " $f " <<<"$FILTERS" || die "ffmpeg lacks the $f filter"; done
+for f in null palettegen paletteuse; do grep -q " $f " <<<"$FILTERS" || die "ffmpeg lacks the $f filter"; done
 
 encoder_options() {
   case "$1" in
@@ -101,21 +107,35 @@ record() {
   [ "$frames" = "$want" ] || die "intermediate $file has $frames frames (expected $want)"
 }
 
-tour() {
+# clip <timeline> <seconds> <name> [gif]: H.264 clip (and GIF) of a timeline.
+clip() {
+  local timeline="$1" seconds="$2" name="$3" gif="${4:-}"
   choose_encoder
-  record "$TOUR_SECONDS" "$FPS" "$tmp/tour.mkv" --timeline tour
-  local src="$tmp/tour.mkv" size frames
+  record "$seconds" "$FPS" "$tmp/$timeline.mkv" --timeline "$timeline"
+  local src="$tmp/$timeline.mkv" size frames duration gif_frames
   size=$(stream "$src" width,height)
   frames=$(stream "$src" nb_read_frames)
   # shellcheck disable=SC2046
   ffmpeg -v error $(pre_for "$ENCODER" "${VAAPI_DEVICE:-}") -i "$src" $(encoder_options "$ENCODER") \
-    -r "$FPS" -movflags +faststart -y "$tmp/$NAME.mp4"
-  check "$tmp/$NAME.mp4" "h264,$size,$FPS/1,$frames" codec_name,width,height,r_frame_rate,nb_read_frames
-  mv -f "$tmp/$NAME.mp4" "$OUT/$NAME.mp4"
-  echo "encode.sh: wrote $OUT/$NAME.mp4: $frames frames at $FPS fps ($ENCODER)" >&2
+    -r "$FPS" -movflags +faststart -y "$tmp/$name.mp4"
+  check "$tmp/$name.mp4" "h264,$size,$FPS/1,$frames" codec_name,width,height,r_frame_rate,nb_read_frames
+  duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$tmp/$name.mp4")
+  if [ -n "$gif" ]; then
+    awk -v d="$duration" 'BEGIN { exit !(d >= 20 && d <= 60) }' ||
+      die "$name.mp4 lasts $duration s (expected 20 to 60)"
+    ffmpeg -v error -i "$src" -vf "fps=$GIF_FPS,scale=320:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff:max_colors=64[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
+      -loop 0 -y "$tmp/$name.gif"
+    gif_frames=$(stream "$tmp/$name.gif" nb_read_frames)
+    [ "$gif_frames" -gt 1 ] || die "$name.gif is not animated"
+    check "$tmp/$name.gif" "gif,320,$gif_frames" codec_name,width,nb_read_frames
+    mv -f "$tmp/$name.gif" "$OUT/$name.gif"
+  fi
+  mv -f "$tmp/$name.mp4" "$OUT/$name.mp4"
+  echo "encode.sh: wrote $OUT/$name.mp4: $frames frames at $FPS fps, $duration s ($ENCODER)${gif:+, GIF $gif_frames frames}" >&2
 }
 
-case "${1:-tour}" in
-  tour) tour ;;
-  *) die "usage: $0 [tour]" ;;
+case "${1:-final}" in
+  final) clip final-tour "$FINAL_SECONDS" "${NAME:-01-final-tour}" gif ;;
+  tour) clip tour "$TOUR_SECONDS" "${NAME:-00-provisional-tour}" ;;
+  *) die "usage: $0 [final|tour]" ;;
 esac
