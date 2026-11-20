@@ -17,6 +17,7 @@ use crate::shading::lighting::lambert;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
 use crate::solar::attach::props::{PROP_MIN_PX, SECTOR_FACING};
+use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
 use crate::solar::instance::eye_towards;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
@@ -30,6 +31,7 @@ pub enum EffectShader {
     Card(CardShader),
     Flame(FlameShader),
     Prop(PropShader),
+    Waterfall(WaterfallShader),
 }
 
 /// Flat-shaded surface prop: its part's color lit by the star, the light
@@ -53,6 +55,7 @@ impl EffectShader {
             Self::Card(c) => c.shade(s.object_position, s.face_normal),
             Self::Flame(f) => f.shade(s.object_position, s.face_normal, view.view_direction),
             Self::Prop(p) => p.shade(s.face_normal),
+            Self::Waterfall(w) => w.shade(s.object_position, s.face_normal),
         }
     }
 }

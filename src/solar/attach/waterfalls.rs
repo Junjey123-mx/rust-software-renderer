@@ -4,7 +4,9 @@
 //! radii (the planet's radius is 1).
 
 use crate::geometry::Mesh;
-use crate::shading::noise::hash3;
+use crate::shading::lighting::lambert;
+use crate::shading::math::{hex, mix3, smoothstep};
+use crate::shading::noise::{gradient3, hash3};
 use crate::solar::planet::CloverField;
 use crate::solar::planet::field::tangent;
 use raylib::math::Vector3;
@@ -161,4 +163,74 @@ pub fn waterfall_from(field: &CloverField, center: usize, seed: u32) -> Result<W
         width: WATERFALL_WIDTH,
         mesh: Arc::new(Mesh { vertices, indices }),
     })
+}
+
+/// Bands sliding down a ribbon per second (the default flow).
+pub const FLOW_SPEED: f32 = 0.8;
+/// Bands along a whole ribbon.
+pub const FLOW_BANDS: f32 = 7.0;
+/// Strength of the foam where the ribbon meets the sea.
+pub const BASE_FOAM: f32 = 0.85;
+
+const FALL_DEEP: Vector3 = hex(0x1C6FB8);
+const FALL_LIGHT: Vector3 = hex(0x7FD3F5);
+const FALL_FOAM: Vector3 = hex(0xF2FAFF);
+
+/// Water running down a ribbon: light bands slide from the top to the
+/// bottom at `speed` bands per second over `bands` bands, broken by a
+/// little noise, with foam at the base. Opaque, lit by the star with a
+/// moderate glow. `top`, `bottom` and `light` live in the mesh's space;
+/// `time` is the scene clock (frozen while paused).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterfallShader {
+    pub top: Vector3,
+    pub bottom: Vector3,
+    pub speed: f32,
+    pub bands: f32,
+    pub foam: f32,
+    pub light: Vector3,
+    pub time: f32,
+}
+
+impl Waterfall {
+    /// Its shader at `time` with the default flow.
+    pub fn shader(&self, light: Vector3, time: f32) -> WaterfallShader {
+        WaterfallShader {
+            top: self.top,
+            bottom: self.bottom,
+            speed: FLOW_SPEED,
+            bands: FLOW_BANDS,
+            foam: BASE_FOAM,
+            light,
+            time,
+        }
+    }
+}
+
+impl WaterfallShader {
+    /// Where `p` lies along the ribbon: 0 at the top, 1 at the bottom
+    /// (its projection on the top-bottom chord; the ribbon coordinate is
+    /// recovered from the object position).
+    pub fn along(&self, p: Vector3) -> f32 {
+        let chord = self.bottom - self.top;
+        let len2 = chord.dot(chord);
+        if len2.is_nan() || len2 <= 0.0 {
+            return 0.0;
+        }
+        ((p - self.top).dot(chord) / len2).clamp(0.0, 1.0)
+    }
+
+    pub fn shade(&self, p: Vector3, face_normal: Vector3) -> Vector3 {
+        let v = self.along(p);
+        // The time term is wrapped to one band first, so a long session
+        // keeps its precision.
+        let shift = (self.speed * self.time).rem_euclid(1.0);
+        let wobble = 0.12 * gradient3(p * 60.0, 0x7a7e);
+        let flow = (v * self.bands - shift + wobble).rem_euclid(1.0);
+        let streak = smoothstep(0.55, 0.85, flow) * (1.0 - smoothstep(0.85, 1.0, flow));
+        let water = mix3(FALL_DEEP, FALL_LIGHT, streak);
+        let foam = self.foam * smoothstep(0.7, 1.0, v);
+        let color = mix3(water, FALL_FOAM, foam.clamp(0.0, 1.0));
+        color * (0.25 + 0.6 * lambert(face_normal, self.light) + 0.15)
+    }
 }

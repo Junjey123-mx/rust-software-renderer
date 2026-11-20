@@ -51,6 +51,7 @@ fn kinds(s: &SolarScene) -> Vec<&'static str> {
             EffectShader::Card(_) => "card",
             EffectShader::Flame(_) => "flame",
             EffectShader::Prop(_) => "prop",
+            EffectShader::Waterfall(_) => "waterfall",
         })
         .collect()
 }
