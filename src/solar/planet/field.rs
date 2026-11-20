@@ -3,6 +3,7 @@
 //! effective radius. Heights are relative to the planet radius and read on
 //! the unit direction from the center.
 
+use crate::solar::planet::clover::CloverField;
 use raylib::math::Vector3;
 
 /// Angular step of the central differences of `HeightField::normal` for
@@ -18,18 +19,19 @@ pub struct TestField {
     pub sea_level: Option<f32>,
 }
 
-/// Height field of a planet's surface (Clover adds its own in C41, Hearts
-/// in C54).
+/// Height field of a planet's surface (Hearts adds its own in C54).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HeightField {
     /// The ideal sphere.
     Flat,
     Test(TestField),
+    /// Four clover mountains over a low seabed (`clover.rs`).
+    Clover(CloverField),
 }
 
 /// A unit vector perpendicular to `n`, built from the axis along which `n`
 /// is smallest so it never degenerates, poles included.
-fn tangent(n: Vector3) -> Vector3 {
+pub(crate) fn tangent(n: Vector3) -> Vector3 {
     let (ax, ay, az) = (n.x.abs(), n.y.abs(), n.z.abs());
     let aux = if ax <= ay && ax <= az {
         Vector3::new(1.0, 0.0, 0.0)
@@ -51,6 +53,7 @@ impl HeightField {
                 let f = t.frequency;
                 t.amplitude * (f * n.x).sin() * (f * n.y).sin() * (f * n.z).sin()
             }
+            Self::Clover(c) => c.height(n),
         };
         if h.is_finite() { h } else { 0.0 }
     }
@@ -60,6 +63,7 @@ impl HeightField {
         match *self {
             Self::Flat => None,
             Self::Test(t) => t.sea_level,
+            Self::Clover(c) => Some(c.sea),
         }
     }
 
@@ -76,6 +80,7 @@ impl HeightField {
             Self::Flat => 0.0,
             Self::Test(t) if t.amplitude.is_finite() => t.amplitude.abs(),
             Self::Test(_) => 0.0,
+            Self::Clover(c) => c.max_height(),
         };
         ground.max(self.sea_level().unwrap_or(0.0))
     }

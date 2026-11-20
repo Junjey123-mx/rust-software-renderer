@@ -48,6 +48,10 @@ impl GeometryKey {
                     t.sea_level.map_or(u32::MAX, f32::to_bits),
                 ],
             ),
+            HeightField::Clover(c) => {
+                let d = c.digest();
+                (2, [c.seed, d as u32, (d >> 32) as u32])
+            }
         };
         Self {
             radius_bits: radius.to_bits(),
