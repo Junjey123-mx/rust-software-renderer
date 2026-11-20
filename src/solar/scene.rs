@@ -289,8 +289,8 @@ impl SolarScene {
     /// The system of `spec` at the project scale: the size ratios are
     /// checked (`ScaleProfile::check`), the orbits must keep the shells
     /// apart (`OrbitLayout::solve`, explicit radii only), the ship starts
-    /// beyond the fifth slot at the profile's cruise speed and local flight
-    /// scales with each planet.
+    /// beyond the fifth slot in inertial flight at the profile's cruise
+    /// speed and local flight scales with each planet.
     pub fn scaled_from_spec(
         meshes: SolarMeshes,
         view: OrbitView,
@@ -307,6 +307,7 @@ impl SolarScene {
             SHIP_SCALE,
         );
         scene.ship.move_speed = profile.cruise_speed;
+        scene.ship.inertia = true;
         scene.scale = Some(profile);
         scene.layout = Some(layout);
         scene.check_spawn()?;

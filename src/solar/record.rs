@@ -135,6 +135,7 @@ fn tour_space_leg(template: &ShipState, fps: u32) -> f32 {
     let dt = 1.0 / fps as f32;
     let mut ship = ShipState::new(Vector3::zero(), template.scale);
     ship.move_speed = template.move_speed;
+    ship.inertia = template.inertia;
     let frames = (TOUR_SPACE_SECONDS * fps as f32).round() as usize;
     for f in 0..frames {
         let t = f as f32 / fps as f32;

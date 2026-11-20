@@ -58,6 +58,7 @@ pub fn warp_to(scene: &mut SolarScene, index: usize) -> bool {
     scene.ship.forward = forward;
     scene.ship.up = Vector3::new(0.0, 1.0, 0.0);
     scene.ship.renormalize();
+    scene.ship.velocity = Vector3::zero();
     scene.flight = FlightMode::Space;
     true
 }

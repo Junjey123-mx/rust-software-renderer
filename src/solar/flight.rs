@@ -136,10 +136,22 @@ pub fn ease_thrust(ship: &mut ShipState, target: f32, dt: f32) {
     ship.thrust = approach(ship.thrust, target, THRUST_EASE, THRUST_EASE, dt);
 }
 
+/// Acceleration of full thrust in inertial flight, world units per second
+/// squared: the 3 u/s cruise in one second (design).
+pub const THRUST_ACCEL: f32 = 3.0;
+
+/// World acceleration of this frame's thrust along the nose and sideways;
+/// a diagonal is no stronger than one key (`travel`).
+pub fn thrust_accel(input: &FlightInput, ship: &ShipState) -> Vector3 {
+    travel(input, ship.forward, ship.right()) * THRUST_ACCEL
+}
+
 /// Space flight: turn (yaw around the orbital plane's normal, pitch within
-/// the limits), then move along the nose and sideways by `travel *
-/// move_speed * dt`, times up to `BOOST` as the boost level ramps. No
-/// inertia and no collisions: a boosted ship can pass through a body.
+/// the limits), then move. Pre-project flight moves along the nose and
+/// sideways by `travel * move_speed * dt`, times up to `BOOST` as the boost
+/// level ramps. Inertial flight (`ShipState::inertia`) adds the thrust to
+/// the velocity, never above that same speed, and moves by the velocity:
+/// without input the ship coasts. No collisions here.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
     let turn = ship.turn_speed * dt;
@@ -153,7 +165,19 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let boost = 1.0 + (BOOST - 1.0) * ship.boost;
     let way = travel(input, ship.forward, ship.right());
     ease_thrust(ship, way.length(), dt);
-    ship.position += way * (ship.move_speed * boost * dt);
+    if !ship.inertia {
+        ship.position += way * (ship.move_speed * boost * dt);
+        return;
+    }
+    let max = ship.move_speed * boost;
+    let velocity = ship.velocity + thrust_accel(input, ship) * dt;
+    let speed = velocity.length();
+    ship.velocity = if speed > max {
+        velocity * (max / speed)
+    } else {
+        velocity
+    };
+    ship.position += ship.velocity * dt;
 }
 
 /// Radial frame of the spacecraft around a planet treated as an ideal
@@ -388,9 +412,27 @@ pub fn local_step_scaled(
     else {
         return;
     };
+    let start = ship.position;
     ship.position += planet - *previous_planet_position;
     *previous_planet_position = planet;
     let dt = clamp_dt(dt);
+    local_motion(ship, planet, radius, input, dt, scale);
+    // Local flight is kinematic; the ship leaves it with the world velocity
+    // of its last step (moving along with the planet), not at rest.
+    if dt > 0.0 {
+        ship.velocity = (ship.position - start) / dt;
+    }
+}
+
+/// Turns and moves of `local_step_scaled` once the planet was followed.
+fn local_motion(
+    ship: &mut ShipState,
+    planet: Vector3,
+    radius: f32,
+    input: &FlightInput,
+    dt: f32,
+    scale: &FlightScale,
+) {
     ramp_boost(ship, false, dt);
 
     let Some(frame) = local_frame(ship, planet, radius) else {

@@ -44,6 +44,13 @@ pub struct ShipState {
     /// Engine level in `[0, 1]`: how hard `W`/`A`/`S`/`D` push, eased by
     /// the flight controller (it stretches the exhaust).
     pub thrust: f32,
+    /// World velocity, units per second: at rest when created, kept while
+    /// coasting. Inertial flight only.
+    pub velocity: Vector3,
+    /// Inertial space flight (Project 3): thrust accelerates `velocity`
+    /// and the ship keeps moving without input. `false` keeps the
+    /// pre-project flight, where the keys move the ship directly.
+    pub inertia: bool,
 }
 
 impl ShipState {
@@ -58,6 +65,8 @@ impl ShipState {
             turn_speed: 1.0,
             boost: 0.0,
             thrust: 0.0,
+            velocity: Vector3::zero(),
+            inertia: false,
         }
     }
 
