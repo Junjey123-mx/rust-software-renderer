@@ -56,6 +56,9 @@ pub struct CelestialArgs {
     /// `--no-culling`: the solar scene draws every object, even out of view
     /// (comparisons and tests; the image does not change).
     pub no_culling: bool,
+    /// `--benchmark-scaled`: the solar benchmark on the Project 3 system at
+    /// the project scale.
+    pub benchmark_scaled: bool,
     /// `--mode` appeared on the command line (it is left for `parse_args`).
     pub mode_explicit: bool,
 }
@@ -215,6 +218,7 @@ pub fn extract(args: Vec<String>) -> Result<(CelestialArgs, Vec<String>), String
             }
             "--invert-mouse" => out.invert_mouse = true,
             "--no-culling" => out.no_culling = true,
+            "--benchmark-scaled" => out.benchmark_scaled = true,
             other => {
                 if other == "--mode" {
                     out.mode_explicit = true;
@@ -256,6 +260,9 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
     }
     if !solar && lab6.no_culling {
         return Err("--no-culling requires --scene solar".into());
+    }
+    if lab6.benchmark_scaled && !lab6.benchmark_solar {
+        return Err("--benchmark-scaled requires --benchmark-solar".into());
     }
     if !solar
         && (lab6.stars.is_some()
@@ -299,6 +306,7 @@ pub fn validate(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), String> {
         mouse_sensitivity: None,
         invert_mouse: false,
         no_culling: false,
+        benchmark_scaled: false,
         record: if solar { None } else { lab6.record },
         fps: if solar { None } else { lab6.fps },
         ..lab6.clone()

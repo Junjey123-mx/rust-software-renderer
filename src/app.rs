@@ -1,9 +1,9 @@
 //! Application lifecycle and orchestration.
 
+use crate::benchmark::solar::run_solar_benchmark_on;
 use crate::benchmark::{
     BenchmarkConfig, ShaderBenchConfig, SolarBenchConfig, build_workload, profile_workload,
-    run_benchmark, run_shader_benchmark, run_solar_benchmark, write_csv, write_shader_csv,
-    write_solar_csv,
+    run_benchmark, run_shader_benchmark, write_csv, write_shader_csv, write_solar_csv,
 };
 use crate::config::AppConfig;
 use crate::geometry::{SCENE_HEIGHT, SCENE_WIDTH, Vertex, triangle_scene};
@@ -79,7 +79,7 @@ Usage: rust-software-renderer [options]
   --solar-quality full|adaptive  solar shader detail (default full; adaptive lowers it on small bodies)
   --mouse-sensitivity <x>[,<y>] [--invert-mouse]   solar mouse steering, radians per pixel (default 0.003,0.0025)
   --scene solar --record <s> [--fps n] [--timeline flight]   scripted solar flight as raw rgb24 on stdout
-  --benchmark-solar [--benchmark-output <dir>]   headless solar scenarios A-J (default docs/results/preproject3)
+  --benchmark-solar [--benchmark-scaled] [--benchmark-output <dir>]   headless solar scenarios A-J (default docs/results/preproject3; scaled: Project 3 system, docs/results/project3)
 Interactive keys: arrows orbit/tilt, Q/E zoom, 1/2/3 mode, R reset, T top, F front, S side, ESC quit
 Celestial keys: TAB body, SPACE pause, J/L I/K light, N debug view, [ ] main parameter, C/H/B/P toggle clouds, shadows, bump and parallax when the body provides them";
 
@@ -378,6 +378,7 @@ fn run_shader_benchmark_cli(output_dir: &std::path::Path) -> Result<(), Box<dyn 
 fn run_solar_benchmark_cli(
     output_dir: &std::path::Path,
     threads: Option<usize>,
+    scaled: bool,
 ) -> Result<(), Box<dyn Error>> {
     let config = SolarBenchConfig {
         threads: threads.unwrap_or(0),
@@ -392,7 +393,7 @@ fn run_solar_benchmark_cli(
         config.time,
         threads.map_or("all".to_string(), |n| n.to_string())
     );
-    let rows = run_solar_benchmark(&config)?;
+    let rows = run_solar_benchmark_on(&config, scaled)?;
     for r in &rows {
         println!(
             "{} {:<38} {} bodies, {:>7} fragments, median {:>8.2} ms, p95 {:>8.2} ms",
@@ -415,10 +416,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
     crate::celestial::cli::validate(&args, &lab6)?;
     if lab6.benchmark_solar {
-        let dir = args
-            .benchmark_output
-            .unwrap_or_else(|| PathBuf::from("docs/results/preproject3"));
-        return run_solar_benchmark_cli(&dir, lab6.threads);
+        let dir = args.benchmark_output.unwrap_or_else(|| {
+            PathBuf::from(if lab6.benchmark_scaled {
+                "docs/results/project3"
+            } else {
+                "docs/results/preproject3"
+            })
+        });
+        return run_solar_benchmark_cli(&dir, lab6.threads, lab6.benchmark_scaled);
     }
     if lab6.benchmark_shaders {
         let dir = args

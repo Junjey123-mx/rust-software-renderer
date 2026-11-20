@@ -136,16 +136,37 @@ fn hover(scene: &mut SolarScene, index: usize, altitude: f32, pitch_down: f32) {
         .expect("hover height is inside the local range");
 }
 
-/// Builds the scene of scenario `id` at the configured size and time.
+/// Builds the scene of scenario `id` at the configured size and time, on
+/// the pre-project system.
 pub fn scenario_scene(id: &str, config: &SolarBenchConfig) -> Result<SolarScene, Box<dyn Error>> {
+    scenario_scene_on(id, config, false)
+}
+
+/// `scenario_scene` on the Project 3 system at the project scale
+/// (`SolarScene::project3_system`) when `scaled`, framed by its layout.
+pub fn scenario_scene_on(
+    id: &str,
+    config: &SolarBenchConfig,
+    scaled: bool,
+) -> Result<SolarScene, Box<dyn Error>> {
     let camera = OrbitCamera::new(Vector3::zero(), ViewPreset::Oblique);
-    let view = OrbitView::for_world(
-        camera,
-        crate::solar::viewer::WORLD_RADIUS,
-        Viewport::new(config.width, config.height, 0.1),
-    )?;
-    let mut s =
-        SolarScene::default_system(SolarMeshes::load()?, view, Vector3::new(0.0, 1.0, 0.0))?;
+    let viewport = Viewport::new(config.width, config.height, 0.1);
+    let view = OrbitView::for_world(camera, crate::solar::viewer::WORLD_RADIUS, viewport)?;
+    let (meshes, light) = (SolarMeshes::load()?, Vector3::new(0.0, 1.0, 0.0));
+    let mut s = if scaled {
+        let mut s = SolarScene::project3_system(meshes, view, light)?;
+        if let Some(layout) = &s.layout {
+            s.view = OrbitView::for_world(camera, layout.world_radius, viewport)?;
+        }
+        s
+    } else {
+        SolarScene::default_system(meshes, view, light)?
+    };
+    // Hover heights: world units on the pre-project system, planet radii on
+    // the scaled one (where J flies at the planet's own clearance).
+    let height = |s: &SolarScene, i: usize, h: f32| {
+        if scaled { h * s.radius_of(i) } else { h }
+    };
     s.camera_mode = CameraMode::Perspective;
     s.clock.time = config.time;
     s.update();
@@ -160,8 +181,14 @@ pub fn scenario_scene(id: &str, config: &SolarBenchConfig) -> Result<SolarScene,
         }
         "C" => s.rig = CameraRig::Orbit,
         "D" | "H" => {}
-        "E" => hover(&mut s, 1, 0.7, 0.5),
-        "F" => hover(&mut s, 2, 0.7, 0.5),
+        "E" => {
+            let h = height(&s, 1, 0.7);
+            hover(&mut s, 1, h, 0.5)
+        }
+        "F" => {
+            let h = height(&s, 2, 0.7);
+            hover(&mut s, 2, h, 0.5)
+        }
         "G" => s.ship.yaw(std::f32::consts::PI),
         // Crimson Entrance cut about in half by the left edge (found by a
         // sweep: the whole planet covers about 4000 pixels at 800x600, 2300
@@ -172,7 +199,10 @@ pub fn scenario_scene(id: &str, config: &SolarBenchConfig) -> Result<SolarScene,
             s.stars = StarField::generate(s.stars.seed, 0);
             s.nebula.intensity = 0.0;
         }
-        "J" => hover(&mut s, 1, crate::solar::flight::CLEARANCE, 0.8),
+        "J" => {
+            let clearance = s.flight_scale(1).clearance;
+            hover(&mut s, 1, clearance, 0.8)
+        }
         other => return Err(format!("unknown solar scenario '{other}'").into()),
     }
     Ok(s)
@@ -185,6 +215,15 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 
 pub fn run_solar_benchmark(
     config: &SolarBenchConfig,
+) -> Result<Vec<SolarBenchRow>, Box<dyn Error>> {
+    run_solar_benchmark_on(config, false)
+}
+
+/// `run_solar_benchmark` on the Project 3 system when `scaled`
+/// (`scenario_scene_on`).
+pub fn run_solar_benchmark_on(
+    config: &SolarBenchConfig,
+    scaled: bool,
 ) -> Result<Vec<SolarBenchRow>, Box<dyn Error>> {
     if config.rounds == 0 {
         return Err("the solar benchmark needs at least one round".into());
@@ -199,7 +238,7 @@ pub fn run_solar_benchmark(
     };
     let mut rows = Vec::new();
     for (id, name) in SCENARIOS {
-        let scene = scenario_scene(id, config)?;
+        let scene = scenario_scene_on(id, config, scaled)?;
         let mut fb = Framebuffer::new(config.width, config.height);
         let mut times = Vec::new();
         let mut fragments = 0;

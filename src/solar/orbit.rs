@@ -29,6 +29,16 @@ impl Orbit {
         })
     }
 
+    /// Orbit of `radius` covered at `linear_speed` world units per second
+    /// (signed: positive turns from +X towards +Z): `speed = v / r`, so the
+    /// linear speed, not the angle, is what stays bounded on big orbits.
+    pub fn from_linear(radius: f32, linear_speed: f32, phase: f32) -> Result<Self, String> {
+        if !(radius.is_finite() && radius > 0.0) {
+            return Err(format!("orbit radius {radius} must be positive"));
+        }
+        Self::new(radius, linear_speed / radius, phase)
+    }
+
     pub fn angle_at(&self, time: f32) -> f32 {
         self.phase + self.speed * time
     }

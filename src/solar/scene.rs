@@ -267,7 +267,7 @@ impl SolarScene {
             if p.host.is_some() {
                 return Err(SpecError::Unsupported("planet.host"));
             }
-            let orbit = Orbit::new(p.orbit_radius, p.angular_speed(), p.phase)
+            let orbit = Orbit::from_linear(p.orbit_radius, p.orbit_speed, p.phase)
                 .map_err(|_| SpecError::OutOfRange("planet.orbit_speed", p.orbit_speed))?;
             bodies.push(instance(&p.material, p.scale, p.spin).with_orbit(orbit));
         }
@@ -289,7 +289,8 @@ impl SolarScene {
     /// The system of `spec` at the project scale: the size ratios are
     /// checked (`ScaleProfile::check`), the orbits must keep the shells
     /// apart (`OrbitLayout::solve`, explicit radii only), the ship starts
-    /// beyond the fifth slot and local flight scales with each planet.
+    /// beyond the fifth slot at the profile's cruise speed and local flight
+    /// scales with each planet.
     pub fn scaled_from_spec(
         meshes: SolarMeshes,
         view: OrbitView,
@@ -305,6 +306,7 @@ impl SolarScene {
             spawn_beyond(layout.fifth_slot + FIFTH_SLOT_RESERVED_EXTENT),
             SHIP_SCALE,
         );
+        scene.ship.move_speed = profile.cruise_speed;
         scene.scale = Some(profile);
         scene.layout = Some(layout);
         scene.check_spawn()?;

@@ -6,21 +6,15 @@
 //! Project 3 get their own tables. To print the current fingerprints run
 //! `P3_PRINT_BASELINE=1 cargo test --test p3_frame_oracle_tests -- --nocapture`.
 //!
-//! `P3_SCALED` fingerprints the Project 3 system at the project scale
-//! (`SolarScene::project3_system`, C23) for the scenarios that do not depend
-//! on where the scenarios put the ship: B, C and D (the rest come in C24).
+//! `P3_SCALED_A_J` fingerprints the same scenarios on the Project 3 system
+//! at the project scale (`scenario_scene_on(.., true)`): B, C and D were
+//! captured in C23, the rest in C24 once the scenarios follow the layout.
 
-use raylib::math::Vector3;
 use rust_software_renderer::benchmark::SolarBenchConfig;
-use rust_software_renderer::benchmark::solar::{SCENARIOS, scenario_scene};
-use rust_software_renderer::celestial::Body;
-use rust_software_renderer::pipeline::{
-    OrbitCamera, OrbitView, ShadedOptions, ViewPreset, Viewport,
-};
+use rust_software_renderer::benchmark::solar::{SCENARIOS, scenario_scene, scenario_scene_on};
+use rust_software_renderer::pipeline::ShadedOptions;
 use rust_software_renderer::rasterization::TriangleMode;
 use rust_software_renderer::rendering::Framebuffer;
-use rust_software_renderer::solar::camera::CameraRig;
-use rust_software_renderer::solar::{CameraMode, SolarMeshes, SolarScene};
 
 fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
@@ -100,43 +94,12 @@ fn a_single_flipped_bit_is_detected() {
     assert_ne!(scenario_hash(id, 4), h ^ 1);
 }
 
-/// Scenario `id` (B, C or D, built as `scenario_scene` does) on the Project
-/// 3 system, its orbit view framing the layout.
-fn scaled_scene(id: &str, config: &SolarBenchConfig) -> SolarScene {
-    let camera = OrbitCamera::new(Vector3::zero(), ViewPreset::Oblique);
-    let viewport = Viewport::new(config.width, config.height, 0.1);
-    let view = OrbitView::for_world(camera, 8.0, viewport).unwrap();
-    let mut s = SolarScene::project3_system(
-        SolarMeshes::load().unwrap(),
-        view,
-        Vector3::new(0.0, 1.0, 0.0),
-    )
-    .unwrap();
-    let world = s.layout.as_ref().unwrap().world_radius;
-    s.view = OrbitView::for_world(camera, world, viewport).unwrap();
-    s.camera_mode = CameraMode::Perspective;
-    s.clock.time = config.time;
-    s.update();
-    match id {
-        "B" => {
-            s.bodies.retain(|b| b.body() == Body::CrimsonEntrance);
-            s.rig = CameraRig::Orbit;
-            s.view.camera.target = s.bodies[0].transform.position;
-            s.view.camera.zoom = 2.5;
-        }
-        "C" => s.rig = CameraRig::Orbit,
-        "D" => {}
-        other => panic!("no scaled scenario {other}"),
-    }
-    s
-}
-
 fn scaled_hash(id: &str) -> u64 {
     let config = SolarBenchConfig {
         threads: 4,
         ..SolarBenchConfig::default()
     };
-    let scene = scaled_scene(id, &config);
+    let scene = scenario_scene_on(id, &config, true).unwrap();
     let mut fb = Framebuffer::new(config.width, config.height);
     let options = ShadedOptions {
         threads: 4,
@@ -156,16 +119,24 @@ fn scaled_hash(id: &str) -> u64 {
     fnv1a64(&rgba)
 }
 
-/// Captured on C23 (Project 3 system at the project scale).
-const P3_SCALED: [(&str, u64); 3] = [
+/// Project 3 system at the project scale: B, C and D captured on C23, the
+/// others on C24.
+const P3_SCALED_A_J: [(&str, u64); 10] = [
+    ("A", 0xc45cefa3d2a9ddcc),
     ("B", 0xe59e2a67ca2766b7),
     ("C", 0x1c464b6c8d4dc9d1),
     ("D", 0xee1ab5d5ddd77b56),
+    ("E", 0xf94f0363bdf79a8e),
+    ("F", 0xf9fde6c318a39b8d),
+    ("G", 0xd04d0613d738e4a5),
+    ("H", 0xee1ab5d5ddd77b56),
+    ("I", 0x7c27712dab665184),
+    ("J", 0x927e6b592e39779f),
 ];
 
 #[test]
-fn p3_scaled_b_c_d_match() {
-    let got: Vec<(&str, u64)> = P3_SCALED
+fn p3_scaled_a_j_match() {
+    let got: Vec<(&str, u64)> = SCENARIOS
         .iter()
         .map(|&(id, _)| (id, scaled_hash(id)))
         .collect();
@@ -174,12 +145,9 @@ fn p3_scaled_b_c_d_match() {
             println!("    (\"{id}\", {h:#018x}),");
         }
     }
-    assert_eq!(got, P3_SCALED);
-    // The scaled frames are not the legacy ones.
-    for (id, h) in &got {
-        assert_ne!(
-            Some(h),
-            LEGACY_A_J.iter().find(|(l, _)| l == id).map(|(_, h)| h)
-        );
+    assert_eq!(got, P3_SCALED_A_J);
+    // The scaled frames are not the legacy ones (A, the ship alone, is).
+    for ((id, h), (_, legacy)) in got.iter().zip(LEGACY_A_J).skip(1) {
+        assert_ne!(*h, legacy, "{id}");
     }
 }

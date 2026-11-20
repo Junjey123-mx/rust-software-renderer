@@ -75,6 +75,11 @@ impl PlanetSpec {
     }
 }
 
+/// Largest orbital speed of the Project 3 planets, world units per second:
+/// a third of the spacecraft's cruise (3 u/s), so every planet can be
+/// caught without quick travel (`ScaleProfile::max_orbit_speed`).
+pub const MAX_ORBIT_LINEAR_SPEED: f32 = 1.0;
+
 /// `orbit_radius` that lets `OrbitLayout::solve` choose the radius (the
 /// smallest that keeps the gap, rounded up to 0.5). A scene cannot be
 /// built from it directly: `validate` asks for a positive radius.

@@ -6,7 +6,7 @@
 use raylib::math::Vector3;
 use rust_software_renderer::pipeline::{OrbitCamera, OrbitView, ViewPreset, Viewport};
 use rust_software_renderer::solar::camera::CameraRig;
-use rust_software_renderer::solar::flight::{BOOST, FlightMode, LOCAL_SPEED, RADIAL_SPEED};
+use rust_software_renderer::solar::flight::{BOOST, FlightMode};
 use rust_software_renderer::solar::input::SolarAction;
 use rust_software_renderer::solar::record::{
     SolarTimeline, TOUR_SECONDS, TOUR_SPACE_SECONDS, prepare_timeline, script_frame, tour_actions,
@@ -21,7 +21,8 @@ fn scene(time: f32) -> SolarScene {
         Viewport::new(80, 60, 0.1),
     )
     .unwrap();
-    let mut s = SolarScene::default_system(
+    // The Project 3 system the recorder plays the tour on (C24).
+    let mut s = SolarScene::project3_system(
         SolarMeshes::load().unwrap(),
         view,
         Vector3::new(0.0, 1.0, 0.0),
@@ -150,7 +151,10 @@ fn ship_path_is_continuous_and_never_enters_a_body() {
             .map(|o| o.speed.abs() * o.radius)
             .fold(0.0, f32::max);
         let dt = 1.0 / fps as f32;
-        let bound = (s.ship.move_speed * BOOST + planet_speed + LOCAL_SPEED + RADIAL_SPEED) * dt;
+        let local = s.flight_scale(planet_index(&frames));
+        let bound =
+            (s.ship.move_speed * BOOST + planet_speed + local.local_speed + local.radial_speed)
+                * dt;
         let first = prepare_timeline(&scene(time), SolarTimeline::Tour, fps)
             .ship
             .position;
@@ -167,8 +171,9 @@ fn ship_path_is_continuous_and_never_enters_a_body() {
         for f in 0..frames.len() {
             script_frame(&mut s, SolarTimeline::Tour, f, fps, start, &mut paused_at);
             for i in 0..s.bodies.len() {
+                // Against the shell: the star's crown and House's ring too.
                 let gap =
-                    (s.ship.position - s.bodies[i].transform.position).length() - s.radius_of(i);
+                    (s.ship.position - s.bodies[i].transform.position).length() - s.shell_of(i);
                 assert!(gap > 0.45, "t0 {time}, frame {f}: {gap} from body {i}");
             }
         }

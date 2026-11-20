@@ -10,7 +10,9 @@ use crate::rendering::Framebuffer;
 use crate::shading::math::hex;
 use crate::solar::flight::{FlightInput, FlightMode, space_step};
 use crate::solar::input::{Look, SolarAction};
-use crate::solar::viewer::{HEIGHT, WIDTH, apply_toggles, build_scene, fly, solar_mode};
+use crate::solar::viewer::{
+    HEIGHT, WIDTH, apply_toggles, build_project3_scene, build_scene, fly, solar_mode,
+};
 use crate::solar::{ShipState, SolarScene};
 use raylib::math::Vector3;
 use std::error::Error;
@@ -87,9 +89,11 @@ pub fn flight_actions(previous: f32, t: f32) -> Vec<SolarAction> {
 pub const TOUR_SPACE_SECONDS: f32 = 6.0;
 /// Light-speed burst of the space leg (start and end, seconds).
 pub const TOUR_BOOST: (f32, f32) = (1.0, 1.6);
-/// Seconds of local flight: more than one full lap around the planet,
-/// timed so the departure starts on the side away from the star.
-pub const TOUR_LAP_SECONDS: f32 = 20.0;
+/// Seconds of local flight: more than one full lap around the planet (a lap
+/// at the clearance takes about 20 s, `FlightScale::for_planet`), timed so
+/// the departure leaves on the side away from the star (a sweep on the
+/// Project 3 layout: 25 to 26.5 s keep clear of the crown's shell).
+pub const TOUR_LAP_SECONDS: f32 = 26.0;
 /// Seconds the departure pitches the nose up before its light-speed burst.
 pub const TOUR_CLIMB_SECONDS: f32 = 1.5;
 /// Length of the tour script, seconds.
@@ -285,9 +289,15 @@ pub fn record_solar(
 
 /// `--scene solar --record`: streams the timeline to standard output.
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
-    let scene = build_scene(cli, lab6)?;
+    let timeline = lab6.solar_timeline.unwrap_or_default();
+    // The delivery tour flies the Project 3 system; the pre-project flight
+    // keeps its own.
+    let scene = match timeline {
+        SolarTimeline::Tour => build_project3_scene(cli, lab6)?,
+        SolarTimeline::Flight => build_scene(cli, lab6)?,
+    };
     let settings = SolarRecordSettings {
-        timeline: lab6.solar_timeline.unwrap_or_default(),
+        timeline,
         seconds: lab6.record.ok_or("--record requires a duration")?,
         fps: lab6.fps.unwrap_or(30),
         mode: solar_mode(cli, lab6),
