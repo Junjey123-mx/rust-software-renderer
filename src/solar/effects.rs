@@ -40,11 +40,18 @@ pub enum EffectShader {
 pub struct PropShader {
     pub color: Vector3,
     pub light: Vector3,
+    /// Share of the color that glows (neon edges) instead of being lit.
+    pub glow: f32,
 }
 
 impl PropShader {
     pub fn shade(&self, face_normal: Vector3) -> Vector3 {
-        self.color * (0.06 + 0.94 * lambert(face_normal, self.light))
+        let lit = self.color * (0.06 + 0.94 * lambert(face_normal, self.light));
+        if self.glow > 0.0 {
+            lit * (1.0 - self.glow) + self.color * self.glow
+        } else {
+            lit
+        }
     }
 }
 
@@ -221,6 +228,7 @@ impl SolarScene {
                                 shader: EffectShader::Prop(PropShader {
                                     color: layer.part.color(),
                                     light,
+                                    glow: layer.part.glow(),
                                 }),
                             });
                         }

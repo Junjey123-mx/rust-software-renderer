@@ -72,6 +72,15 @@ impl HeightField {
         }
     }
 
+    /// Whether the unit `n` lies on a flat terrace: the Hearts plateaus;
+    /// no other field has terraces.
+    pub fn is_plateau(&self, n: Vector3) -> bool {
+        match self {
+            Self::Hearts(h) => h.is_plateau(n),
+            _ => false,
+        }
+    }
+
     /// Water level in radii: the ground below it shows as water.
     pub fn sea_level(&self) -> Option<f32> {
         match *self {

@@ -5,7 +5,9 @@
 use crate::geometry::{Mesh, Vertex};
 use crate::shading::math::hex;
 use crate::shading::noise::{fbm, hash3};
-use crate::solar::attach::prop_meshes::{TREE_VARIANTS, rock_mesh, tree_parts};
+use crate::solar::attach::prop_meshes::{
+    TOWER_VARIANTS, TREE_VARIANTS, rock_mesh, tower_mesh, tree_parts,
+};
 use crate::solar::planet::HeightField;
 use crate::solar::planet::field::NORMAL_EPS;
 use crate::solar::planet::icosphere::icosphere;
@@ -18,6 +20,19 @@ use std::sync::Arc;
 pub enum PropKind {
     Tree,
     Rock,
+    /// A neon building of the Hearts city.
+    Building,
+}
+
+/// Which ground a prop may stand on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScatterMask {
+    /// Anywhere the slope allows.
+    Anywhere,
+    /// Only above the sea.
+    LandOnly,
+    /// Only on flat terraces (`HeightField::is_plateau`).
+    Plateau,
 }
 
 /// Where props of one kind may stand.
@@ -34,8 +49,11 @@ pub struct ScatterRule {
     pub max_slope: f32,
     /// Smallest angle between two props, radians.
     pub min_spacing: f32,
-    /// Only above the sea.
-    pub land_only: bool,
+    /// Which ground counts.
+    pub mask: ScatterMask,
+    /// A cone left empty: unit direction and angular radius (radians),
+    /// such as a landmark's footprint.
+    pub exclude: Option<(Vector3, f32)>,
 }
 
 impl ScatterRule {
@@ -47,7 +65,8 @@ impl ScatterRule {
         density_threshold: -0.15,
         max_slope: 0.2,
         min_spacing: 0.012,
-        land_only: true,
+        mask: ScatterMask::LandOnly,
+        exclude: None,
     };
     /// Boulders on steeper, higher ground.
     pub const ROCKS: Self = Self {
@@ -57,7 +76,19 @@ impl ScatterRule {
         density_threshold: 0.1,
         max_slope: 0.6,
         min_spacing: 0.02,
-        land_only: true,
+        mask: ScatterMask::LandOnly,
+        exclude: None,
+    };
+    /// Hearts city: districts of buildings on the flat terraces.
+    pub const BUILDINGS: Self = Self {
+        kind: PropKind::Building,
+        candidates: 1500,
+        density_freq: 5.0,
+        density_threshold: 0.05,
+        max_slope: 0.05,
+        min_spacing: 0.04,
+        mask: ScatterMask::Plateau,
+        exclude: None,
     };
 }
 
@@ -106,7 +137,12 @@ pub fn scatter(field: &HeightField, rule: &ScatterRule, seed: u32) -> Vec<PropPo
         if fbm(n * rule.density_freq, 3, seed) <= rule.density_threshold {
             continue;
         }
-        if rule.land_only && field.height(n) <= sea {
+        let ground = match rule.mask {
+            ScatterMask::Anywhere => true,
+            ScatterMask::LandOnly => field.height(n) > sea,
+            ScatterMask::Plateau => field.is_plateau(n),
+        };
+        if !ground || rule.exclude.is_some_and(|(dir, r)| n.dot(dir) > r.cos()) {
             continue;
         }
         let up = field.normal(n, NORMAL_EPS);
@@ -169,6 +205,9 @@ pub enum PropPart {
     TreeTrunk,
     TreeCanopy,
     Rock,
+    BuildingBody,
+    /// The buildings' neon edges (emissive).
+    BuildingEdge,
 }
 
 impl PropPart {
@@ -177,6 +216,16 @@ impl PropPart {
             Self::TreeTrunk => hex(0x6B4A2E),
             Self::TreeCanopy => hex(0x2E8B3E),
             Self::Rock => hex(0x8A8178),
+            Self::BuildingBody => hex(0x3A1F5C),
+            Self::BuildingEdge => hex(0xFF2E63),
+        }
+    }
+
+    /// Share of the color that glows instead of taking the light.
+    pub fn glow(self) -> f32 {
+        match self {
+            Self::BuildingEdge => 1.0,
+            _ => 0.0,
         }
     }
 }
@@ -291,6 +340,12 @@ pub fn bake(
             PropKind::Rock => {
                 let rock = rock_mesh(seed ^ (i as u32).wrapping_mul(0x9e37_79b9));
                 add(PropPart::Rock, sector, &rock, &map);
+            }
+            PropKind::Building => {
+                let variant = (pose.scale * 97.0) as u8 % TOWER_VARIANTS;
+                let (body, edges) = tower_mesh(variant);
+                add(PropPart::BuildingBody, sector, &body, &map);
+                add(PropPart::BuildingEdge, sector, &edges, &map);
             }
         }
     }
