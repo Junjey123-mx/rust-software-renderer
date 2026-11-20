@@ -104,3 +104,74 @@ pub fn collide(
         }
     }
 }
+
+/// Surface of a body around its center: its radius in each direction.
+/// C34 adds the relief of a height field.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SurfaceSampler {
+    Sphere { radius: f32 },
+}
+
+impl SurfaceSampler {
+    /// Distance from the center to the ground along the unit `dir`.
+    pub fn radius_at(&self, _dir: Vector3) -> f32 {
+        match *self {
+            Self::Sphere { radius } => radius,
+        }
+    }
+
+    /// Largest `radius_at`: the bound of the broad phase.
+    pub fn max_radius(&self) -> f32 {
+        match *self {
+            Self::Sphere { radius } => radius,
+        }
+    }
+}
+
+/// `point` raised along the radial to at least `clearance` above the
+/// ground `radius_at` of a body at `center` whose ground never reaches past
+/// `max_radius` (broad phase: farther points are left as they are). Used
+/// for the ship and for the follow camera's eye.
+pub fn lift_above<S: Fn(Vector3) -> f32>(
+    point: Vector3,
+    center: Vector3,
+    max_radius: f32,
+    clearance: f32,
+    radius_at: S,
+) -> Vector3 {
+    let offset = point - center;
+    let d = offset.length();
+    if !d.is_finite() || d > max_radius + clearance {
+        return point;
+    }
+    let normal = unit(offset).unwrap_or(Vector3::new(0.0, 1.0, 0.0));
+    let floor = radius_at(normal) + clearance;
+    if d < floor {
+        center + normal * floor
+    } else {
+        point
+    }
+}
+
+/// Keeps the ship's bounding sphere (plus `COLLISION_MARGIN`) above the
+/// ground of a body at `center` moving at `body_velocity`: narrow phase
+/// with `radius_at` in the ship's direction once inside `max_radius`. The
+/// velocity into the ground, relative to the body, is removed.
+pub fn collide_with<S: Fn(Vector3) -> f32>(
+    ship: &mut ShipState,
+    center: Vector3,
+    body_velocity: Vector3,
+    max_radius: f32,
+    radius_at: S,
+) {
+    let clearance = ship.radius() + COLLISION_MARGIN;
+    let lifted = lift_above(ship.position, center, max_radius, clearance, radius_at);
+    if lifted != ship.position {
+        let normal = (lifted - center).normalized();
+        ship.position = lifted;
+        let inward = (ship.velocity - body_velocity).dot(normal);
+        if inward < 0.0 {
+            ship.velocity -= normal * inward;
+        }
+    }
+}

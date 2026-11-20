@@ -44,7 +44,7 @@ pub fn arrival_point(scene: &SolarScene, index: usize) -> Option<Vector3> {
 }
 
 /// Warps the spacecraft next to body `index`, nose towards it, leaving
-/// local flight. Returns `false` (nothing changes) when the index does not
+/// local flight, at the body's velocity. Returns `false` (nothing changes) when the index does not
 /// exist or no clear arrival point was found.
 pub fn warp_to(scene: &mut SolarScene, index: usize) -> bool {
     let Some(arrival) = arrival_point(scene, index) else {
@@ -58,7 +58,13 @@ pub fn warp_to(scene: &mut SolarScene, index: usize) -> bool {
     scene.ship.forward = forward;
     scene.ship.up = Vector3::new(0.0, 1.0, 0.0);
     scene.ship.renormalize();
-    scene.ship.velocity = Vector3::zero();
+    // An inertial ship arrives moving with the body, so it does not drift
+    // into it.
+    scene.ship.velocity = if scene.ship.inertia {
+        scene.body_velocity(index)
+    } else {
+        Vector3::zero()
+    };
     scene.flight = FlightMode::Space;
     true
 }

@@ -484,6 +484,23 @@ pub fn local_step_scaled(
     dt: f32,
     scale: &FlightScale,
 ) {
+    local_step_over(ship, mode, planet, radius, input, dt, scale, |_| radius);
+}
+
+/// `local_step_scaled` over a surface whose radius in each direction is
+/// `radius_at` (relief): the clearance is kept above the ground right
+/// below the ship, not above the ideal sphere of `radius`.
+#[allow(clippy::too_many_arguments)]
+pub fn local_step_over<S: Fn(Vector3) -> f32>(
+    ship: &mut ShipState,
+    mode: &mut FlightMode,
+    planet: Vector3,
+    radius: f32,
+    input: &FlightInput,
+    dt: f32,
+    scale: &FlightScale,
+    radius_at: S,
+) {
     let FlightMode::Local {
         previous_planet_position,
         ..
@@ -495,7 +512,7 @@ pub fn local_step_scaled(
     ship.position += planet - *previous_planet_position;
     *previous_planet_position = planet;
     let dt = clamp_dt(dt);
-    local_motion(ship, planet, radius, input, dt, scale);
+    local_motion(ship, planet, radius, input, dt, scale, radius_at);
     // Local flight is kinematic; the ship leaves it with the world velocity
     // of its last step (moving along with the planet), not at rest.
     if dt > 0.0 {
@@ -503,14 +520,15 @@ pub fn local_step_scaled(
     }
 }
 
-/// Turns and moves of `local_step_scaled` once the planet was followed.
-fn local_motion(
+/// Turns and moves of `local_step_over` once the planet was followed.
+fn local_motion<S: Fn(Vector3) -> f32>(
     ship: &mut ShipState,
     planet: Vector3,
     radius: f32,
     input: &FlightInput,
     dt: f32,
     scale: &FlightScale,
+    radius_at: S,
 ) {
     ramp_boost(ship, false, dt);
 
@@ -535,7 +553,9 @@ fn local_motion(
         normal = rotate_axis(frame.normal, axis, angle).normalized();
         ship.rotate(axis, angle);
     }
+    let ground = radius_at(normal);
+    let ground = if ground.is_finite() { ground } else { radius };
     let distance =
-        (frame.distance + input.radial * scale.radial_speed * dt).max(radius + scale.clearance);
+        (frame.distance + input.radial * scale.radial_speed * dt).max(ground + scale.clearance);
     ship.position = planet + normal * distance;
 }
