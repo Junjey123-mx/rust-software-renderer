@@ -8,9 +8,11 @@ use crate::pipeline::ShadedOptions;
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::shading::math::hex;
-use crate::solar::SolarScene;
+use crate::solar::flight::{FlightInput, FlightMode, space_step};
 use crate::solar::input::{Look, SolarAction};
 use crate::solar::viewer::{HEIGHT, WIDTH, apply_toggles, build_scene, fly, solar_mode};
+use crate::solar::{ShipState, SolarScene};
+use raylib::math::Vector3;
 use std::error::Error;
 use std::io::Write;
 
@@ -22,6 +24,11 @@ pub enum SolarTimeline {
     /// cards, then the whole system from the orbit rig (22 s).
     #[default]
     Flight,
+    /// The continuous tour of the delivery video: space flight with a short
+    /// burst of light speed, a continuous approach to the first planet,
+    /// local flight around it for a full lap and a boosted departure, all in
+    /// one scene, one camera rig and without quick travel.
+    Tour,
 }
 
 impl std::str::FromStr for SolarTimeline {
@@ -30,8 +37,9 @@ impl std::str::FromStr for SolarTimeline {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "flight" => Ok(Self::Flight),
+            "tour" => Ok(Self::Tour),
             other => Err(format!(
-                "unknown timeline '{other}' (expected material, orbit, light, showcase or flight)"
+                "unknown timeline '{other}' (expected material, orbit, light, showcase, flight or tour)"
             )),
         }
     }
@@ -75,6 +83,150 @@ pub fn flight_actions(previous: f32, t: f32) -> Vec<SolarAction> {
     actions
 }
 
+/// Seconds of straight space flight before the tour enters local flight.
+pub const TOUR_SPACE_SECONDS: f32 = 6.0;
+/// Light-speed burst of the space leg (start and end, seconds).
+pub const TOUR_BOOST: (f32, f32) = (1.0, 1.6);
+/// Seconds of local flight: more than one full lap around the planet,
+/// timed so the departure starts on the side away from the star.
+pub const TOUR_LAP_SECONDS: f32 = 20.0;
+/// Seconds the departure pitches the nose up before its light-speed burst.
+pub const TOUR_CLIMB_SECONDS: f32 = 1.5;
+/// Length of the tour script, seconds.
+pub const TOUR_SECONDS: f32 = TOUR_SPACE_SECONDS + TOUR_LAP_SECONDS + TOUR_CLIMB_SECONDS + 4.5;
+/// Height of the ship center above the planet's surface when the approach
+/// ends (inside the local range, outside the clearance).
+pub const TOUR_ARRIVAL_ALTITUDE: f32 = 1.2;
+
+/// Actions of the tour for the frame at `t` (previous frame at
+/// `previous`). Only flight keys and the local-flight toggle: never quick
+/// travel nor a camera switch.
+pub fn tour_actions(previous: f32, t: f32) -> Vec<SolarAction> {
+    let lap_end = TOUR_SPACE_SECONDS + TOUR_LAP_SECONDS;
+    let climb_end = lap_end + TOUR_CLIMB_SECONDS;
+    let mut actions: Vec<SolarAction> = [TOUR_SPACE_SECONDS, lap_end]
+        .iter()
+        .filter(|&&at| previous < at && at <= t)
+        .map(|_| SolarAction::ToggleLocal)
+        .collect();
+    let held: &[SolarAction] = match t {
+        t if t < TOUR_BOOST.0 => &[SolarAction::Forward],
+        t if t < TOUR_BOOST.1 => &[SolarAction::Forward, SolarAction::Boost],
+        t if t < TOUR_SPACE_SECONDS => &[SolarAction::Forward],
+        // Down to the clearance in the first seconds of the lap.
+        t if t < TOUR_SPACE_SECONDS + 2.0 => &[SolarAction::Forward, SolarAction::Descend],
+        t if t < lap_end => &[SolarAction::Forward],
+        t if t < climb_end => &[SolarAction::Forward, SolarAction::PitchUp],
+        t if t < TOUR_SECONDS => &[SolarAction::Forward, SolarAction::Boost],
+        _ => &[],
+    };
+    actions.extend_from_slice(held);
+    actions
+}
+
+/// Distance flown by `template` (at rest, same speeds) along its nose over
+/// the space leg of the tour at `fps` frames per second (the frames before
+/// the local toggle).
+fn tour_space_leg(template: &ShipState, fps: u32) -> f32 {
+    let dt = 1.0 / fps as f32;
+    let mut ship = ShipState::new(Vector3::zero(), template.scale);
+    ship.move_speed = template.move_speed;
+    let frames = (TOUR_SPACE_SECONDS * fps as f32).round() as usize;
+    for f in 0..frames {
+        let t = f as f32 / fps as f32;
+        let previous = if f == 0 { -1.0 } else { t - dt };
+        space_step(
+            &mut ship,
+            &FlightInput::from_actions(&tour_actions(previous, t)),
+            dt,
+        );
+    }
+    ship.position.length()
+}
+
+/// Start of the tour: a ship placed in closed form so that flying the
+/// space leg in a straight line ends beside the first planet (the first
+/// orbiting body), `TOUR_ARRIVAL_ALTITUDE` above its surface, moving
+/// tangentially to it: the planet's position at that instant comes from its
+/// orbit, so the approach is continuous and needs no quick travel. The
+/// line comes in from above the orbital plane, against the planet's
+/// motion, and clears the star and the other bodies.
+pub fn tour_start(scene: &SolarScene, fps: u32) -> Option<ShipState> {
+    let target = scene.local_targets().into_iter().next()?;
+    let body = &scene.bodies[target.index];
+    let orbit = body.orbit?;
+    let dt = 1.0 / fps as f32;
+    let frames = (TOUR_SPACE_SECONDS * fps as f32).round();
+    let arrival = scene.time() + (frames - 1.0) * dt;
+    let planet = orbit.position_at(arrival, scene.center);
+    let up = Vector3::new(0.0, 1.0, 0.0);
+    let outward = (planet - scene.center).normalized();
+    // Against the orbital motion (angles grow from +X towards +Z).
+    let along = up.cross(outward) * orbit.speed.signum();
+    let dive = 25f32.to_radians();
+    let forward = (along * dive.cos() - up * dive.sin()).normalized();
+    // Offset from the planet center at arrival, perpendicular to the nose.
+    let lift = 30f32.to_radians();
+    let side = outward * lift.cos() + up * lift.sin();
+    let side = (side - forward * side.dot(forward)).normalized();
+    let end = planet + side * (target.radius + TOUR_ARRIVAL_ALTITUDE);
+    let distance = tour_space_leg(&scene.ship, fps);
+    let mut ship = scene.ship;
+    ship.position = end - forward * distance;
+    ship.forward = forward;
+    ship.up = forward.cross(up).cross(forward).normalized();
+    ship.renormalize();
+    ship.boost = 0.0;
+    ship.thrust = 0.0;
+    Some(ship)
+}
+
+/// One frame of a scripted timeline on `s`: the frame's actions and
+/// toggles, the exact simulated time (held while the script pauses) and
+/// the flight controller. Returns the actions and the toggle messages.
+pub fn script_frame(
+    s: &mut SolarScene,
+    timeline: SolarTimeline,
+    frame: usize,
+    fps: u32,
+    start: f32,
+    paused_at: &mut Option<f32>,
+) -> (Vec<SolarAction>, Vec<String>) {
+    let dt = 1.0 / fps as f32;
+    let t = frame as f32 / fps as f32;
+    let previous = if frame == 0 { -1.0 } else { t - dt };
+    let actions = match timeline {
+        SolarTimeline::Flight => flight_actions(previous, t),
+        SolarTimeline::Tour => tour_actions(previous, t),
+    };
+    let messages = apply_toggles(s, &actions);
+    let sim = if s.clock.paused {
+        *paused_at.get_or_insert(start + t)
+    } else {
+        *paused_at = None;
+        start + t
+    };
+    s.clock.time = sim;
+    s.clock.real_delta = dt;
+    s.update();
+    fly(s, &actions, &[], Look::default(), dt);
+    (actions, messages)
+}
+
+/// Copy of `scene` ready to play `timeline` at `fps`: the tour moves the
+/// ship to its closed-form start in space flight under the follow rig.
+pub fn prepare_timeline(scene: &SolarScene, timeline: SolarTimeline, fps: u32) -> SolarScene {
+    let mut s = scene.clone();
+    if timeline == SolarTimeline::Tour
+        && let Some(ship) = tour_start(&s, fps)
+    {
+        s.ship = ship;
+        s.flight = FlightMode::Space;
+        s.rig = crate::solar::camera::CameraRig::Follow;
+    }
+    s
+}
+
 /// What to record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SolarRecordSettings {
@@ -101,8 +253,7 @@ pub fn record_solar(
         return Err("recording needs a positive duration and frame rate".into());
     }
     let frames = (settings.seconds * settings.fps as f32).ceil() as usize;
-    let dt = 1.0 / settings.fps as f32;
-    let mut s = scene.clone();
+    let mut s = prepare_timeline(scene, settings.timeline, settings.fps);
     let start = s.time();
     let mut paused_at: Option<f32> = None;
     let mut framebuffer = Framebuffer::new(settings.width, settings.height);
@@ -110,24 +261,17 @@ pub fn record_solar(
     let mut rgb = Vec::with_capacity((settings.width * settings.height * 3) as usize);
     for f in 0..frames {
         let t = f as f32 / settings.fps as f32;
-        let previous = if f == 0 { -1.0 } else { t - dt };
-        let actions = match settings.timeline {
-            SolarTimeline::Flight => flight_actions(previous, t),
-        };
-        for message in apply_toggles(&mut s, &actions) {
+        let (_, messages) = script_frame(
+            &mut s,
+            settings.timeline,
+            f,
+            settings.fps,
+            start,
+            &mut paused_at,
+        );
+        for message in messages {
             writeln!(log, "{t:6.2} s: {message}")?;
         }
-        // Exact simulated time per frame (held while the script pauses).
-        let sim = if s.clock.paused {
-            *paused_at.get_or_insert(start + t)
-        } else {
-            paused_at = None;
-            start + t
-        };
-        s.clock.time = sim;
-        s.clock.real_delta = dt;
-        s.update();
-        fly(&mut s, &actions, &[], Look::default(), dt);
         s.render_frame(&mut framebuffer, settings.mode, settings.options)?;
         rgb.clear();
         for px in framebuffer.to_rgba_bytes().chunks_exact(4) {
