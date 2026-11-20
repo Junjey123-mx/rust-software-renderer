@@ -247,6 +247,26 @@ impl SystemSpec {
         Ok(())
     }
 
+    /// The Project 3 system at the scale of `ScaleProfile::project3`: The
+    /// King's Crown (radius 5.40) with Crimson Entrance (1.10, orbit 14,
+    /// 1 u/s) and House of Cards (1.75, orbit 36, 0.75 u/s) in the order of
+    /// the suits. Orbits 20 and 27 stay free for Clover and Hearts (C49,
+    /// C61); spins, phases and materials are the pre-project ones.
+    pub fn project3() -> Self {
+        let mut spec = Self::preproject3();
+        spec.star.scale = 5.40 / SPHERE_RADIUS;
+        for (p, (radius, orbit, speed)) in spec
+            .planets
+            .iter_mut()
+            .zip([(1.10, 14.0, 1.0), (1.75, 36.0, 0.75)])
+        {
+            p.scale = radius / SPHERE_RADIUS;
+            p.orbit_radius = orbit;
+            p.orbit_speed = speed;
+        }
+        spec
+    }
+
     /// The pre-project system exactly as `SolarScene::default_system` wires
     /// it: the star (scale 1.3, spin 0.05, surface loops off), Crimson
     /// Entrance (scale 0.6, orbit 3.0 at 1.5 u/s, spin 0.6) and House of

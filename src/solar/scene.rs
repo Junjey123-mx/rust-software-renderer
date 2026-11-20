@@ -32,6 +32,7 @@ use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
+use crate::solar::system::layout::{FIFTH_SLOT_RESERVED_EXTENT, OrbitLayout};
 use crate::solar::system::{PlanetId, ScaleProfile, SpecError, SystemSpec};
 use crate::solar::thrusters::Thrusters;
 use crate::solar::{
@@ -142,10 +143,27 @@ pub struct SolarScene {
     /// pre-project constants (`FlightScale::legacy`), a profile makes them
     /// relative to each planet's radius.
     pub scale: Option<ScaleProfile>,
+    /// Orbit layout of a scaled system (`scaled_from_spec`); `None` for the
+    /// pre-project one.
+    pub layout: Option<OrbitLayout>,
     /// Center of the orbits (the star).
     pub center: Vector3,
     /// Unit direction towards the light, world space.
     pub light_world: Vector3,
+}
+
+/// Applies the body values of `sets` to `spec` and returns the shader ones.
+fn split_sets(spec: &mut SystemSpec, sets: &[(String, f32)]) -> Result<Vec<(String, f32)>, String> {
+    let mut shader_sets = Vec::new();
+    for (name, value) in sets {
+        let consumed = spec
+            .apply_set(name, *value)
+            .map_err(|e| format!("--set '{name}={value}': {e}"))?;
+        if !consumed {
+            shader_sets.push((name.clone(), *value));
+        }
+    }
+    Ok(shader_sets)
 }
 
 impl SolarScene {
@@ -181,6 +199,7 @@ impl SolarScene {
             quality: Quality::Full,
             clock: SimulationClock::default(),
             scale: None,
+            layout: None,
             center: Vector3::zero(),
             light_world,
         }
@@ -215,6 +234,18 @@ impl SolarScene {
         light_world: Vector3,
         spec: &SystemSpec,
     ) -> Result<Self, SpecError> {
+        let scene = Self::from_spec_unchecked(meshes, view, light_world, spec)?;
+        scene.check_spawn()?;
+        Ok(scene)
+    }
+
+    /// `from_spec` without the spawn check.
+    fn from_spec_unchecked(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+        spec: &SystemSpec,
+    ) -> Result<Self, SpecError> {
         spec.validate()?;
         let instance = |material: &PlanetMaterial, scale: f32, spin: f32| {
             let PlanetMaterial::Lab6(material) = *material;
@@ -243,6 +274,39 @@ impl SolarScene {
         let mut scene = Self::new(meshes, view, light_world);
         scene.bodies = bodies;
         scene.update();
+        Ok(scene)
+    }
+
+    /// The Project 3 system (`SystemSpec::project3`) at the project scale.
+    pub fn project3_system(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+    ) -> Result<Self, SpecError> {
+        Self::scaled_from_spec(meshes, view, light_world, &SystemSpec::project3())
+    }
+
+    /// The system of `spec` at the project scale: the size ratios are
+    /// checked (`ScaleProfile::check`), the orbits must keep the shells
+    /// apart (`OrbitLayout::solve`, explicit radii only), the ship starts
+    /// beyond the fifth slot and local flight scales with each planet.
+    pub fn scaled_from_spec(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+        spec: &SystemSpec,
+    ) -> Result<Self, SpecError> {
+        let profile = ScaleProfile::project3();
+        profile.check(spec)?;
+        let mut scene = Self::from_spec_unchecked(meshes, view, light_world, spec)?;
+        let eff: Vec<f32> = (1..scene.bodies.len()).map(|i| scene.shell_of(i)).collect();
+        let layout = OrbitLayout::solve(spec, &eff, scene.shell_of(0), profile.min_gap)?;
+        scene.ship = ShipState::new(
+            spawn_beyond(layout.fifth_slot + FIFTH_SLOT_RESERVED_EXTENT),
+            SHIP_SCALE,
+        );
+        scene.scale = Some(profile);
+        scene.layout = Some(layout);
         scene.check_spawn()?;
         Ok(scene)
     }
@@ -304,17 +368,25 @@ impl SolarScene {
         mut spec: SystemSpec,
         sets: &[(String, f32)],
     ) -> Result<Self, String> {
-        let mut shader_sets = Vec::new();
-        for (name, value) in sets {
-            let consumed = spec
-                .apply_set(name, *value)
-                .map_err(|e| format!("--set '{name}={value}': {e}"))?;
-            if !consumed {
-                shader_sets.push((name.clone(), *value));
-            }
-        }
+        let shader_sets = split_sets(&mut spec, sets)?;
         let mut scene =
             Self::from_spec(meshes, view, light_world, &spec).map_err(|e| format!("--set: {e}"))?;
+        scene.apply_overrides(&shader_sets)?;
+        Ok(scene)
+    }
+
+    /// `from_spec_with_sets` for the Project 3 system at the project scale
+    /// (`scaled_from_spec`): the layout is checked again with the values.
+    pub fn project3_with_sets(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+        sets: &[(String, f32)],
+    ) -> Result<Self, String> {
+        let mut spec = SystemSpec::project3();
+        let shader_sets = split_sets(&mut spec, sets)?;
+        let mut scene = Self::scaled_from_spec(meshes, view, light_world, &spec)
+            .map_err(|e| format!("--set: {e}"))?;
         scene.apply_overrides(&shader_sets)?;
         Ok(scene)
     }

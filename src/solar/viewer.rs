@@ -30,21 +30,45 @@ pub const HEIGHT: u32 = 600;
 pub const WORLD_RADIUS: f32 = 8.0;
 pub const TITLE: &str = "Rust Software Renderer - Camino al Proyecto 3: Solar";
 
-/// Builds the scene described by the command line: the default system at
-/// `--time`, with `--set body.param=value` overrides applied per instance.
+/// Builds the scene described by the command line with the pre-project
+/// system (`SystemSpec::preproject3`) at `--time`, with `--set
+/// body.param=value` overrides applied per instance. The historical suites
+/// keep it; the window shows `build_project3_scene`.
 pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Box<dyn Error>> {
+    build_system(cli, lab6, false)
+}
+
+/// `build_scene` with the Project 3 system at the project scale
+/// (`SolarScene::project3_with_sets`), its orbit view framing the layout's
+/// world radius.
+pub fn build_project3_scene(
+    cli: &CliArgs,
+    lab6: &CelestialArgs,
+) -> Result<SolarScene, Box<dyn Error>> {
+    build_system(cli, lab6, true)
+}
+
+fn build_system(
+    cli: &CliArgs,
+    lab6: &CelestialArgs,
+    project3: bool,
+) -> Result<SolarScene, Box<dyn Error>> {
     let camera = OrbitCamera::new(Vector3::zero(), cli.view.unwrap_or_default());
-    let view = OrbitView::for_world(camera, WORLD_RADIUS, Viewport::new(WIDTH, HEIGHT, 0.1))?;
+    let viewport = Viewport::new(WIDTH, HEIGHT, 0.1);
+    let view = OrbitView::for_world(camera, WORLD_RADIUS, viewport)?;
     let light = CelestialScene::new(Body::KingsCrown, Default::default(), WIDTH, HEIGHT)?
         .uniforms()
         .light_direction;
-    let mut scene = SolarScene::from_spec_with_sets(
-        SolarMeshes::load()?,
-        view,
-        light,
-        SystemSpec::preproject3(),
-        &lab6.sets,
-    )?;
+    let meshes = SolarMeshes::load()?;
+    let mut scene = if project3 {
+        let mut scene = SolarScene::project3_with_sets(meshes, view, light, &lab6.sets)?;
+        if let Some(layout) = &scene.layout {
+            scene.view = OrbitView::for_world(camera, layout.world_radius, viewport)?;
+        }
+        scene
+    } else {
+        SolarScene::from_spec_with_sets(meshes, view, light, SystemSpec::preproject3(), &lab6.sets)?
+    };
     if let Some(t) = lab6.time {
         scene.clock.time = t;
     }
@@ -212,7 +236,7 @@ pub fn step(
 }
 
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
-    let mut scene = build_scene(cli, lab6)?;
+    let mut scene = build_project3_scene(cli, lab6)?;
     let mut mode = solar_mode(cli, lab6);
     let options = ShadedOptions {
         threads: lab6.threads.unwrap_or(0),
