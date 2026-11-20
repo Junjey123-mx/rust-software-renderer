@@ -759,16 +759,17 @@ impl SolarScene {
                 model_matrix: drawn.transform.matrix(),
             };
             let tag = (jobs.len() - 1) as u32;
+            let (mesh, lod) = self.body_mesh(i, &shared.projection, h);
             let s = scratch.rasterize(
                 framebuffer,
                 &model,
-                self.body_mesh(i, &shared.projection, h),
+                mesh,
                 &shared.projection,
                 mode,
                 options,
                 tag,
             )?;
-            stats.body(i, true, &s);
+            stats.body_lod(i, true, &s, lod);
         }
         let plasma = self.plasma_in_view(w, h);
         if self.plasma_host().is_some() {
@@ -899,12 +900,18 @@ impl SolarScene {
         Some(lod_step(&mut states[index], px))
     }
 
-    /// Mesh of body `index` this frame: its relief level, or the sphere.
-    fn body_mesh(&self, index: usize, projection: &ViewProjection, height: u32) -> &[Vertex] {
+    /// Mesh of body `index` this frame and its level: the relief level, or
+    /// the sphere (no level).
+    fn body_mesh(
+        &self,
+        index: usize,
+        projection: &ViewProjection,
+        height: u32,
+    ) -> (&[Vertex], Option<u8>) {
         let px = self.radius_px(index, projection, height);
         match (self.relief_of(index), self.lod_level(index, px)) {
-            (Some(relief), Some(level)) => relief.mesh(level),
-            _ => &self.meshes.sphere,
+            (Some(relief), Some(level)) => (relief.mesh(level), Some(level)),
+            _ => (&self.meshes.sphere, None),
         }
     }
 
@@ -1040,7 +1047,7 @@ impl SolarScene {
                 let drawn = self.drawn_body(i, &shared.projection, h);
                 render_instance_scratch(
                     framebuffer,
-                    self.body_mesh(i, &shared.projection, h),
+                    self.body_mesh(i, &shared.projection, h).0,
                     &drawn,
                     &frame,
                     &mut scratch,

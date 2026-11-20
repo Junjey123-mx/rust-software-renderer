@@ -38,6 +38,23 @@ pub fn hud_lines(stats: &FrameStats, fps: f32) -> Vec<String> {
     ]
 }
 
+/// One line per body, `names` by body index: `ENTRANCE L3 1280T` for a
+/// relief level, `SPHERE` for the course sphere, `CULLED` when not drawn.
+pub fn planet_lines(stats: &FrameStats, names: &[&str]) -> Vec<String> {
+    stats
+        .per_body
+        .iter()
+        .map(|b| {
+            let name = names.get(b.index).copied().unwrap_or("?").to_uppercase();
+            match (b.visible, b.lod) {
+                (false, _) => format!("{name} CULLED"),
+                (true, Some(l)) => format!("{name} L{l} {}T", b.triangles),
+                (true, None) => format!("{name} SPHERE {}T", b.triangles),
+            }
+        })
+        .collect()
+}
+
 /// Screen rectangle `(x, y, width, height)` the box of `lines` covers;
 /// empty for no lines.
 pub fn hud_box(lines: &[String]) -> (i32, i32, i32, i32) {

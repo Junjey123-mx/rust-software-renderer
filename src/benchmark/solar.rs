@@ -110,6 +110,30 @@ fn commit_from_env() -> String {
         .collect()
 }
 
+/// Level of detail of every body in the last frame of `scene`, for the CSV:
+/// `name:L3` for a relief level, `name:-` for the course sphere or a body
+/// that was not drawn.
+pub fn lod_levels(scene: &SolarScene) -> String {
+    let stats = scene.last_stats();
+    scene
+        .bodies
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let lod = stats
+                .per_body
+                .iter()
+                .find(|s| s.index == i)
+                .and_then(|s| s.lod);
+            match lod {
+                Some(l) => format!("{}:L{l}", b.body().name()),
+                None => format!("{}:-", b.body().name()),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
 /// Peak resident set size of this process in kilobytes, read from
 /// `/proc/self/status` (Linux); `None` elsewhere or when unreadable.
 pub fn peak_rss_kb() -> Option<u64> {
@@ -251,12 +275,7 @@ pub fn run_solar_benchmark_on(
             }
         }
         times.sort_by(f64::total_cmp);
-        let lod_levels = scene
-            .bodies
-            .iter()
-            .map(|b| format!("{}:-", b.body().name()))
-            .collect::<Vec<_>>()
-            .join(";");
+        let lod_levels = lod_levels(&scene);
         rows.push(SolarBenchRow {
             id,
             name,

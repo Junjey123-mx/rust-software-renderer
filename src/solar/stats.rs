@@ -13,6 +13,8 @@ pub struct BodyStats {
     pub visible: bool,
     /// Triangles submitted to the rasterizer (0 when culled).
     pub triangles: usize,
+    /// Relief level of detail drawn (`None`: the course sphere, or culled).
+    pub lod: Option<u8>,
 }
 
 /// Counters of one frame. Objects are the bodies, the star's plasma loops
@@ -74,6 +76,11 @@ impl FrameStats {
 
     /// Records body `index`: its view test and, when visible, its draw.
     pub fn body(&mut self, index: usize, visible: bool, s: &ShadedStats) {
+        self.body_lod(index, visible, s, None);
+    }
+
+    /// `body`, with the relief level of detail it was drawn with.
+    pub fn body_lod(&mut self, index: usize, visible: bool, s: &ShadedStats, lod: Option<u8>) {
         self.test(visible);
         if visible {
             self.add(s);
@@ -82,6 +89,7 @@ impl FrameStats {
             index,
             visible,
             triangles: if visible { s.triangles_processed } else { 0 },
+            lod: lod.filter(|_| visible),
         });
     }
 }
@@ -100,12 +108,13 @@ mod tests {
             ..ShadedStats::default()
         };
         stats.body(0, true, &s);
-        stats.body(1, false, &s);
+        stats.body_lod(1, false, &s, Some(3));
         assert_eq!(
             (stats.objects_tested, stats.objects_culled, stats.draws),
             (2, 1, 1)
         );
         assert_eq!(stats.per_body[1].triangles, 0);
+        assert_eq!(stats.per_body[1].lod, None, "culled: no level");
         assert_eq!((stats.visible_bodies(), stats.body_triangles()), (1, 10));
         let capacity = stats.per_body.capacity();
         stats.clear();

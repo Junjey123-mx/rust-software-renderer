@@ -11,7 +11,7 @@ use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
 use crate::solar::flight::{FlightInput, FlightMode, ease_thrust, ramp_boost, space_step_in};
-use crate::solar::hud::{draw_hud, hud_lines};
+use crate::solar::hud::{draw_hud, hud_lines, planet_lines};
 use crate::solar::input::{
     CAPTURE_KEY, Look, MouseCapture, MouseLook, RELEASE_KEY, SolarAction, poll_solar,
 };
@@ -339,7 +339,11 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         }
         let shaded = render_frame(&scene, &mut framebuffer, mode, options)?;
         if hud {
-            let mut lines = hud_lines(&scene.last_stats(), rl.get_fps() as f32);
+            let stats = scene.last_stats();
+            let mut lines = hud_lines(&stats, rl.get_fps() as f32);
+            let names: Vec<&str> = scene.bodies.iter().map(|b| b.body().name()).collect();
+            lines.extend(planet_lines(&stats, &names));
+            drop(stats);
             lines.push(format!("GRAV {}", on_off(scene.gravity).to_uppercase()));
             draw_hud(&mut framebuffer, &lines);
         }
