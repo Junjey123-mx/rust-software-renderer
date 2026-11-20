@@ -1,8 +1,10 @@
 //! Low-poly surface models of the relief planets, built once as indexed
 //! meshes with their base at the origin and "up" along +Y: a clover tree
-//! (hexagonal trunk and stacked cone canopies).
+//! (hexagonal trunk and stacked cone canopies) and a faceted boulder.
 
 use crate::geometry::Mesh;
+use crate::shading::noise::hash3;
+use crate::solar::planet::icosphere::icosphere;
 use crate::solar::shapes::{End, loft, merge};
 use raylib::math::Vector3;
 
@@ -63,4 +65,32 @@ pub fn tree_parts(variant: u8) -> [Mesh; 2] {
 /// Tree `variant` as one mesh (trunk and canopy); out of range: variant 0.
 pub fn tree_mesh(variant: u8) -> Mesh {
     merge(&tree_parts(variant))
+}
+
+/// Boulder of `seed` (any seed, 0 included, is a valid rock): the level 1
+/// icosphere (80 triangles) with each vertex pushed in or out by a hash of
+/// the seed, flattened to 60 % of its height and sunk 10 % into the ground.
+pub fn rock_mesh(seed: u32) -> Mesh {
+    let ico = icosphere(1).expect("level 1 is in range");
+    let mut vertices: Vec<Vector3> = ico
+        .positions
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| {
+            let h = (hash3(i as i32, 0x0c, 0x5e, seed) >> 8) as f32 / (1u32 << 24) as f32;
+            let p = p * (0.78 + 0.36 * h);
+            Vector3::new(p.x, p.y * 0.6, p.z)
+        })
+        .collect();
+    let bottom = vertices.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+    let height = vertices.iter().map(|p| p.y).fold(f32::MIN, f32::max) - bottom;
+    for p in &mut vertices {
+        p.y -= bottom + 0.1 * height;
+    }
+    let indices = ico
+        .indices
+        .iter()
+        .flat_map(|t| t.map(|i| i as usize))
+        .collect();
+    Mesh::new(vertices, indices).expect("the icosphere indices are valid")
 }
