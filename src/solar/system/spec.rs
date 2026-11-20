@@ -89,6 +89,8 @@ pub enum SpecError {
     NonFinite(&'static str),
     OutOfRange(&'static str, f32),
     UnknownHost(PlanetId),
+    /// Valid data the scene cannot build yet.
+    Unsupported(&'static str),
 }
 
 impl std::fmt::Display for SpecError {
@@ -98,6 +100,7 @@ impl std::fmt::Display for SpecError {
             Self::NonFinite(field) => write!(f, "{field} must be finite"),
             Self::OutOfRange(field, v) => write!(f, "{field} out of range ({v})"),
             Self::UnknownHost(id) => write!(f, "unknown host '{}'", id.0),
+            Self::Unsupported(what) => write!(f, "{what} is not supported yet"),
         }
     }
 }

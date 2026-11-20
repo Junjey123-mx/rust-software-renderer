@@ -23,11 +23,13 @@ use crate::solar::instance::{
     shade_instance,
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
+use crate::solar::planet::PlanetMaterial;
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
+use crate::solar::system::{SpecError, SystemSpec};
 use crate::solar::thrusters::Thrusters;
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, SPHERE_RADIUS, ShipState, SimulationClock, SolarMeshes,
@@ -166,29 +168,50 @@ impl SolarScene {
         view: OrbitView,
         light_world: Vector3,
     ) -> Result<Self, String> {
-        let mut scene = Self::new(meshes, view, light_world);
         // The star's loops are external geometry here (`plasma`): its
         // surface shader keeps the plasma, spots, corona and eclipse, and
         // stops painting loops inside the disk (`--set crown.loops=1` brings
-        // them back).
-        let mut crown =
-            BodyInstance::new(Body::KingsCrown, Transform::new(Vector3::zero(), 1.3), 0.05);
-        crown.material.set("loops", 0.0)?;
-        scene.bodies = vec![
-            crown,
-            BodyInstance::new(
-                Body::CrimsonEntrance,
-                Transform::new(Vector3::zero(), 0.6),
-                0.6,
-            )
-            .with_orbit(Orbit::new(3.0, 0.5, 0.0)?),
-            BodyInstance::new(
-                Body::HouseOfCards,
-                Transform::new(Vector3::zero(), 0.9),
-                0.35,
-            )
-            .with_orbit(Orbit::new(6.2, 0.22, std::f32::consts::PI)?),
-        ];
+        // them back). The values live in `SystemSpec::preproject3`.
+        Self::from_spec(meshes, view, light_world, &SystemSpec::preproject3())
+            .map_err(|e| e.to_string())
+    }
+
+    /// The scene described by `spec`: the star at the center, then every
+    /// planet in the order of the spec (which is the draw order). An
+    /// invalid spec is an error, never a partial scene.
+    pub fn from_spec(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+        spec: &SystemSpec,
+    ) -> Result<Self, SpecError> {
+        spec.validate()?;
+        let instance = |material: &PlanetMaterial, scale: f32, spin: f32| {
+            let PlanetMaterial::Lab6(material) = *material;
+            BodyInstance {
+                material,
+                ..BodyInstance::new(
+                    material.body(),
+                    Transform::new(Vector3::zero(), scale),
+                    spin,
+                )
+            }
+        };
+        let mut bodies = vec![instance(
+            &spec.star.material,
+            spec.star.scale,
+            spec.star.spin,
+        )];
+        for p in &spec.planets {
+            if p.host.is_some() {
+                return Err(SpecError::Unsupported("planet.host"));
+            }
+            let orbit = Orbit::new(p.orbit_radius, p.angular_speed(), p.phase)
+                .map_err(|_| SpecError::OutOfRange("planet.orbit_speed", p.orbit_speed))?;
+            bodies.push(instance(&p.material, p.scale, p.spin).with_orbit(orbit));
+        }
+        let mut scene = Self::new(meshes, view, light_world);
+        scene.bodies = bodies;
         scene.update();
         Ok(scene)
     }
