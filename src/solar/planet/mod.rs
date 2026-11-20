@@ -3,6 +3,7 @@
 //! viewer).
 
 pub mod field;
+pub mod geometry;
 pub mod icosphere;
 pub mod material;
 
