@@ -84,7 +84,8 @@ fn zero_input_keeps_velocity() {
     ship.dampers = false;
     space_step(&mut ship, &input(&[]), 0.1);
     assert_eq!(ship.velocity, v);
-    assert!(((ship.position - p) - v * 0.1).length() < 1e-5);
+    // Summed over the physics substeps (C28): float rounding near z = 50.
+    assert!(((ship.position - p) - v * 0.1).length() < 1e-4);
 }
 
 #[test]

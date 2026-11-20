@@ -6,6 +6,7 @@ use crate::shading::sphere::rotate_axis;
 use crate::solar::ShipState;
 use crate::solar::clock::MAX_STEP;
 use crate::solar::input::{Look, SolarAction};
+use crate::solar::physics::advance;
 use crate::solar::ship::TurnState;
 use crate::solar::system::ScaleProfile;
 use raylib::math::Vector3;
@@ -203,7 +204,7 @@ fn clamp_pending_pitch(ship: &mut ShipState, reference_up: Vector3) {
 /// sideways by `travel * move_speed * dt`, times up to `BOOST` as the boost
 /// level ramps. Inertial flight (`ShipState::inertia`) adds the thrust,
 /// scaled by the same boost, to the velocity, never above that same speed,
-/// and moves by the velocity. Without thrust the dampers brake it
+/// and moves by the velocity, on the fixed substeps of `physics::advance`. Without thrust the dampers brake it
 /// progressively, or it coasts with the dampers off. No collisions here.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
@@ -219,17 +220,21 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
         return;
     }
     let max = ship.move_speed * boost;
-    let mut velocity = ship.velocity + thrust_accel(input, ship) * (boost * dt);
-    if way.length() == 0.0 && ship.dampers {
-        velocity *= (-BRAKE_RATE * dt).exp();
-    }
-    let speed = velocity.length();
-    ship.velocity = if speed > max {
-        velocity * (max / speed)
-    } else {
-        velocity
-    };
-    ship.position += ship.velocity * dt;
+    let thrust = thrust_accel(input, ship) * boost;
+    let braking = way.length() == 0.0 && ship.dampers;
+    // Semi-implicit Euler on fixed substeps: v += a h, then p += v h.
+    advance(ship, dt, |ship, h| {
+        let mut velocity = ship.velocity + thrust * h;
+        if braking {
+            velocity *= (-BRAKE_RATE * h).exp();
+        }
+        let speed = velocity.length();
+        if speed > max {
+            velocity *= max / speed;
+        }
+        ship.velocity = velocity;
+        ship.position += velocity * h;
+    });
 }
 
 /// Radial frame of the spacecraft around a planet treated as an ideal
