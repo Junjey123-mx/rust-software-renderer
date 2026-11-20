@@ -2,7 +2,7 @@
 //! the orbits are untouched; only the spacecraft moves.
 
 use crate::solar::SolarScene;
-use crate::solar::flight::{CLEARANCE, FlightMode};
+use crate::solar::flight::FlightMode;
 use raylib::math::Vector3;
 
 /// Height of the arrival point above the destination's ideal surface:
@@ -20,7 +20,7 @@ fn unit(v: Vector3) -> Option<Vector3> {
 /// the first clear one of a few fixed directions.
 pub fn arrival_point(scene: &SolarScene, index: usize) -> Option<Vector3> {
     let target = scene.bodies.get(index)?.transform.position;
-    let distance = scene.radius_of(index) + WARP_MARGIN;
+    let distance = scene.radius_of(index) + scene.flight_scale(index).warp_margin;
     let candidates = [
         unit(scene.ship.position - target),
         Some(Vector3::new(0.0, 1.0, 0.0)),
@@ -33,7 +33,7 @@ pub fn arrival_point(scene: &SolarScene, index: usize) -> Option<Vector3> {
         scene.bodies.iter().enumerate().all(|(i, b)| {
             i == index
                 || (p - b.transform.position).length()
-                    > scene.radius_of(i) + CLEARANCE + scene.ship.radius()
+                    > scene.radius_of(i) + scene.flight_scale(i).clearance + scene.ship.radius()
         })
     };
     candidates

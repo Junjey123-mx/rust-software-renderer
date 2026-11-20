@@ -6,6 +6,7 @@ use crate::shading::sphere::rotate_axis;
 use crate::solar::ShipState;
 use crate::solar::clock::MAX_STEP;
 use crate::solar::input::{Look, SolarAction};
+use crate::solar::system::ScaleProfile;
 use raylib::math::Vector3;
 
 /// Signed axes of one frame, each in `[-1, 1]`.
@@ -206,6 +207,53 @@ pub const CLEARANCE: f32 = 0.5;
 /// Local flight can start only within this height above the surface.
 pub const LOCAL_RANGE: f32 = 3.0;
 
+/// Laps of local flight around a planet of the project scale take about
+/// this long at full thrust, simulated seconds.
+pub const LOCAL_LAP_SECONDS: f32 = 20.0;
+
+/// Distances and speeds of local flight and quick travel around one body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlightScale {
+    /// Minimum height of the ship center above the surface.
+    pub clearance: f32,
+    /// Local flight starts only within this height above the surface.
+    pub local_range: f32,
+    /// Tangential speed of local flight, world units per second.
+    pub local_speed: f32,
+    /// Radial speed of local flight (`E`/`Q`), world units per second.
+    pub radial_speed: f32,
+    /// Height of a quick-travel arrival above the surface.
+    pub warp_margin: f32,
+}
+
+impl FlightScale {
+    /// The pre-project constants, for every body.
+    pub const fn legacy() -> Self {
+        Self {
+            clearance: CLEARANCE,
+            local_range: LOCAL_RANGE,
+            local_speed: LOCAL_SPEED,
+            radial_speed: RADIAL_SPEED,
+            warp_margin: crate::solar::travel::WARP_MARGIN,
+        }
+    }
+
+    /// Around a body of `radius` at the project scale: the clearance is the
+    /// ship plus 0.15 R, entry within 2.5 R, arrivals at 1.6 R (between
+    /// both), radial moves at 0.35 R/s and a lap at the clearance height in
+    /// about `LOCAL_LAP_SECONDS`.
+    pub fn for_planet(profile: &ScaleProfile, radius: f32) -> Self {
+        let clearance = profile.ship_radius + 0.15 * radius;
+        Self {
+            clearance,
+            local_range: 2.5 * radius,
+            local_speed: std::f32::consts::TAU * (radius + clearance) / LOCAL_LAP_SECONDS,
+            radial_speed: 0.35 * radius,
+            warp_margin: 1.6 * radius,
+        }
+    }
+}
+
 /// Which controller runs this frame; never both.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FlightMode {
@@ -246,6 +294,16 @@ pub fn toggle_local(
     ship: &ShipState,
     candidates: &[LocalTarget],
 ) -> Result<FlightMode, String> {
+    toggle_local_scaled(mode, ship, candidates, |_| FlightScale::legacy())
+}
+
+/// `toggle_local` with the clearance and entry range of each candidate.
+pub fn toggle_local_scaled(
+    mode: FlightMode,
+    ship: &ShipState,
+    candidates: &[LocalTarget],
+    scale: impl Fn(&LocalTarget) -> FlightScale,
+) -> Result<FlightMode, String> {
     if let FlightMode::Local { .. } = mode {
         return Ok(FlightMode::Space);
     }
@@ -258,13 +316,15 @@ pub fn toggle_local(
         })
         .ok_or("no planet to fly around")?;
     let distance = (ship.position - nearest.position).length();
-    if !(distance.is_finite() && distance >= nearest.radius + CLEARANCE) {
+    let scale = scale(nearest);
+    if !(distance.is_finite() && distance >= nearest.radius + scale.clearance) {
         return Err("too close to the planet: move away before entering local flight".into());
     }
-    if distance > nearest.radius + LOCAL_RANGE {
+    if distance > nearest.radius + scale.local_range {
         return Err(format!(
-            "too far from the nearest planet ({:.2} above its surface, at most {LOCAL_RANGE})",
-            distance - nearest.radius
+            "too far from the nearest planet ({:.2} above its surface, at most {})",
+            distance - nearest.radius,
+            scale.local_range
         ));
     }
     Ok(FlightMode::Local {
@@ -300,6 +360,27 @@ pub fn local_step(
     input: &FlightInput,
     dt: f32,
 ) {
+    local_step_scaled(
+        ship,
+        mode,
+        planet,
+        radius,
+        input,
+        dt,
+        &FlightScale::legacy(),
+    );
+}
+
+/// `local_step` with the speeds and clearance of `scale`.
+pub fn local_step_scaled(
+    ship: &mut ShipState,
+    mode: &mut FlightMode,
+    planet: Vector3,
+    radius: f32,
+    input: &FlightInput,
+    dt: f32,
+    scale: &FlightScale,
+) {
     let FlightMode::Local {
         previous_planet_position,
         ..
@@ -329,7 +410,7 @@ pub fn local_step(
     let side = frame.tangent.cross(frame.normal);
     let way = travel(input, frame.tangent, side);
     ease_thrust(ship, way.length(), dt);
-    let arc = way.length() * LOCAL_SPEED * dt;
+    let arc = way.length() * scale.local_speed * dt;
     if arc != 0.0
         && let Some(axis) = unit_or_none(frame.normal.cross(way))
     {
@@ -337,6 +418,7 @@ pub fn local_step(
         normal = rotate_axis(frame.normal, axis, angle).normalized();
         ship.rotate(axis, angle);
     }
-    let distance = (frame.distance + input.radial * RADIAL_SPEED * dt).max(radius + CLEARANCE);
+    let distance =
+        (frame.distance + input.radial * scale.radial_speed * dt).max(radius + scale.clearance);
     ship.position = planet + normal * distance;
 }

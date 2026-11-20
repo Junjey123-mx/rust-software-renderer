@@ -18,7 +18,9 @@ use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::card_ring::CardRing;
 use crate::solar::effects::EffectShader;
-use crate::solar::flight::{FlightInput, FlightMode, LocalTarget, local_step, toggle_local};
+use crate::solar::flight::{
+    FlightInput, FlightMode, FlightScale, LocalTarget, local_step_scaled, toggle_local_scaled,
+};
 use crate::solar::instance::{
     Quality, adapted_material, prepare_instance, projected_radius_px, render_instance_scratch,
     shade_instance,
@@ -30,7 +32,7 @@ use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
-use crate::solar::system::{PlanetId, SpecError, SystemSpec};
+use crate::solar::system::{PlanetId, ScaleProfile, SpecError, SystemSpec};
 use crate::solar::thrusters::Thrusters;
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, SPHERE_RADIUS, ShipState, SimulationClock, SolarMeshes,
@@ -74,6 +76,13 @@ impl std::str::FromStr for CameraMode {
 /// Spacecraft scale: the 3.99-unit mesh becomes about 0.32 units, well
 /// below the smallest planet (0.52).
 pub const SHIP_SCALE: f32 = 0.08;
+/// Start of the spacecraft for a system whose shells end at `outer`: one
+/// unit beyond, slightly above the orbital plane, nose (-Z) towards the
+/// star. `SHIP_SPAWN` is `spawn_beyond(8.0)`.
+pub fn spawn_beyond(outer: f32) -> Vector3 {
+    Vector3::new(0.0, 0.6, outer + 1.0)
+}
+
 /// Start of the spacecraft: outside every orbit and the space reserved for
 /// a ring around House of Cards (6.2 + 1.7), slightly above the orbital
 /// plane, nose (-Z) towards the star.
@@ -129,6 +138,10 @@ pub struct SolarScene {
     pub culling: bool,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
+    /// Scale of local flight and quick travel: `None` keeps the
+    /// pre-project constants (`FlightScale::legacy`), a profile makes them
+    /// relative to each planet's radius.
+    pub scale: Option<ScaleProfile>,
     /// Center of the orbits (the star).
     pub center: Vector3,
     /// Unit direction towards the light, world space.
@@ -167,6 +180,7 @@ impl SolarScene {
             culling: true,
             quality: Quality::Full,
             clock: SimulationClock::default(),
+            scale: None,
             center: Vector3::zero(),
             light_world,
         }
@@ -229,7 +243,52 @@ impl SolarScene {
         let mut scene = Self::new(meshes, view, light_world);
         scene.bodies = bodies;
         scene.update();
+        scene.check_spawn()?;
         Ok(scene)
+    }
+
+    /// The ship's start stays clear of every shell for the whole orbit: the
+    /// star's sphere and the ring each planet's shell sweeps.
+    pub fn check_spawn(&self) -> Result<(), SpecError> {
+        let p = self.ship.position - self.center;
+        for (i, b) in self.bodies.iter().enumerate() {
+            let distance = match b.orbit {
+                Some(o) => (p.x.hypot(p.z) - o.radius).hypot(p.y),
+                None => (self.ship.position - b.transform.position).length(),
+            };
+            let room = distance - self.shell_of(i) - self.ship.radius();
+            if room.is_nan() || room <= 0.0 {
+                return Err(SpecError::OutOfRange("ship spawn room", room));
+            }
+        }
+        Ok(())
+    }
+
+    /// Radius of the sphere that holds body `index` with its attachments
+    /// and, for the star, its plasma loops (`system::layout`).
+    pub fn shell_of(&self, index: usize) -> f32 {
+        let mut reach: f32 = 1.0;
+        for a in &self.attachments {
+            if self.body_index(a.host) == Some(index) {
+                let extent = match a.kind {
+                    AttachmentKind::RoyalCrown => self.crown.as_ref().map(|c| c.extent),
+                    AttachmentKind::CardRing => self.cards.as_ref().map(CardRing::extent),
+                };
+                reach = reach.max(extent.unwrap_or(1.0));
+            }
+        }
+        if self.bodies[index].orbit.is_none() {
+            reach = reach.max(self.plasma.extent());
+        }
+        self.radius_of(index) * reach
+    }
+
+    /// Local flight and quick-travel distances around body `index`.
+    pub fn flight_scale(&self, index: usize) -> FlightScale {
+        match &self.scale {
+            None => FlightScale::legacy(),
+            Some(profile) => FlightScale::for_planet(profile, self.radius_of(index)),
+        }
     }
 
     /// The system of `spec` with the command line's `--set` values: body
@@ -303,19 +362,23 @@ impl SolarScene {
             self.bodies[planet].transform.position,
             self.radius_of(planet),
         );
-        local_step(
+        let scale = self.flight_scale(planet);
+        local_step_scaled(
             &mut self.ship,
             &mut self.flight,
             position,
             radius,
             input,
             dt,
+            &scale,
         );
     }
 
     /// `L`: toggles local flight; the ship is never moved by the toggle.
     pub fn toggle_local(&mut self) -> Result<FlightMode, String> {
-        self.flight = toggle_local(self.flight, &self.ship, &self.local_targets())?;
+        self.flight = toggle_local_scaled(self.flight, &self.ship, &self.local_targets(), |t| {
+            self.flight_scale(t.index)
+        })?;
         Ok(self.flight)
     }
 
