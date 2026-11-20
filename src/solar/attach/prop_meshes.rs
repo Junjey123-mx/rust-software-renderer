@@ -1,6 +1,7 @@
 //! Low-poly surface models of the relief planets, built once as indexed
 //! meshes with their base at the origin and "up" along +Y: a clover tree
-//! (hexagonal trunk and stacked cone canopies) and a faceted boulder.
+//! (hexagonal trunk and stacked cone canopies), a faceted boulder and the
+//! Hearts city's stepped neon buildings.
 
 use crate::geometry::Mesh;
 use crate::shading::noise::hash3;
@@ -93,4 +94,89 @@ pub fn rock_mesh(seed: u32) -> Mesh {
         .flat_map(|t| t.map(|i| i as usize))
         .collect();
     Mesh::new(vertices, indices).expect("the icosphere indices are valid")
+}
+
+/// Building variants of the Hearts city: stepped tower, civic block and
+/// needle tower.
+pub const TOWER_VARIANTS: u8 = 3;
+/// Width of a neon edge strip, model units.
+pub const STRIP_WIDTH: f32 = 0.02;
+/// How far a strip stands off its face, model units (no z-fighting).
+pub const STRIP_LIFT: f32 = 0.006;
+
+/// Rectangle of half sizes `w` x `d` at height `y`, counterclockwise from
+/// above.
+fn rectangle(w: f32, d: f32, y: f32) -> [Vector3; 4] {
+    [
+        Vector3::new(-w, y, -d),
+        Vector3::new(-w, y, d),
+        Vector3::new(w, y, d),
+        Vector3::new(w, y, -d),
+    ]
+}
+
+/// One quad wound to face `outward`.
+fn quad(p: [Vector3; 4], outward: Vector3) -> Mesh {
+    let facing = (p[1] - p[0]).cross(p[2] - p[0]).dot(outward) > 0.0;
+    let indices = if facing {
+        vec![0, 1, 2, 0, 2, 3]
+    } else {
+        vec![0, 2, 1, 0, 3, 2]
+    };
+    Mesh {
+        vertices: p.to_vec(),
+        indices,
+    }
+}
+
+/// Building `variant` of the Hearts city (out of range: variant 0): the
+/// structure, a stack of closed boxes (2 or 3 tiers) that narrow upwards,
+/// and its neon edges, thin strips along every vertical corner and every
+/// top edge, `STRIP_LIFT` off the faces and wound outwards. The edges are
+/// their own mesh because baking loses the model's local coordinates, so
+/// the shader could not find them. Base at the origin, about one unit
+/// tall (the civic block is lower and wider).
+pub fn tower_mesh(variant: u8) -> (Mesh, Mesh) {
+    // (half width, half depth, height) of each tier, bottom up.
+    let tiers: &[(f32, f32, f32)] = match variant {
+        1 => &[(0.42, 0.3, 0.28), (0.26, 0.18, 0.18)],
+        2 => &[(0.14, 0.14, 0.75), (0.09, 0.09, 0.3), (0.04, 0.04, 0.2)],
+        _ => &[(0.3, 0.3, 0.5), (0.21, 0.21, 0.32), (0.12, 0.12, 0.22)],
+    };
+    let up = Vector3::new(0.0, 1.0, 0.0);
+    let (mut blocks, mut strips, mut y) = (Vec::new(), Vec::new(), 0.0);
+    for &(w, d, h) in tiers {
+        let (lo, hi) = (rectangle(w, d, y), rectangle(w, d, y + h));
+        blocks.push(loft(
+            &[lo.to_vec(), hi.to_vec()],
+            End::Cap,
+            End::Cap,
+            Vector3::new(0.0, y + 0.5 * h, 0.0),
+        ));
+        for k in 0..4 {
+            // Vertical corner: a strip facing the corner's diagonal.
+            let corner = lo[k];
+            let out = Vector3::new(corner.x, 0.0, corner.z).normalized();
+            let side = Vector3::new(-out.z, 0.0, out.x) * (0.5 * STRIP_WIDTH);
+            let foot = corner + out * STRIP_LIFT;
+            strips.push(quad(
+                [
+                    foot - side,
+                    foot + side,
+                    foot + side + up * h,
+                    foot - side + up * h,
+                ],
+                out,
+            ));
+            // Top edge: a strip on the face, just under the edge.
+            let (a, b) = (hi[k], hi[(k + 1) % 4]);
+            let mid = (a + b) * 0.5;
+            let normal = Vector3::new(mid.x, 0.0, mid.z).normalized();
+            let (a, b) = (a + normal * STRIP_LIFT, b + normal * STRIP_LIFT);
+            let drop = up * STRIP_WIDTH;
+            strips.push(quad([a - drop, b - drop, b, a], normal));
+        }
+        y += h;
+    }
+    (merge(&blocks), merge(&strips))
 }
