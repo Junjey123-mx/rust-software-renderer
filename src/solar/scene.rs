@@ -14,6 +14,7 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
+use crate::solar::attach::{AttachmentKind, AttachmentSpec};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::card_ring::CardRing;
 use crate::solar::effects::EffectShader;
@@ -29,7 +30,7 @@ use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
-use crate::solar::system::{SpecError, SystemSpec};
+use crate::solar::system::{PlanetId, SpecError, SystemSpec};
 use crate::solar::thrusters::Thrusters;
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, SPHERE_RADIUS, ShipState, SimulationClock, SolarMeshes,
@@ -110,6 +111,11 @@ pub struct SolarScene {
     pub crown: Option<RoyalCrown>,
     /// Ring of diamond cards around House of Cards (`None`: no ring).
     pub cards: Option<CardRing>,
+    /// What rides on which body, by id, in draw order: the royal crown on
+    /// the star and the card ring around House of Cards. The geometry
+    /// itself lives in `crown` and `cards`; an attachment without its
+    /// geometry, or whose host is missing, draws nothing.
+    pub attachments: Vec<AttachmentSpec>,
     /// Exhaust of the spacecraft's nozzles (`None`: cold engines).
     pub thrusters: Option<Thrusters>,
     /// Shader quality policy (full by default).
@@ -145,6 +151,16 @@ impl SolarScene {
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
+            attachments: vec![
+                AttachmentSpec {
+                    kind: AttachmentKind::RoyalCrown,
+                    host: PlanetId(Body::KingsCrown.name()),
+                },
+                AttachmentSpec {
+                    kind: AttachmentKind::CardRing,
+                    host: PlanetId(Body::HouseOfCards.name()),
+                },
+            ],
             thrusters: Some(Thrusters::default()),
             scratch: RefCell::new(RenderScratch::new()),
             stats: RefCell::new(FrameStats::default()),
@@ -662,6 +678,17 @@ impl SolarScene {
                 x + r >= 0.0 && x - r <= width as f32 && y + r >= 0.0 && y - r <= height as f32
             }
         }
+    }
+
+    /// Index of the body with stable id `id`.
+    pub fn body_index(&self, id: PlanetId) -> Option<usize> {
+        self.bodies.iter().position(|b| b.body().name() == id.0)
+    }
+
+    /// Host index of the first attachment of `kind`.
+    pub fn attachment_host(&self, kind: AttachmentKind) -> Option<usize> {
+        let spec = self.attachments.iter().find(|a| a.kind == kind)?;
+        self.body_index(spec.host)
     }
 
     /// Whether body `index` passes the view test.

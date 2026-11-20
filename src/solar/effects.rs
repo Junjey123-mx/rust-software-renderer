@@ -6,7 +6,6 @@
 //! the frame batch and the one-by-one path draw exactly the same thing and
 //! `scene.rs` stays a thin dispatcher.
 
-use crate::celestial::Body;
 use crate::geometry::Vertex;
 use crate::pipeline::{
     FragmentView, NormalSource, RenderError, ShadedOptions, ShadedStats, SurfaceSample, Transform,
@@ -15,6 +14,7 @@ use crate::pipeline::{
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::SolarScene;
+use crate::solar::attach::AttachmentKind;
 use crate::solar::card_ring::CardShader;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
 use crate::solar::thrusters::{FlameShader, NOZZLES, flame_length, flame_matrix};
@@ -57,20 +57,18 @@ pub fn solid_options(threads: usize) -> ShadedOptions {
 }
 
 impl SolarScene {
-    /// The body wearing the royal crown, when the scene has both.
+    /// The body wearing the royal crown (its attachment's host), when the
+    /// scene has both.
     pub fn crown_host(&self) -> Option<usize> {
         self.crown.as_ref()?;
-        self.bodies
-            .iter()
-            .position(|b| b.body() == Body::KingsCrown)
+        self.attachment_host(AttachmentKind::RoyalCrown)
     }
 
-    /// The body the card ring circles, when the scene has both.
+    /// The body the card ring circles (its attachment's host), when the
+    /// scene has both.
     pub fn card_host(&self) -> Option<usize> {
         self.cards.as_ref()?;
-        self.bodies
-            .iter()
-            .position(|b| b.body() == Body::HouseOfCards)
+        self.attachment_host(AttachmentKind::CardRing)
     }
 
     /// The crown's transform: the star's, turned by the crown's own spin.
@@ -86,44 +84,60 @@ impl SolarScene {
     /// Every effect draw that can appear on a `width` x `height` frame.
     pub fn effect_draws(&self, width: u32, height: u32, threads: usize) -> Vec<EffectDraw<'_>> {
         let mut draws = Vec::new();
-        if let (Some(host), Some(crown)) = (self.crown_host(), &self.crown) {
-            let transform = self.crown_transform(host);
-            let reach = self.radius_of(host) * crown.extent;
-            if self.sphere_in_view(transform.position, reach, width, height) {
-                let model = Uniforms {
-                    model_matrix: transform.matrix(),
-                };
-                for (mesh, part) in [
-                    (&crown.gold, CrownPart::Gold),
-                    (&crown.jewels, CrownPart::Jewels),
-                ] {
-                    draws.push(EffectDraw {
-                        mesh,
-                        model,
-                        options: solid_options(threads),
-                        shader: EffectShader::Crown(crown.shader(part, transform, self.clock.time)),
-                    });
-                }
-            }
-        }
-        if let (Some(host), Some(ring)) = (self.card_host(), &self.cards) {
-            let (center, radius) = (self.bodies[host].transform.position, self.radius_of(host));
-            if self.sphere_in_view(center, radius * ring.extent(), width, height) {
-                let reach = radius * ring.card_reach();
-                for i in 0..ring.slots.len() {
-                    let card = ring.pose(i, center, radius, self.clock.time);
-                    if !self.sphere_in_view(card.origin, reach, width, height) {
-                        continue;
+        // Attachments in their list order (the draw order), each on the
+        // body its id names.
+        for attachment in &self.attachments {
+            let Some(host) = self.body_index(attachment.host) else {
+                continue;
+            };
+            match attachment.kind {
+                AttachmentKind::RoyalCrown => {
+                    let Some(crown) = &self.crown else { continue };
+                    let transform = self.crown_transform(host);
+                    let reach = self.radius_of(host) * crown.extent;
+                    if self.sphere_in_view(transform.position, reach, width, height) {
+                        let model = Uniforms {
+                            model_matrix: transform.matrix(),
+                        };
+                        for (mesh, part) in [
+                            (&crown.gold, CrownPart::Gold),
+                            (&crown.jewels, CrownPart::Jewels),
+                        ] {
+                            draws.push(EffectDraw {
+                                mesh,
+                                model,
+                                options: solid_options(threads),
+                                shader: EffectShader::Crown(crown.shader(
+                                    part,
+                                    transform,
+                                    self.clock.time,
+                                )),
+                            });
+                        }
                     }
-                    let light = card.to_card_dir(self.light_at(card.origin));
-                    draws.push(EffectDraw {
-                        mesh: &ring.mesh,
-                        model: Uniforms {
-                            model_matrix: card.matrix(),
-                        },
-                        options: solid_options(threads),
-                        shader: EffectShader::Card(CardShader { light }),
-                    });
+                }
+                AttachmentKind::CardRing => {
+                    let Some(ring) = &self.cards else { continue };
+                    let (center, radius) =
+                        (self.bodies[host].transform.position, self.radius_of(host));
+                    if self.sphere_in_view(center, radius * ring.extent(), width, height) {
+                        let reach = radius * ring.card_reach();
+                        for i in 0..ring.slots.len() {
+                            let card = ring.pose(i, center, radius, self.clock.time);
+                            if !self.sphere_in_view(card.origin, reach, width, height) {
+                                continue;
+                            }
+                            let light = card.to_card_dir(self.light_at(card.origin));
+                            draws.push(EffectDraw {
+                                mesh: &ring.mesh,
+                                model: Uniforms {
+                                    model_matrix: card.matrix(),
+                                },
+                                options: solid_options(threads),
+                                shader: EffectShader::Card(CardShader { light }),
+                            });
+                        }
+                    }
                 }
             }
         }
