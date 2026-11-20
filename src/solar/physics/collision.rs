@@ -5,6 +5,7 @@
 //! part: no bounce, no penetration.
 
 use crate::solar::ShipState;
+use crate::solar::planet::HeightField;
 use raylib::math::Vector3;
 
 /// Room left between the ship's bounding sphere and a body's surface.
@@ -106,17 +107,25 @@ pub fn collide(
 }
 
 /// Surface of a body around its center: its radius in each direction.
-/// C34 adds the relief of a height field.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SurfaceSampler {
-    Sphere { radius: f32 },
+    Sphere {
+        radius: f32,
+    },
+    /// The relief of `field` (the same field the mesh is built from) over
+    /// a planet of radius `base`.
+    Field {
+        base: f32,
+        field: HeightField,
+    },
 }
 
 impl SurfaceSampler {
     /// Distance from the center to the ground along the unit `dir`.
-    pub fn radius_at(&self, _dir: Vector3) -> f32 {
+    pub fn radius_at(&self, dir: Vector3) -> f32 {
         match *self {
             Self::Sphere { radius } => radius,
+            Self::Field { base, field } => base * field.surface_radius(dir),
         }
     }
 
@@ -124,6 +133,7 @@ impl SurfaceSampler {
     pub fn max_radius(&self) -> f32 {
         match *self {
             Self::Sphere { radius } => radius,
+            Self::Field { base, field } => base * (1.0 + field.max_height()),
         }
     }
 }
