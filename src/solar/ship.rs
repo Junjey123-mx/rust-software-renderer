@@ -53,6 +53,9 @@ pub struct ShipState {
     pub inertia: bool,
     /// Mouse turn still to apply, radians (inertial flight eases into it).
     pub turn: TurnState,
+    /// Inertial dampers (`X`, on by default): without thrust they brake the
+    /// ship progressively; off, it coasts (to show gravity at work).
+    pub dampers: bool,
 }
 
 /// Mouse turn the ship has not applied yet: the mouse adds to it and the
@@ -78,6 +81,7 @@ impl ShipState {
             velocity: Vector3::zero(),
             inertia: false,
             turn: TurnState::default(),
+            dampers: true,
         }
     }
 

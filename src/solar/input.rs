@@ -38,6 +38,8 @@ pub enum SolarAction {
     ToggleHud,
     /// Turns the view test (frustum culling) of the scene on or off (`C`).
     ToggleCulling,
+    /// Turns the inertial dampers on or off (`X`).
+    ToggleDampers,
 }
 
 /// Held keys and the action they produce.
@@ -52,7 +54,7 @@ pub const HELD: [(KeyboardKey, SolarAction); 7] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 8] = [
+pub const PRESSED: [(KeyboardKey, SolarAction); 9] = [
     (KeyboardKey::KEY_P, SolarAction::TogglePause),
     (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
     (KeyboardKey::KEY_L, SolarAction::ToggleLocal),
@@ -61,6 +63,7 @@ pub const PRESSED: [(KeyboardKey, SolarAction); 8] = [
     (KeyboardKey::KEY_F3, SolarAction::Warp(2)),
     (KeyboardKey::KEY_H, SolarAction::ToggleHud),
     (KeyboardKey::KEY_C, SolarAction::ToggleCulling),
+    (KeyboardKey::KEY_X, SolarAction::ToggleDampers),
 ];
 
 /// Frees the captured mouse or captures a free one.

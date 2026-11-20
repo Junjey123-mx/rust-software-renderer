@@ -80,6 +80,8 @@ fn zero_input_keeps_velocity() {
     }
     let v = ship.velocity;
     let p = ship.position;
+    // Coasting: with the dampers off (C27 brakes with them on).
+    ship.dampers = false;
     space_step(&mut ship, &input(&[]), 0.1);
     assert_eq!(ship.velocity, v);
     assert!(((ship.position - p) - v * 0.1).length() < 1e-5);

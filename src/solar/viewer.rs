@@ -160,6 +160,13 @@ pub fn apply_toggles(scene: &mut SolarScene, actions: &[SolarAction]) -> Vec<Str
                 scene.rig = scene.rig.toggled();
                 messages.push(format!("Camera rig: {}", scene.rig.name()));
             }
+            SolarAction::ToggleDampers => {
+                scene.ship.dampers = !scene.ship.dampers;
+                messages.push(format!(
+                    "Inertial dampers {}",
+                    if scene.ship.dampers { "on" } else { "off" }
+                ));
+            }
             SolarAction::ToggleCulling => {
                 scene.culling = !scene.culling;
                 messages.push(format!(
@@ -243,7 +250,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, C frustum culling, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()

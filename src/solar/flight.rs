@@ -141,6 +141,10 @@ pub fn ease_thrust(ship: &mut ShipState, target: f32, dt: f32) {
 /// squared: the 3 u/s cruise in one second (design).
 pub const THRUST_ACCEL: f32 = 3.0;
 
+/// Braking of the inertial dampers without thrust, per second: the
+/// velocity falls by `exp(-BRAKE_RATE dt)`, to a fifth in about a second.
+pub const BRAKE_RATE: f32 = 1.5;
+
 /// World acceleration of this frame's thrust along the nose and sideways;
 /// a diagonal is no stronger than one key (`travel`).
 pub fn thrust_accel(input: &FlightInput, ship: &ShipState) -> Vector3 {
@@ -197,9 +201,10 @@ fn clamp_pending_pitch(ship: &mut ShipState, reference_up: Vector3) {
 /// Space flight: turn (yaw around the orbital plane's normal, pitch within
 /// the limits), then move. Pre-project flight moves along the nose and
 /// sideways by `travel * move_speed * dt`, times up to `BOOST` as the boost
-/// level ramps. Inertial flight (`ShipState::inertia`) adds the thrust to
-/// the velocity, never above that same speed, and moves by the velocity:
-/// without input the ship coasts. No collisions here.
+/// level ramps. Inertial flight (`ShipState::inertia`) adds the thrust,
+/// scaled by the same boost, to the velocity, never above that same speed,
+/// and moves by the velocity. Without thrust the dampers brake it
+/// progressively, or it coasts with the dampers off. No collisions here.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let dt = clamp_dt(dt);
     let (yaw, pitch) = frame_turn(ship, input, dt);
@@ -214,7 +219,10 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
         return;
     }
     let max = ship.move_speed * boost;
-    let velocity = ship.velocity + thrust_accel(input, ship) * dt;
+    let mut velocity = ship.velocity + thrust_accel(input, ship) * (boost * dt);
+    if way.length() == 0.0 && ship.dampers {
+        velocity *= (-BRAKE_RATE * dt).exp();
+    }
     let speed = velocity.length();
     ship.velocity = if speed > max {
         velocity * (max / speed)
