@@ -22,6 +22,16 @@ fn max_relief(geometry: GeometrySpec) -> f32 {
             crate::solar::planet::clover::CLOVER_PEAK_BOUND
                 + 1.2 * crate::solar::attach::props::PROP_SIZE
         }
+        // The highest terrace, the pyramid on it and the heart disc's sweep
+        // over its top.
+        GeometrySpec::Hearts => {
+            use crate::solar::attach::landmark::{DISC_LIFT, DISC_SIZE, PYRAMID_HEIGHT};
+            crate::solar::planet::hearts::HEARTS_HEIGHT
+                + PYRAMID_HEIGHT
+                + DISC_LIFT
+                + 0.75 * DISC_SIZE
+                + 0.02
+        }
     }
 }
 

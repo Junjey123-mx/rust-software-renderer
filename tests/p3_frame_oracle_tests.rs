@@ -9,12 +9,13 @@
 //! `P3_SCALED_A_J` fingerprints the same scenarios on the Project 3 system
 //! at the project scale (`scenario_scene_on(.., true)`): B, C and D were
 //! captured in C23, the rest in C24 once the scenarios follow the layout,
-//! all recaptured in C49 with the clover planet. `P3_CLOVER_K` adds the
-//! clover planet scenarios K and K2 (C49).
+//! all recaptured in C49 with the clover planet and in C61 with the hearts
+//! planet. `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49) and
+//! K3 (C52); `P3_HEARTS_M` the hearts planet scenarios M and M2 (C61).
 
 use rust_software_renderer::benchmark::SolarBenchConfig;
 use rust_software_renderer::benchmark::solar::{
-    CLOVER_SCENARIOS, SCENARIOS, scenario_scene, scenario_scene_on,
+    CLOVER_SCENARIOS, HEARTS_SCENARIOS, SCENARIOS, scenario_scene, scenario_scene_on,
 };
 use rust_software_renderer::pipeline::ShadedOptions;
 use rust_software_renderer::rasterization::TriangleMode;
@@ -128,17 +129,22 @@ fn scaled_hash(id: &str) -> u64 {
 /// Crimson Entrance and House of Cards (House moves from 36 to 40, so the
 /// layout, the world radius and the spawn grow): A, C, D, F, G, H and I
 /// change; B, E and J (Crimson Entrance alone or close up) do not.
+/// Recaptured on C61, which adds the hearts planet at orbit 29.5 between
+/// the clover and House of Cards: C (the orbit view shows it), J (it rises
+/// behind Crimson Entrance) and E (two pixels of its heart disc between
+/// the ship and the horizon) change; the layout keeps House at 40, so the
+/// rest do not.
 const P3_SCALED_A_J: [(&str, u64); 10] = [
     ("A", 0x1dbb86321bfc4240),
     ("B", 0xe59e2a67ca2766b7),
-    ("C", 0xe17dad3e5c94910e),
+    ("C", 0x77ed18d3686df0c9),
     ("D", 0x6f0809c2c61bdadb),
-    ("E", 0xf94f0363bdf79a8e),
+    ("E", 0xcf231405f64870a6),
     ("F", 0xbad58159c18ffe26),
     ("G", 0x833fb13d759a35d5),
     ("H", 0x6f0809c2c61bdadb),
     ("I", 0x0150a9073accf154),
-    ("J", 0x927e6b592e39779f),
+    ("J", 0x81cf8bda59e7fc53),
 ];
 
 /// Clover planet scenarios of the scaled benchmark, captured on C49. C52
@@ -149,6 +155,10 @@ const P3_CLOVER_K: [(&str, u64); 3] = [
     ("K2", 0x679e53072378afad),
     ("K3", 0xebb053bfd9cb501c),
 ];
+
+/// Hearts planet scenarios of the scaled benchmark, captured on C61: the
+/// pyramid and the city up close (M) and the planet 12 radii away (M2).
+const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0x120445edf010d9fc), ("M2", 0x11743d10843778b2)];
 
 #[test]
 fn p3_scaled_a_j_match() {
@@ -180,5 +190,20 @@ fn p3_clover_k_match() {
         }
     }
     assert_eq!(got, P3_CLOVER_K);
+    assert_ne!(got[0].1, got[1].1);
+}
+
+#[test]
+fn p3_hearts_m_match() {
+    let got: Vec<(&str, u64)> = HEARTS_SCENARIOS
+        .iter()
+        .map(|&(id, _)| (id, scaled_hash(id)))
+        .collect();
+    if std::env::var_os("P3_PRINT_BASELINE").is_some() {
+        for (id, h) in &got {
+            println!("    (\"{id}\", {h:#018x}),");
+        }
+    }
+    assert_eq!(got, P3_HEARTS_M);
     assert_ne!(got[0].1, got[1].1);
 }

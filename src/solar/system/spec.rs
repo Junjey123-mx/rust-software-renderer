@@ -7,6 +7,7 @@ use crate::solar::flight::THRUST_ACCEL;
 use crate::solar::physics::design_mu;
 use crate::solar::planet::PlanetMaterial;
 use crate::solar::planet::clover::CloverParams;
+use crate::solar::planet::hearts::NeonGridParams;
 use std::collections::HashSet;
 
 /// Stable identity of a body (also its `--set` prefix).
@@ -20,6 +21,9 @@ pub enum GeometrySpec {
     Sphere,
     /// The clover relief (`planet::clover`) with its trees and rocks.
     Clover,
+    /// The Hearts terraces (`planet::hearts`) with the city and the
+    /// pyramid.
+    Hearts,
 }
 
 /// Geometry attached to a body (rings, crowns, loops); none yet.
@@ -182,24 +186,38 @@ pub const SPEC_PARAMS: [&str; 6] = [
 
 impl SystemSpec {
     /// `--set <id>.<param>` on a Project 3 material (the clover's
-    /// `CloverParams`; its `seed` is the planet seed). `Ok(false)` leaves a
-    /// laboratory 6 body's parameter to its shader.
+    /// `CloverParams` or the Hearts' `NeonGridParams`; their `seed` is the
+    /// planet seed). `Ok(false)` leaves a laboratory 6 body's parameter to
+    /// its shader.
     fn apply_material_set(&mut self, id: &str, param: &str, value: f32) -> Result<bool, SpecError> {
         let Some(p) = self.planets.iter_mut().find(|p| p.id.0 == id) else {
             return Ok(false);
         };
-        let PlanetMaterial::Clover(params) = &mut p.material else {
-            return Ok(false);
+        let seed = match &mut p.material {
+            PlanetMaterial::Clover(params) => {
+                let spec = CloverParams::SPECS
+                    .iter()
+                    .find(|s| s.name == param)
+                    .ok_or(SpecError::Unsupported("clover material parameter"))?;
+                params
+                    .set(param, value)
+                    .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
+                params.seed
+            }
+            PlanetMaterial::Hearts(params) => {
+                let spec = NeonGridParams::SPECS
+                    .iter()
+                    .find(|s| s.name == param)
+                    .ok_or(SpecError::Unsupported("hearts material parameter"))?;
+                params
+                    .set(param, value)
+                    .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
+                params.seed
+            }
+            PlanetMaterial::Lab6(_) => return Ok(false),
         };
-        let spec = CloverParams::SPECS
-            .iter()
-            .find(|s| s.name == param)
-            .ok_or(SpecError::Unsupported("clover material parameter"))?;
-        params
-            .set(param, value)
-            .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
         if param == "seed" {
-            p.seed = params.seed.round() as u32;
+            p.seed = seed.round() as u32;
         }
         Ok(true)
     }
@@ -281,17 +299,19 @@ impl SystemSpec {
     }
 
     /// The Project 3 system at the scale of `ScaleProfile::project3`: The
-    /// King's Crown (radius 5.40) with Crimson Entrance (1.10, orbit 14,
-    /// 1 u/s) and House of Cards (1.75, orbit 36, 0.75 u/s) in the order of
-    /// the suits. Orbits 20 and 27 stay free for Clover and Hearts (C49,
-    /// C61); spins, phases and materials are the pre-project ones. Each
-    /// planet pulls with `design_mu` for the 3 u/s^2 thrust and the 3 u/s
-    /// cruise (0.99 and 1.97); the star does not pull (`mu` 0).
+    /// King's Crown (radius 5.40) with, in the order of the suits, Crimson
+    /// Entrance (1.10, orbit 14, 1 u/s), Clover Haven (1.45, orbit 21,
+    /// 0.9 u/s, C49), Neon Hearts (1.30, orbit 29.5, 0.85 u/s, C61) and
+    /// House of Cards (1.75, orbit 40, 0.75 u/s). The pre-project bodies
+    /// keep their spins, phases and materials. Each planet pulls with
+    /// `design_mu` for the 3 u/s^2 thrust and the 3 u/s cruise; the star
+    /// does not pull (`mu` 0).
     pub fn project3() -> Self {
         let mut spec = Self::preproject3();
         spec.star.scale = 5.40 / SPHERE_RADIUS;
-        // Crimson -> Clover -> (room for Hearts) -> House of Cards.
+        // Crimson -> Clover -> Hearts -> House of Cards.
         let clover = CloverParams::default();
+        let hearts = NeonGridParams::default();
         spec.planets.insert(
             1,
             PlanetSpec {
@@ -310,11 +330,30 @@ impl SystemSpec {
                 host: None,
             },
         );
-        for (p, (radius, orbit, speed)) in
-            spec.planets
-                .iter_mut()
-                .zip([(1.10, 14.0, 1.0), (1.45, 21.0, 0.9), (1.75, 40.0, 0.75)])
-        {
+        spec.planets.insert(
+            2,
+            PlanetSpec {
+                id: PlanetId("hearts"),
+                name: "Neon Hearts",
+                scale: 1.0,
+                orbit_radius: 0.0,
+                orbit_speed: 0.0,
+                phase: 4.4,
+                spin: 0.1,
+                seed: hearts.seed as u32,
+                mu: 0.0,
+                material: PlanetMaterial::Hearts(hearts),
+                geometry: GeometrySpec::Hearts,
+                attachments: Vec::new(),
+                host: None,
+            },
+        );
+        for (p, (radius, orbit, speed)) in spec.planets.iter_mut().zip([
+            (1.10, 14.0, 1.0),
+            (1.45, 21.0, 0.9),
+            (1.30, 29.5, 0.85),
+            (1.75, 40.0, 0.75),
+        ]) {
             p.scale = radius / SPHERE_RADIUS;
             p.orbit_radius = orbit;
             p.orbit_speed = speed;

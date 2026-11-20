@@ -61,9 +61,12 @@ fn scene(d: f32) -> SolarScene {
 }
 
 fn prop_draws(s: &SolarScene) -> usize {
+    // Body 1's only: since C61 the Hearts city draws with the prop shader
+    // too.
+    let host = s.bodies[1].transform.matrix();
     s.effect_draws(W, H, 1)
         .iter()
-        .filter(|d| matches!(d.shader, EffectShader::Prop(_)))
+        .filter(|d| matches!(d.shader, EffectShader::Prop(_)) && d.model.model_matrix == host)
         .count()
 }
 

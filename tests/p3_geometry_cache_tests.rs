@@ -82,8 +82,9 @@ fn no_build_during_render() {
     )
     .unwrap();
     let built = scene.meshes.relief.builds();
-    // The test field above and the clover planet (C49), both at startup.
-    assert_eq!(built, 2, "built at startup");
+    // The test field above, the clover planet (C49) and the hearts planet
+    // (C61), all at startup.
+    assert_eq!(built, 3, "built at startup");
     let mut fb = Framebuffer::new(80, 60);
     for _ in 0..3 {
         scene

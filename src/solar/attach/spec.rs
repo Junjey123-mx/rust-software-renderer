@@ -27,6 +27,9 @@ pub enum AttachmentKind {
     /// A large model on the surface (`landmark::Landmark`, at most one per
     /// host).
     Landmark,
+    /// The Hearts city: buildings baked into sectors like the props (at
+    /// most one per host).
+    City,
 }
 
 /// One attachment and the id of the body it rides on.

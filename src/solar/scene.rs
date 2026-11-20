@@ -32,6 +32,7 @@ use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::physics::{CollisionShape, GravitySource};
 use crate::solar::planet::clover::CloverParams;
 use crate::solar::planet::geometry::{LodState, Relief, lod_for, lod_step};
+use crate::solar::planet::hearts::NeonGridParams;
 use crate::solar::planet::{HeightField, PlanetMaterial, PreparedPlanet};
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
@@ -46,6 +47,16 @@ use crate::solar::{
 };
 use raylib::math::Vector3;
 use std::cell::{Ref, RefCell, RefMut};
+
+/// Where the Hearts pyramid stands, the planet's own frame (moved to the
+/// nearest plateau): high on its northern side, in view from the system
+/// camera.
+pub const HEARTS_LANDMARK: Vector3 = Vector3::new(0.3, 0.8, 0.5);
+/// Angle around the pyramid's foot kept free of buildings, radians (its
+/// base is about 0.23 rad wide).
+pub const CITY_CLEARANCE: f32 = 0.3;
+/// Size of a Hearts building, planet radii.
+pub const BUILDING_SIZE: f32 = 0.06;
 
 /// Which projection the solar scene renders through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -136,6 +147,9 @@ pub struct SolarScene {
     /// The Hearts pyramid (`None`: none), drawn on the host an
     /// `AttachmentKind::Landmark` names.
     pub landmark: Option<Landmark>,
+    /// The Hearts city baked into sectors (`None`: none), drawn on the host
+    /// an `AttachmentKind::City` names.
+    pub city: Option<PropLayers>,
     /// What rides on which body, by id, in draw order: the royal crown on
     /// the star and the card ring around House of Cards. The geometry
     /// itself lives in `crown` and `cards`; an attachment without its
@@ -214,6 +228,7 @@ impl SolarScene {
             props: None,
             waterfalls: None,
             landmark: None,
+            city: None,
             attachments: vec![
                 AttachmentSpec {
                     kind: AttachmentKind::RoyalCrown,
@@ -311,9 +326,13 @@ impl SolarScene {
             }
             let orbit = Orbit::from_linear(p.orbit_radius, p.orbit_speed, p.phase)
                 .map_err(|_| SpecError::OutOfRange("planet.orbit_speed", p.orbit_speed))?;
-            // The clover's field follows the planet seed.
+            // The clover's and the Hearts' fields follow the planet seed.
             let material = match p.material {
                 PlanetMaterial::Clover(params) => PlanetMaterial::Clover(CloverParams {
+                    seed: p.seed as f32,
+                    ..params
+                }),
+                PlanetMaterial::Hearts(params) => PlanetMaterial::Hearts(NeonGridParams {
                     seed: p.seed as f32,
                     ..params
                 }),
@@ -332,8 +351,10 @@ impl SolarScene {
         let mut scene = Self::new(meshes, view, light_world);
         scene.bodies = bodies;
         for i in 0..scene.bodies.len() {
-            if let Some(PlanetMaterial::Clover(params)) = scene.bodies[i].surface {
-                scene.add_clover_surface(i, &params)?;
+            match scene.bodies[i].surface {
+                Some(PlanetMaterial::Clover(params)) => scene.add_clover_surface(i, &params)?,
+                Some(PlanetMaterial::Hearts(params)) => scene.add_hearts_surface(i, &params)?,
+                _ => {}
             }
         }
         scene.update();
@@ -374,6 +395,40 @@ impl SolarScene {
                 kind: AttachmentKind::Waterfalls,
                 host: self.bodies[index].id,
             });
+        }
+        Ok(())
+    }
+
+    /// Terraces, pyramid and city of the Hearts planet at body `index`,
+    /// built once here (never while drawing). The pyramid stands on the
+    /// plateau nearest `HEARTS_LANDMARK`; no building rises within
+    /// `CITY_CLEARANCE` of it.
+    fn add_hearts_surface(
+        &mut self,
+        index: usize,
+        params: &NeonGridParams,
+    ) -> Result<(), SpecError> {
+        let field = HeightField::Hearts(params.field());
+        self.set_relief(index, field)
+            .map_err(|_| SpecError::Unsupported("hearts relief"))?;
+        let host = self.bodies[index].id;
+        let landmark = Landmark::pyramid(&field, HEARTS_LANDMARK, SPHERE_RADIUS)
+            .map_err(|_| SpecError::Unsupported("hearts landmark"))?;
+        let rule = ScatterRule {
+            exclude: Some((landmark.dir, CITY_CLEARANCE)),
+            ..ScatterRule::BUILDINGS
+        };
+        let seed = params.field().seed;
+        self.city = Some(bake(
+            &scatter(&field, &rule, seed),
+            &field,
+            SPHERE_RADIUS,
+            BUILDING_SIZE * SPHERE_RADIUS,
+            seed,
+        ));
+        self.landmark = Some(landmark);
+        for kind in [AttachmentKind::City, AttachmentKind::Landmark] {
+            self.attachments.push(AttachmentSpec { kind, host });
         }
         Ok(())
     }
@@ -444,6 +499,10 @@ impl SolarScene {
                     AttachmentKind::CardRing => self.cards.as_ref().map(CardRing::extent),
                     AttachmentKind::Props => self
                         .props
+                        .as_ref()
+                        .map(|p| crate::solar::attach::Attachment::Props(p).extent()),
+                    AttachmentKind::City => self
+                        .city
                         .as_ref()
                         .map(|p| crate::solar::attach::Attachment::Props(p).extent()),
                     AttachmentKind::Waterfalls => self

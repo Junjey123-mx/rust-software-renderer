@@ -86,9 +86,10 @@ fn clover_orbits_and_spins() {
 fn orbit_between_crimson_and_house() {
     let s = scene();
     let ids: Vec<&str> = s.bodies.iter().map(|b| b.id.0).collect();
-    assert_eq!(ids, ["crown", "entrance", "clover", "house"]);
+    // C61 puts the hearts planet between the clover and House of Cards.
+    assert_eq!(ids, ["crown", "entrance", "clover", "hearts", "house"]);
     let layout = s.layout.clone().unwrap();
-    assert_eq!(layout.radii, vec![14.0, 21.0, 40.0]);
+    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0]);
     // Shells (body, relief, props and rings) apart, with the profile gap.
     let gap = s.scale.unwrap().min_gap;
     for i in 1..layout.radii.len() {
@@ -109,8 +110,10 @@ fn clover_orbit_invading_house_is_refused() {
     let clover = spec.planets.iter_mut().find(|p| p.id == CLOVER).unwrap();
     clover.orbit_radius = 38.0;
     let err = build(&spec).err().unwrap();
+    // Since C61 the hearts planet (29.5) is the first outer neighbor whose
+    // shell the clover invades on its way to House of Cards.
     assert!(
-        matches!(err, SpecError::OrbitOverlap { planet: PlanetId("house"), radius, .. } if radius == 40.0),
+        matches!(err, SpecError::OrbitOverlap { planet: PlanetId("hearts"), radius, .. } if radius == 29.5),
         "{err:?}"
     );
 }
@@ -175,11 +178,12 @@ fn close_flight_no_crash() {
 
 #[test]
 fn warp_f4_arrives_safely() {
-    // F1-F4 follow the spec order: star, Crimson Entrance, clover, House.
+    // F1-F4 follow the spec order of the planets since C61: Crimson
+    // Entrance, clover, hearts, House (the star is body 0).
     let key = |k| PRESSED.iter().find(|&&(key, _)| key == k).unwrap().1;
-    assert_eq!(key(KeyboardKey::KEY_F3), SolarAction::Warp(2));
-    assert_eq!(key(KeyboardKey::KEY_F4), SolarAction::Warp(3));
-    for (index, name) in [(2, "Clover Haven"), (3, "House of Cards")] {
+    assert_eq!(key(KeyboardKey::KEY_F2), SolarAction::Warp(2));
+    assert_eq!(key(KeyboardKey::KEY_F4), SolarAction::Warp(4));
+    for (index, name) in [(2, "Clover Haven"), (4, "House of Cards")] {
         let mut s = scene();
         s.clock.time = 6.0;
         s.update();

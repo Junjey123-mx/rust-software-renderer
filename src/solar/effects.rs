@@ -17,7 +17,7 @@ use crate::shading::lighting::lambert;
 use crate::solar::SPHERE_RADIUS;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
-use crate::solar::attach::props::{PROP_MIN_PX, PropPart, beyond_horizon};
+use crate::solar::attach::props::{PROP_MIN_PX, PropLayers, PropPart, beyond_horizon};
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
@@ -160,6 +160,51 @@ impl SolarScene {
         )
     }
 
+    /// Draws of the baked `layers` on body `host`: none while the planet is
+    /// under `PROP_MIN_PX`, then each sector unless it is past the horizon
+    /// or out of view.
+    fn prop_layer_draws<'a>(
+        &'a self,
+        draws: &mut Vec<EffectDraw<'a>>,
+        host: usize,
+        layers: &'a PropLayers,
+        width: u32,
+        height: u32,
+        threads: usize,
+    ) {
+        let projection = self.projection();
+        // The whole layer hides while the planet is small.
+        if self.radius_px(host, &projection, height) < PROP_MIN_PX {
+            return;
+        }
+        let t = self.bodies[host].transform;
+        let model = Uniforms {
+            model_matrix: t.matrix(),
+        };
+        let light = t.to_object_dir(self.light_at(t.position)).normalized();
+        for layer in &layers.layers {
+            for sector in &layer.sectors {
+                let center = t.position + t.to_world_dir(sector.bound_center) * t.scale;
+                // Sectors past the horizon, then out of view.
+                if self.patch_hidden(host, &projection, sector.bound_center, sector.bound_radius)
+                    || !self.sphere_in_view(center, sector.bound_radius * t.scale, width, height)
+                {
+                    continue;
+                }
+                draws.push(EffectDraw {
+                    mesh: &sector.mesh,
+                    model,
+                    options: solid_options(threads),
+                    shader: EffectShader::Prop(PropShader {
+                        color: layer.part.color(),
+                        light,
+                        glow: layer.part.glow(),
+                    }),
+                });
+            }
+        }
+    }
+
     /// Every effect draw that can appear on a `width` x `height` frame.
     pub fn effect_draws(&self, width: u32, height: u32, threads: usize) -> Vec<EffectDraw<'_>> {
         let mut draws = Vec::new();
@@ -197,45 +242,11 @@ impl SolarScene {
                 }
                 AttachmentKind::Props => {
                     let Some(props) = &self.props else { continue };
-                    let projection = self.projection();
-                    // The whole layer hides while the planet is small.
-                    if self.radius_px(host, &projection, height) < PROP_MIN_PX {
-                        continue;
-                    }
-                    let t = self.bodies[host].transform;
-                    let model = Uniforms {
-                        model_matrix: t.matrix(),
-                    };
-                    let light = t.to_object_dir(self.light_at(t.position)).normalized();
-                    for layer in &props.layers {
-                        for sector in &layer.sectors {
-                            let center = t.position + t.to_world_dir(sector.bound_center) * t.scale;
-                            // Sectors past the horizon, then out of view.
-                            if self.patch_hidden(
-                                host,
-                                &projection,
-                                sector.bound_center,
-                                sector.bound_radius,
-                            ) || !self.sphere_in_view(
-                                center,
-                                sector.bound_radius * t.scale,
-                                width,
-                                height,
-                            ) {
-                                continue;
-                            }
-                            draws.push(EffectDraw {
-                                mesh: &sector.mesh,
-                                model,
-                                options: solid_options(threads),
-                                shader: EffectShader::Prop(PropShader {
-                                    color: layer.part.color(),
-                                    light,
-                                    glow: layer.part.glow(),
-                                }),
-                            });
-                        }
-                    }
+                    self.prop_layer_draws(&mut draws, host, props, width, height, threads);
+                }
+                AttachmentKind::City => {
+                    let Some(city) = &self.city else { continue };
+                    self.prop_layer_draws(&mut draws, host, city, width, height, threads);
                 }
                 AttachmentKind::Waterfalls => {
                     let Some(set) = &self.waterfalls else {

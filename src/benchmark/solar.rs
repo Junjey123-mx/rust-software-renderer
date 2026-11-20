@@ -88,6 +88,13 @@ pub const CLOVER_SCENARIOS: [(&str, &str); 3] = [
     ("K3", "clover mountain and waterfall up close"),
 ];
 
+/// Project 3 Hearts cases, scaled system only: the pyramid and the city up
+/// close, and the planet from afar.
+pub const HEARTS_SCENARIOS: [(&str, &str); 2] = [
+    ("M", "close flight over the hearts pyramid and city"),
+    ("M2", "hearts planet from afar"),
+];
+
 /// Test relief of the `L` scenarios (benchmark only).
 pub const BENCH_RELIEF: HeightField = HeightField::Test(TestField {
     amplitude: 0.04,
@@ -292,6 +299,30 @@ pub fn scenario_scene_on(
                 s.ship.up = Vector3::new(0.0, 1.0, 0.0);
             }
         }
+        "M" | "M2" if scaled => {
+            let hearts = s.body_index(PlanetId("hearts")).ok_or("no hearts planet")?;
+            let t = s.bodies[hearts].transform;
+            let r = s.radius_of(hearts);
+            if id == "M" {
+                // Beside the pyramid, a third of a radius over its top,
+                // looking at its foot across the city (the pyramid and
+                // its disc rise above the ship).
+                let l = s.landmark.as_ref().ok_or("no hearts landmark")?;
+                let top = t.position + t.to_world_dir(l.top_local) * t.scale;
+                let foot = t.position + t.to_world_dir(l.dir) * r;
+                let up = t.to_world_dir(l.up).normalized();
+                let side = up.cross(Vector3::new(0.0, 1.0, 0.0)).normalized();
+                s.ship.position = top + up * (0.35 * r) + side * (0.9 * r);
+                s.ship.forward = (foot - s.ship.position).normalized();
+                s.ship.up = up;
+                s.ship.renormalize();
+            } else {
+                // 12 radii away, in front of it.
+                s.ship.position = t.position - Vector3::new(0.0, 0.0, 12.0 * r);
+                s.ship.forward = Vector3::new(0.0, 0.0, 1.0);
+                s.ship.up = Vector3::new(0.0, 1.0, 0.0);
+            }
+        }
         "G" => s.ship.yaw(std::f32::consts::PI),
         // Crimson Entrance cut about in half by the left edge (found by a
         // sweep: the whole planet covers about 4000 pixels at 800x600, 2300
@@ -365,6 +396,7 @@ pub fn run_solar_benchmark_on(
         LOD_SCENARIOS
             .iter()
             .chain(&CLOVER_SCENARIOS)
+            .chain(&HEARTS_SCENARIOS)
             .copied()
             .collect()
     } else {
