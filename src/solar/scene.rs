@@ -14,7 +14,7 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
-use crate::solar::attach::{AttachmentKind, AttachmentSpec};
+use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::card_ring::CardRing;
 use crate::solar::effects::EffectShader;
@@ -396,9 +396,7 @@ impl SolarScene {
         if self.plasma.arcs.is_empty() {
             return None;
         }
-        self.bodies
-            .iter()
-            .position(|b| b.body() == Body::KingsCrown)
+        self.body_index(PlanetId(Body::KingsCrown.name()))
     }
 
     /// The host of the loops when the star with its loops (a sphere of
@@ -683,6 +681,16 @@ impl SolarScene {
     /// Index of the body with stable id `id`.
     pub fn body_index(&self, id: PlanetId) -> Option<usize> {
         self.bodies.iter().position(|b| b.body().name() == id.0)
+    }
+
+    /// Pose of the body with id `id` this frame: its transform (center,
+    /// spin, mesh scale) and radius.
+    pub fn host_pose(&self, id: PlanetId) -> Option<HostPose> {
+        let i = self.body_index(id)?;
+        Some(HostPose {
+            transform: self.bodies[i].transform,
+            radius: self.radius_of(i),
+        })
     }
 
     /// Host index of the first attachment of `kind`.
