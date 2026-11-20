@@ -48,6 +48,8 @@ pub struct BodyInstance {
     /// Orbit around the scene center; `None` keeps the transform position.
     pub orbit: Option<Orbit>,
     pub debug: DebugView,
+    /// Gravitational parameter of the body (0: no pull), from the spec.
+    pub mu: f32,
 }
 
 impl BodyInstance {
@@ -58,6 +60,7 @@ impl BodyInstance {
             spin_speed,
             orbit: None,
             debug: DebugView::None,
+            mu: 0.0,
         }
     }
 

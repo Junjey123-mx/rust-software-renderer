@@ -26,6 +26,7 @@ use crate::solar::instance::{
     shade_instance,
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
+use crate::solar::physics::GravitySource;
 use crate::solar::planet::PlanetMaterial;
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
@@ -146,6 +147,10 @@ pub struct SolarScene {
     /// Orbit layout of a scaled system (`scaled_from_spec`); `None` for the
     /// pre-project one.
     pub layout: Option<OrbitLayout>,
+    /// Gravity of the bodies on the ship in space flight (`G`): on in the
+    /// scaled system, off in the pre-project one (whose bodies have no
+    /// `mu`).
+    pub gravity: bool,
     /// Center of the orbits (the star).
     pub center: Vector3,
     /// Unit direction towards the light, world space.
@@ -200,6 +205,7 @@ impl SolarScene {
             clock: SimulationClock::default(),
             scale: None,
             layout: None,
+            gravity: false,
             center: Vector3::zero(),
             light_world,
         }
@@ -258,18 +264,23 @@ impl SolarScene {
                 )
             }
         };
-        let mut bodies = vec![instance(
-            &spec.star.material,
-            spec.star.scale,
-            spec.star.spin,
-        )];
+        let mut bodies = vec![BodyInstance {
+            mu: spec.star.mu,
+            ..instance(&spec.star.material, spec.star.scale, spec.star.spin)
+        }];
         for p in &spec.planets {
             if p.host.is_some() {
                 return Err(SpecError::Unsupported("planet.host"));
             }
             let orbit = Orbit::from_linear(p.orbit_radius, p.orbit_speed, p.phase)
                 .map_err(|_| SpecError::OutOfRange("planet.orbit_speed", p.orbit_speed))?;
-            bodies.push(instance(&p.material, p.scale, p.spin).with_orbit(orbit));
+            bodies.push(
+                BodyInstance {
+                    mu: p.mu,
+                    ..instance(&p.material, p.scale, p.spin)
+                }
+                .with_orbit(orbit),
+            );
         }
         let mut scene = Self::new(meshes, view, light_world);
         scene.bodies = bodies;
@@ -290,7 +301,7 @@ impl SolarScene {
     /// checked (`ScaleProfile::check`), the orbits must keep the shells
     /// apart (`OrbitLayout::solve`, explicit radii only), the ship starts
     /// beyond the fifth slot in inertial flight at the profile's cruise
-    /// speed and local flight scales with each planet.
+    /// speed with gravity on, and local flight scales with each planet.
     pub fn scaled_from_spec(
         meshes: SolarMeshes,
         view: OrbitView,
@@ -308,6 +319,7 @@ impl SolarScene {
         );
         scene.ship.move_speed = profile.cruise_speed;
         scene.ship.inertia = true;
+        scene.gravity = true;
         scene.scale = Some(profile);
         scene.layout = Some(layout);
         scene.check_spawn()?;
@@ -348,6 +360,20 @@ impl SolarScene {
             reach = reach.max(self.plasma.extent());
         }
         self.radius_of(index) * reach
+    }
+
+    /// Pull of every body with `mu` at its current position (none while
+    /// gravity is off).
+    pub fn gravity_sources(&self) -> Vec<GravitySource> {
+        if !self.gravity {
+            return Vec::new();
+        }
+        self.bodies
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.mu > 0.0)
+            .map(|(i, b)| GravitySource::new(b.transform.position, b.mu, self.radius_of(i)))
+            .collect()
     }
 
     /// Local flight and quick-travel distances around body `index`.

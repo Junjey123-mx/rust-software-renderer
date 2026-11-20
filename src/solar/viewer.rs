@@ -10,7 +10,7 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
 use crate::solar::camera::CameraRig;
-use crate::solar::flight::{FlightInput, FlightMode, ease_thrust, ramp_boost, space_step};
+use crate::solar::flight::{FlightInput, FlightMode, ease_thrust, ramp_boost, space_step_in};
 use crate::solar::hud::{draw_hud, hud_lines};
 use crate::solar::input::{
     CAPTURE_KEY, Look, MouseCapture, MouseLook, RELEASE_KEY, SolarAction, poll_solar,
@@ -124,12 +124,17 @@ pub fn status_line(scene: &SolarScene, speed: f32, fps: f32) -> String {
         None => "no planet".to_string(),
     };
     format!(
-        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS | tris {}{}",
+        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS | tris {}{} | grav {}",
         scene.flight.name(),
         scene.rig.name(),
         scene.last_stats().triangles_submitted,
-        if scene.culling { "" } else { " | culling off" }
+        if scene.culling { "" } else { " | culling off" },
+        on_off(scene.gravity)
     )
+}
+
+fn on_off(on: bool) -> &'static str {
+    if on { "on" } else { "off" }
 }
 
 /// One frame: clear once, then every body and the spacecraft.
@@ -159,6 +164,10 @@ pub fn apply_toggles(scene: &mut SolarScene, actions: &[SolarAction]) -> Vec<Str
             SolarAction::ToggleCamera => {
                 scene.rig = scene.rig.toggled();
                 messages.push(format!("Camera rig: {}", scene.rig.name()));
+            }
+            SolarAction::ToggleGravity => {
+                scene.gravity = !scene.gravity;
+                messages.push(format!("Gravity {}", on_off(scene.gravity)));
             }
             SolarAction::ToggleDampers => {
                 scene.ship.dampers = !scene.ship.dampers;
@@ -207,7 +216,10 @@ pub fn fly(
                 ..FlightInput::from_actions(actions)
             };
             match scene.flight {
-                FlightMode::Space => space_step(&mut scene.ship, &input, dt),
+                FlightMode::Space => {
+                    let sources = scene.gravity_sources();
+                    space_step_in(&mut scene.ship, &input, dt, &sources)
+                }
                 FlightMode::Local { .. } => scene.local_step(&input, dt),
             }
         }
@@ -250,7 +262,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1/F2/F3 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
@@ -326,7 +338,8 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         }
         let shaded = render_frame(&scene, &mut framebuffer, mode, options)?;
         if hud {
-            let lines = hud_lines(&scene.last_stats(), rl.get_fps() as f32);
+            let mut lines = hud_lines(&scene.last_stats(), rl.get_fps() as f32);
+            lines.push(format!("GRAV {}", on_off(scene.gravity).to_uppercase()));
             draw_hud(&mut framebuffer, &lines);
         }
         if !reported {

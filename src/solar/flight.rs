@@ -6,7 +6,7 @@ use crate::shading::sphere::rotate_axis;
 use crate::solar::ShipState;
 use crate::solar::clock::MAX_STEP;
 use crate::solar::input::{Look, SolarAction};
-use crate::solar::physics::advance;
+use crate::solar::physics::{GravitySource, advance, gravity_accel};
 use crate::solar::ship::TurnState;
 use crate::solar::system::ScaleProfile;
 use raylib::math::Vector3;
@@ -207,6 +207,18 @@ fn clamp_pending_pitch(ship: &mut ShipState, reference_up: Vector3) {
 /// and moves by the velocity, on the fixed substeps of `physics::advance`. Without thrust the dampers brake it
 /// progressively, or it coasts with the dampers off. No collisions here.
 pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
+    space_step_in(ship, input, dt, &[]);
+}
+
+/// `space_step` with the pull of `sources` added to the thrust on every
+/// substep of inertial flight (the pre-project flight ignores it). Local
+/// flight never calls it, so gravity is never applied twice.
+pub fn space_step_in(
+    ship: &mut ShipState,
+    input: &FlightInput,
+    dt: f32,
+    sources: &[GravitySource],
+) {
     let dt = clamp_dt(dt);
     let (yaw, pitch) = frame_turn(ship, input, dt);
     steer(ship, SPACE_UP, yaw, pitch);
@@ -224,7 +236,8 @@ pub fn space_step(ship: &mut ShipState, input: &FlightInput, dt: f32) {
     let braking = way.length() == 0.0 && ship.dampers;
     // Semi-implicit Euler on fixed substeps: v += a h, then p += v h.
     advance(ship, dt, |ship, h| {
-        let mut velocity = ship.velocity + thrust * h;
+        let pull = gravity_accel(ship.position, sources);
+        let mut velocity = ship.velocity + (thrust + pull) * h;
         if braking {
             velocity *= (-BRAKE_RATE * h).exp();
         }
