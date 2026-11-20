@@ -27,12 +27,13 @@ use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
+use crate::solar::stats::FrameStats;
 use crate::solar::thrusters::Thrusters;
 use crate::solar::{
     BodyInstance, FrameContext, Orbit, SPHERE_RADIUS, ShipState, SimulationClock, SolarMeshes,
 };
 use raylib::math::Vector3;
-use std::cell::{RefCell, RefMut};
+use std::cell::{Ref, RefCell, RefMut};
 
 /// Which projection the solar scene renders through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -113,6 +114,8 @@ pub struct SolarScene {
     pub quality: Quality,
     /// Shaded-stage buffers reused by every draw of this scene.
     scratch: RefCell<RenderScratch>,
+    /// Counters of the last `render_frame` (`last_stats`).
+    stats: RefCell<FrameStats>,
     /// Simulated time shared by orbits, spins and material animation.
     pub clock: SimulationClock,
     /// Center of the orbits (the star).
@@ -139,6 +142,7 @@ impl SolarScene {
             cards: Some(CardRing::diamonds()),
             thrusters: Some(Thrusters::default()),
             scratch: RefCell::new(RenderScratch::new()),
+            stats: RefCell::new(FrameStats::default()),
             quality: Quality::Full,
             clock: SimulationClock::default(),
             center: Vector3::zero(),
@@ -427,11 +431,26 @@ impl SolarScene {
         let sky = self.sky_camera();
         draw_nebula(framebuffer, &self.nebula, &sky);
         draw_stars(framebuffer, &self.stars, &sky);
+        let (w, h) = (framebuffer.width(), framebuffer.height());
+        let mut stats = self.stats.borrow_mut();
+        stats.clear();
         if mode == TriangleMode::Wireframe {
             let bodies = self.render_objects_without_clear(framebuffer, mode, options)?;
             let plasma = self.render_plasma_without_clear(framebuffer, mode, options)?;
             let effects = self.render_effects_without_clear(framebuffer, mode, options)?;
             let ship = self.render_ship_without_clear(framebuffer, mode, options)?;
+            for (i, s) in bodies.iter().enumerate() {
+                stats.body(i, self.body_in_view(i, w, h), s);
+            }
+            if self.plasma_host().is_some() {
+                stats.test(!plasma.is_empty());
+            }
+            plasma.iter().chain(&effects).for_each(|s| stats.add(s));
+            let ship_visible = self.sphere_in_view(self.ship.position, self.ship.radius(), w, h);
+            stats.test(ship_visible);
+            if ship_visible {
+                stats.add(&ship);
+            }
             return Ok(bodies
                 .iter()
                 .chain(&plasma)
@@ -440,7 +459,6 @@ impl SolarScene {
                 .sum::<usize>()
                 + ship.fragments_shaded);
         }
-        let (w, h) = (framebuffer.width(), framebuffer.height());
         let shared = self.frame_context(mode, options);
         let mut scratch = self.scratch.borrow_mut();
         scratch.begin_batch();
@@ -449,6 +467,7 @@ impl SolarScene {
             Vec::with_capacity(self.bodies.len() + self.plasma.arcs.len() + effects.len() + 1);
         for (i, body) in self.bodies.iter().enumerate() {
             if !self.body_in_view(i, w, h) {
+                stats.body(i, false, &ShadedStats::default());
                 continue;
             }
             let drawn = self.drawn_body(i, &shared.projection, h);
@@ -464,7 +483,7 @@ impl SolarScene {
                 model_matrix: drawn.transform.matrix(),
             };
             let tag = (jobs.len() - 1) as u32;
-            scratch.rasterize(
+            let s = scratch.rasterize(
                 framebuffer,
                 &model,
                 &self.meshes.sphere,
@@ -473,8 +492,13 @@ impl SolarScene {
                 options,
                 tag,
             )?;
+            stats.body(i, true, &s);
         }
-        if let Some(host) = self.plasma_in_view(w, h) {
+        let plasma = self.plasma_in_view(w, h);
+        if self.plasma_host().is_some() {
+            stats.test(plasma.is_some());
+        }
+        if let Some(host) = plasma {
             let transform = self.bodies[host].transform;
             let model = Uniforms {
                 model_matrix: transform.matrix(),
@@ -485,7 +509,7 @@ impl SolarScene {
                     transform,
                 ));
                 let tag = (jobs.len() - 1) as u32;
-                scratch.rasterize(
+                stats.add(&scratch.rasterize(
                     framebuffer,
                     &model,
                     self.plasma.arc_mesh(i),
@@ -493,13 +517,13 @@ impl SolarScene {
                     mode,
                     plasma_options(options.threads),
                     tag,
-                )?;
+                )?);
             }
         }
         for draw in &effects {
             jobs.push(Job::Effect(draw.shader));
             let tag = (jobs.len() - 1) as u32;
-            scratch.rasterize(
+            stats.add(&scratch.rasterize(
                 framebuffer,
                 &draw.model,
                 draw.mesh,
@@ -507,15 +531,17 @@ impl SolarScene {
                 mode,
                 draw.options,
                 tag,
-            )?;
+            )?);
         }
-        if self.sphere_in_view(self.ship.position, self.ship.radius(), w, h) {
+        let ship_visible = self.sphere_in_view(self.ship.position, self.ship.radius(), w, h);
+        stats.test(ship_visible);
+        if ship_visible {
             jobs.push(Job::Ship(ship_light(&self.ship, self.ship_light())));
             let model = Uniforms {
                 model_matrix: self.ship.model_matrix(),
             };
             let tag = (jobs.len() - 1) as u32;
-            scratch.rasterize(
+            stats.add(&scratch.rasterize(
                 framebuffer,
                 &model,
                 &self.meshes.ship,
@@ -523,7 +549,7 @@ impl SolarScene {
                 mode,
                 ship_options(options.threads),
                 tag,
-            )?;
+            )?);
         }
         scratch.shade_batch(options.threads, |tag, s, v| match &jobs[tag as usize] {
             Job::Body(prepared, transform) => shade_instance(prepared, transform, s, v),
@@ -616,6 +642,11 @@ impl SolarScene {
     /// The shaded-stage buffers of this scene, for draws in other modules.
     pub(crate) fn scratch_mut(&self) -> RefMut<'_, RenderScratch> {
         self.scratch.borrow_mut()
+    }
+
+    /// Counters of the last `render_frame`.
+    pub fn last_stats(&self) -> Ref<'_, FrameStats> {
+        self.stats.borrow()
     }
 
     /// Fragments the reused shaded-stage buffers can hold.
