@@ -91,6 +91,8 @@ pub enum SpecError {
     UnknownHost(PlanetId),
     /// Valid data the scene cannot build yet.
     Unsupported(&'static str),
+    /// A `--set` prefix that names no body of the system.
+    UnknownBody,
 }
 
 impl std::fmt::Display for SpecError {
@@ -101,6 +103,7 @@ impl std::fmt::Display for SpecError {
             Self::OutOfRange(field, v) => write!(f, "{field} out of range ({v})"),
             Self::UnknownHost(id) => write!(f, "unknown host '{}'", id.0),
             Self::Unsupported(what) => write!(f, "{what} is not supported yet"),
+            Self::UnknownBody => write!(f, "no body of the system has this id"),
         }
     }
 }
@@ -134,7 +137,66 @@ fn non_negative(field: &'static str, value: f32) -> Result<(), SpecError> {
     }
 }
 
+/// Body values `--set <id>.<param>=<value>` changes in the spec (the other
+/// parameters belong to the body's shader). `planet_seed` is not `seed`,
+/// a laboratory 6 shader parameter of its own.
+pub const SPEC_PARAMS: [&str; 6] = [
+    "radius",
+    "orbit_radius",
+    "orbit_speed",
+    "spin",
+    "planet_seed",
+    "mu",
+];
+
 impl SystemSpec {
+    /// Applies `--set <id>.<param>=<value>` when `param` is one of
+    /// `SPEC_PARAMS` and returns `Ok(true)`; any other parameter is left to
+    /// the shader (`Ok(false)`). Values are checked here (finite; radii
+    /// positive; `mu` not negative; the seed a whole number), and the whole
+    /// spec is validated again when the scene is built.
+    pub fn apply_set(&mut self, name: &str, value: f32) -> Result<bool, SpecError> {
+        let Some((id, param)) = name.split_once('.') else {
+            return Ok(false);
+        };
+        let Some(&param) = SPEC_PARAMS.iter().find(|&&p| p == param) else {
+            return Ok(false);
+        };
+        finite(param, value)?;
+        match param {
+            "radius" | "orbit_radius" => positive(param, value)?,
+            "mu" => non_negative(param, value)?,
+            "planet_seed" if value < 0.0 || value.fract() != 0.0 || value > u32::MAX as f32 => {
+                return Err(SpecError::OutOfRange(param, value));
+            }
+            _ => {}
+        }
+        if id == self.star.id.0 {
+            let star = &mut self.star;
+            match param {
+                "radius" => star.scale = value / SPHERE_RADIUS,
+                "spin" => star.spin = value,
+                "mu" => star.mu = value,
+                _ => return Err(SpecError::Unsupported("an orbit or seed of the star")),
+            }
+            return Ok(true);
+        }
+        let p = self
+            .planets
+            .iter_mut()
+            .find(|p| p.id.0 == id)
+            .ok_or(SpecError::UnknownBody)?;
+        match param {
+            "radius" => p.scale = value / SPHERE_RADIUS,
+            "orbit_radius" => p.orbit_radius = value,
+            "orbit_speed" => p.orbit_speed = value,
+            "spin" => p.spin = value,
+            "planet_seed" => p.seed = value as u32,
+            _ => p.mu = value,
+        }
+        Ok(true)
+    }
+
     /// Checks ids (unique), sizes and orbits (finite, positive), speeds,
     /// phases and spins (finite), `mu` (finite, not negative) and hosts
     /// (an existing planet other than itself).

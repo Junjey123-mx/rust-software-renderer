@@ -17,6 +17,7 @@ use crate::solar::input::{
 };
 use crate::solar::nebula::Nebula;
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField};
+use crate::solar::system::SystemSpec;
 use crate::solar::travel::warp_to;
 use crate::solar::{SolarMeshes, SolarScene};
 use raylib::math::Vector3;
@@ -37,11 +38,16 @@ pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Bo
     let light = CelestialScene::new(Body::KingsCrown, Default::default(), WIDTH, HEIGHT)?
         .uniforms()
         .light_direction;
-    let mut scene = SolarScene::default_system(SolarMeshes::load()?, view, light)?;
+    let mut scene = SolarScene::from_spec_with_sets(
+        SolarMeshes::load()?,
+        view,
+        light,
+        SystemSpec::preproject3(),
+        &lab6.sets,
+    )?;
     if let Some(t) = lab6.time {
         scene.clock.time = t;
     }
-    scene.apply_overrides(&lab6.sets)?;
     scene.camera_mode = lab6.camera.unwrap_or_default();
     scene.quality = lab6.solar_quality.unwrap_or_default();
     scene.culling = !lab6.no_culling;

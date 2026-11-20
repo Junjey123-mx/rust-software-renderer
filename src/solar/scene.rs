@@ -232,6 +232,34 @@ impl SolarScene {
         Ok(scene)
     }
 
+    /// The system of `spec` with the command line's `--set` values: body
+    /// values (`SPEC_PARAMS`, such as `entrance.radius`) change the spec
+    /// before it is validated and built, every other parameter goes to the
+    /// body's shader (`apply_overrides`). All or nothing: any error stops
+    /// the start with a message naming the option. Changing a value means
+    /// starting the program again; there is no reload while it runs.
+    pub fn from_spec_with_sets(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+        mut spec: SystemSpec,
+        sets: &[(String, f32)],
+    ) -> Result<Self, String> {
+        let mut shader_sets = Vec::new();
+        for (name, value) in sets {
+            let consumed = spec
+                .apply_set(name, *value)
+                .map_err(|e| format!("--set '{name}={value}': {e}"))?;
+            if !consumed {
+                shader_sets.push((name.clone(), *value));
+            }
+        }
+        let mut scene =
+            Self::from_spec(meshes, view, light_world, &spec).map_err(|e| format!("--set: {e}"))?;
+        scene.apply_overrides(&shader_sets)?;
+        Ok(scene)
+    }
+
     /// Radius of the outermost orbit plus that body's radius: the world
     /// sphere a camera has to frame.
     pub fn extent(&self) -> f32 {

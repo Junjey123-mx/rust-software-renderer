@@ -4,5 +4,6 @@
 pub mod spec;
 
 pub use spec::{
-    AttachmentSpec, GeometrySpec, PlanetId, PlanetSpec, SpecError, StarSpec, SystemSpec,
+    AttachmentSpec, GeometrySpec, PlanetId, PlanetSpec, SPEC_PARAMS, SpecError, StarSpec,
+    SystemSpec,
 };
