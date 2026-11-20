@@ -98,6 +98,18 @@ pub const MAX_ORBIT_LINEAR_SPEED: f32 = 1.0;
 /// built from it directly: `validate` asks for a positive radius.
 pub const AUTO_ORBIT: f32 = 0.0;
 
+/// Art decision on a fifth planet (`docs/project3_fifth_planet_decision.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FifthPlanetStatus {
+    /// Two concepts proposed, none approved: `project3()` keeps four planets.
+    ArtPendingApproval,
+    /// The concept the user approved, by name.
+    Approved(&'static str),
+}
+
+/// No concept has been approved: no fifth `PlanetSpec` exists.
+pub const FIFTH_PLANET: FifthPlanetStatus = FifthPlanetStatus::ArtPendingApproval;
+
 /// The star and its planets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SystemSpec {

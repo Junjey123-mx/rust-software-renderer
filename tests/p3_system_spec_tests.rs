@@ -5,6 +5,7 @@
 use raylib::math::Vector3;
 use rust_software_renderer::pipeline::{OrbitCamera, OrbitView, ViewPreset, Viewport};
 use rust_software_renderer::solar::planet::PlanetMaterial;
+use rust_software_renderer::solar::system::spec::{FIFTH_PLANET, FifthPlanetStatus};
 use rust_software_renderer::solar::system::{PlanetId, SpecError, SystemSpec};
 use rust_software_renderer::solar::{SPHERE_RADIUS, SolarMeshes, SolarScene};
 
@@ -112,5 +113,20 @@ fn unknown_host_rejected() {
     assert!(matches!(spec.validate(), Err(SpecError::UnknownHost(_))));
     let mut spec = SystemSpec::preproject3();
     spec.planets[0].host = Some(spec.planets[1].id);
+    assert_eq!(spec.validate(), Ok(()));
+}
+
+#[test]
+fn fifth_absent_while_pending() {
+    // C70: two concepts documented, none approved.
+    assert_eq!(FIFTH_PLANET, FifthPlanetStatus::ArtPendingApproval);
+    let spec = SystemSpec::project3();
+    assert_eq!(spec.planets.len(), 4, "the four suits only");
+    let ids: Vec<&str> = spec.planets.iter().map(|p| p.id.0).collect();
+    assert!(
+        !ids.iter()
+            .any(|id| id.contains("joker") || id.contains("crystal") || id.contains("fifth")),
+        "{ids:?}"
+    );
     assert_eq!(spec.validate(), Ok(()));
 }
