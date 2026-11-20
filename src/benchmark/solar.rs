@@ -315,7 +315,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(text.starts_with(
-            "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms,max_ms,peak_rss_kb\n"
+            "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms,max_ms,peak_rss_kb,csv_version,"
         ));
         assert!(text.lines().nth(1).unwrap().contains(",1.000,,2,"));
     }
