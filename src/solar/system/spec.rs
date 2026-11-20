@@ -3,6 +3,8 @@
 
 use crate::celestial::{Body, CelestialMaterial};
 use crate::solar::SPHERE_RADIUS;
+use crate::solar::flight::THRUST_ACCEL;
+use crate::solar::physics::design_mu;
 use crate::solar::planet::PlanetMaterial;
 use std::collections::HashSet;
 
@@ -256,7 +258,9 @@ impl SystemSpec {
     /// King's Crown (radius 5.40) with Crimson Entrance (1.10, orbit 14,
     /// 1 u/s) and House of Cards (1.75, orbit 36, 0.75 u/s) in the order of
     /// the suits. Orbits 20 and 27 stay free for Clover and Hearts (C49,
-    /// C61); spins, phases and materials are the pre-project ones.
+    /// C61); spins, phases and materials are the pre-project ones. Each
+    /// planet pulls with `design_mu` for the 3 u/s^2 thrust and the 3 u/s
+    /// cruise (0.99 and 1.97); the star does not pull (`mu` 0).
     pub fn project3() -> Self {
         let mut spec = Self::preproject3();
         spec.star.scale = 5.40 / SPHERE_RADIUS;
@@ -268,6 +272,7 @@ impl SystemSpec {
             p.scale = radius / SPHERE_RADIUS;
             p.orbit_radius = orbit;
             p.orbit_speed = speed;
+            p.mu = design_mu(radius, THRUST_ACCEL, 3.0);
         }
         spec
     }
