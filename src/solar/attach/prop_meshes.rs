@@ -143,6 +143,27 @@ pub fn tower_mesh(variant: u8) -> (Mesh, Mesh) {
         2 => &[(0.14, 0.14, 0.75), (0.09, 0.09, 0.3), (0.04, 0.04, 0.2)],
         _ => &[(0.3, 0.3, 0.5), (0.21, 0.21, 0.32), (0.12, 0.12, 0.22)],
     };
+    stepped(tiers)
+}
+
+/// The monumental pyramid of the Hearts planet: `levels` square steps
+/// (at least 2; fewer count as 2) from a base 1 unit wide to a flat top
+/// 0.16 wide, 1 unit tall, with neon strips on every step's edges like
+/// the buildings. Base at the origin.
+pub fn pyramid_mesh(levels: u8) -> (Mesh, Mesh) {
+    let levels = levels.max(2) as usize;
+    let tiers: Vec<(f32, f32, f32)> = (0..levels)
+        .map(|k| {
+            let w = 0.5 - 0.42 * k as f32 / (levels - 1) as f32;
+            (w, w, 1.0 / levels as f32)
+        })
+        .collect();
+    stepped(&tiers)
+}
+
+/// Stacked closed boxes `(half width, half depth, height)`, bottom up,
+/// with their neon edge strips.
+fn stepped(tiers: &[(f32, f32, f32)]) -> (Mesh, Mesh) {
     let up = Vector3::new(0.0, 1.0, 0.0);
     let (mut blocks, mut strips, mut y) = (Vec::new(), Vec::new(), 0.0);
     for &(w, d, h) in tiers {

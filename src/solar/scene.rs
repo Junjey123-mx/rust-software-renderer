@@ -14,6 +14,7 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
+use crate::solar::attach::landmark::Landmark;
 use crate::solar::attach::props::{PROP_SIZE, PropLayers, ScatterRule, bake, scatter};
 use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
@@ -132,6 +133,9 @@ pub struct SolarScene {
     /// Waterfalls of the clover planet (`None`: none), drawn on the host an
     /// `AttachmentKind::Waterfalls` names.
     pub waterfalls: Option<WaterfallSet>,
+    /// The Hearts pyramid (`None`: none), drawn on the host an
+    /// `AttachmentKind::Landmark` names.
+    pub landmark: Option<Landmark>,
     /// What rides on which body, by id, in draw order: the royal crown on
     /// the star and the card ring around House of Cards. The geometry
     /// itself lives in `crown` and `cards`; an attachment without its
@@ -209,6 +213,7 @@ impl SolarScene {
             cards: Some(CardRing::diamonds()),
             props: None,
             waterfalls: None,
+            landmark: None,
             attachments: vec![
                 AttachmentSpec {
                     kind: AttachmentKind::RoyalCrown,
@@ -445,6 +450,10 @@ impl SolarScene {
                         .waterfalls
                         .as_ref()
                         .map(|w| crate::solar::attach::Attachment::Waterfalls(w).extent()),
+                    AttachmentKind::Landmark => self
+                        .landmark
+                        .as_ref()
+                        .map(|l| crate::solar::attach::Attachment::Landmark(l).extent()),
                 };
                 reach = reach.max(extent.unwrap_or(1.0));
             }

@@ -17,7 +17,7 @@ use crate::shading::lighting::lambert;
 use crate::solar::SPHERE_RADIUS;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
-use crate::solar::attach::props::{PROP_MIN_PX, beyond_horizon};
+use crate::solar::attach::props::{PROP_MIN_PX, PropPart, beyond_horizon};
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
@@ -270,6 +270,48 @@ impl SolarScene {
                             shader: EffectShader::Waterfall(
                                 placed.fall.shader(light, self.clock.time),
                             ),
+                        });
+                    }
+                }
+                AttachmentKind::Landmark => {
+                    let Some(landmark) = &self.landmark else {
+                        continue;
+                    };
+                    let projection = self.projection();
+                    let t = self.bodies[host].transform;
+                    let center = t.position + t.to_world_dir(landmark.bound_center) * t.scale;
+                    // Seen from afar too: only the horizon and the view
+                    // skip it.
+                    if self.patch_hidden(
+                        host,
+                        &projection,
+                        landmark.bound_center,
+                        landmark.bound_radius,
+                    ) || !self.sphere_in_view(
+                        center,
+                        landmark.bound_radius * t.scale,
+                        width,
+                        height,
+                    ) {
+                        continue;
+                    }
+                    let model = Uniforms {
+                        model_matrix: t.matrix(),
+                    };
+                    let light = t.to_object_dir(self.light_at(t.position)).normalized();
+                    for (mesh, part) in [
+                        (&landmark.mesh, PropPart::BuildingBody),
+                        (&landmark.edges, PropPart::BuildingEdge),
+                    ] {
+                        draws.push(EffectDraw {
+                            mesh,
+                            model,
+                            options: solid_options(threads),
+                            shader: EffectShader::Prop(PropShader {
+                                color: part.color(),
+                                light,
+                                glow: part.glow(),
+                            }),
                         });
                     }
                 }

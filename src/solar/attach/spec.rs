@@ -3,6 +3,7 @@
 
 use crate::pipeline::Transform;
 use crate::solar::SPHERE_RADIUS;
+use crate::solar::attach::landmark::Landmark;
 use crate::solar::attach::props::PropLayers;
 use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::card_ring::CardRing;
@@ -23,6 +24,9 @@ pub enum AttachmentKind {
     /// The clover's waterfalls (`waterfalls::WaterfallSet`, at most one
     /// set per host).
     Waterfalls,
+    /// A large model on the surface (`landmark::Landmark`, at most one per
+    /// host).
+    Landmark,
 }
 
 /// One attachment and the id of the body it rides on.
@@ -39,6 +43,7 @@ pub enum Attachment<'a> {
     CardRing(&'a CardRing),
     Props(&'a PropLayers),
     Waterfalls(&'a WaterfallSet),
+    Landmark(&'a Landmark),
 }
 
 impl Attachment<'_> {
@@ -51,6 +56,7 @@ impl Attachment<'_> {
             // Baked on the unit-scale planet of radius `SPHERE_RADIUS`.
             Self::Props(props) => (props.reach() / SPHERE_RADIUS).max(1.0),
             Self::Waterfalls(falls) => (falls.reach() / SPHERE_RADIUS).max(1.0),
+            Self::Landmark(l) => (l.reach / SPHERE_RADIUS).max(1.0),
         }
     }
 }
