@@ -4,11 +4,13 @@
 //! nearest one.
 
 use crate::geometry::{Mesh, Vertex};
-use crate::solar::attach::prop_meshes::pyramid_mesh;
+use crate::pipeline::Transform;
+use crate::solar::attach::prop_meshes::{heart_disc_mesh, pyramid_mesh};
 use crate::solar::attach::props::{PropKind, PropPose, frame_matrix};
 use crate::solar::planet::HeightField;
 use crate::solar::planet::field::{NORMAL_EPS, tangent};
-use raylib::math::Vector3;
+use crate::solar::shapes::frame_matrix as axes_matrix;
+use raylib::math::{Matrix, Vector3};
 use std::sync::Arc;
 
 /// Height of the Hearts pyramid, planet radii.
@@ -20,6 +22,14 @@ pub const PYRAMID_LEVELS: u8 = 5;
 const SINK: f32 = 0.06;
 /// Farthest a landmark moves to find a plateau, radians.
 const SEARCH: f32 = 0.6;
+/// Width of the heart disc, planet radii.
+pub const DISC_SIZE: f32 = 0.22;
+/// Height of the disc's center over the pyramid's top, planet radii.
+pub const DISC_LIFT: f32 = 0.17;
+/// Turn of the disc about the surface normal, radians per second.
+pub const DISC_SPIN: f32 = 0.8;
+/// Outline points of the disc (4 * 20 + 80 = 160 triangles).
+const DISC_SAMPLES: u32 = 20;
 
 #[derive(Debug, Clone)]
 pub struct Landmark {
@@ -35,9 +45,17 @@ pub struct Landmark {
     pub top_local: Vector3,
     /// Farthest vertex from the host center, the host's mesh units.
     pub reach: f32,
-    /// Bounding sphere of the structure, the host's mesh space.
+    /// Bounding sphere of the structure and its disc, the host's mesh
+    /// space.
     pub bound_center: Vector3,
     pub bound_radius: f32,
+    /// The heart disc in its own frame (`heart_disc_mesh`), drawn with
+    /// `disc_matrix`.
+    pub disc: Arc<Vec<Vertex>>,
+    /// Center of the disc, the host's mesh space.
+    pub disc_center: Vector3,
+    /// Disc width, the host's mesh units.
+    pub disc_size: f32,
 }
 
 /// The plateau point nearest to the unit `dir` (itself when it is one):
@@ -85,27 +103,70 @@ impl Landmark {
         };
         let (body, edges) = pyramid_mesh(PYRAMID_LEVELS);
         let (mesh, edges) = (place(&body), place(&edges));
+        let disc_size = DISC_SIZE * radius;
+        let top_local = map(Vector3::new(0.0, 1.0 - SINK, 0.0));
+        let disc_center = top_local + up * (DISC_LIFT * radius);
+        // The disc turns: its whole sweep counts (a sphere of 0.75 of its
+        // width holds the heart and the halo).
+        let sweep = 0.75 * disc_size;
         let reach = mesh
             .iter()
             .chain(&edges)
             .map(|v| v.position.length())
-            .fold(0.0, f32::max);
+            .fold(disc_center.length() + sweep, f32::max);
         let bound_center =
             mesh.iter().fold(Vector3::zero(), |a, v| a + v.position) / mesh.len().max(1) as f32;
         let bound_radius = mesh
             .iter()
             .chain(&edges)
             .map(|v| (v.position - bound_center).length())
-            .fold(0.0, f32::max);
+            .fold((disc_center - bound_center).length() + sweep, f32::max);
+        let disc = heart_disc_mesh(DISC_SAMPLES)?.expand_vertices(Vector3::one());
         Ok(Self {
             dir,
             up,
             mesh: Arc::new(mesh),
             edges: Arc::new(edges),
-            top_local: map(Vector3::new(0.0, 1.0 - SINK, 0.0)),
+            top_local,
             reach,
             bound_center,
             bound_radius,
+            disc: Arc::new(disc),
+            disc_center,
+            disc_size,
         })
+    }
+
+    /// World matrix of the disc on a host placed with `host` at `time`:
+    /// upright over the pyramid's top along the surface normal, turning
+    /// `DISC_SPIN` rad/s about it, and turning with the host.
+    pub fn disc_matrix(&self, host: &Transform, time: f32) -> Matrix {
+        let up = host.to_world_dir(self.up).normalized();
+        let x0 = host.to_world_dir(tangent(self.up)).normalized();
+        let z0 = x0.cross(up);
+        let (s, c) = (DISC_SPIN * time)
+            .rem_euclid(std::f32::consts::TAU)
+            .sin_cos();
+        let x = x0 * c + z0 * s;
+        let z = x.cross(up);
+        let k = self.disc_size * host.scale;
+        let origin = host.position + host.to_world_dir(self.disc_center) * host.scale;
+        axes_matrix(x * k, up * k, z * k, origin)
+    }
+
+    /// The light direction `world_light` in the disc's own frame.
+    pub fn disc_light(&self, host: &Transform, time: f32, world_light: Vector3) -> Vector3 {
+        let m = self.disc_matrix(host, time);
+        let axes = [
+            Vector3::new(m.m0, m.m1, m.m2),
+            Vector3::new(m.m4, m.m5, m.m6),
+            Vector3::new(m.m8, m.m9, m.m10),
+        ];
+        Vector3::new(
+            axes[0].dot(world_light),
+            axes[1].dot(world_light),
+            axes[2].dot(world_light),
+        )
+        .normalized()
     }
 }

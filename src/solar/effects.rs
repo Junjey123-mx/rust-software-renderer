@@ -24,6 +24,9 @@ use crate::solar::royal_crown::{CrownPart, CrownShader};
 use crate::solar::thrusters::{FlameShader, NOZZLES, flame_length, flame_matrix};
 use raylib::math::Vector3;
 
+/// Color of the Hearts identity disc.
+pub const HEART_DISC: Vector3 = Vector3::new(1.0, 0.08, 0.3);
+
 /// What a draw is shaded with.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EffectShader {
@@ -314,6 +317,20 @@ impl SolarScene {
                             }),
                         });
                     }
+                    // The heart disc turning over the top.
+                    let time = self.clock.time;
+                    draws.push(EffectDraw {
+                        mesh: &landmark.disc,
+                        model: Uniforms {
+                            model_matrix: landmark.disc_matrix(&t, time),
+                        },
+                        options: solid_options(threads),
+                        shader: EffectShader::Prop(PropShader {
+                            color: HEART_DISC,
+                            light: landmark.disc_light(&t, time, self.light_at(t.position)),
+                            glow: 0.55,
+                        }),
+                    });
                 }
                 AttachmentKind::CardRing => {
                     let Some(ring) = &self.cards else { continue };

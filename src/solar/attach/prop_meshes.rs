@@ -201,3 +201,92 @@ fn stepped(tiers: &[(f32, f32, f32)]) -> (Mesh, Mesh) {
     }
     (merge(&blocks), merge(&strips))
 }
+
+/// Triangle `a b c` wound to face `outward`, appended to `indices`.
+fn facing(vertices: &[Vector3], indices: &mut Vec<usize>, [a, b, c]: [usize; 3], outward: Vector3) {
+    let normal = (vertices[b] - vertices[a]).cross(vertices[c] - vertices[a]);
+    if normal.dot(outward) >= 0.0 {
+        indices.extend([a, b, c]);
+    } else {
+        indices.extend([a, c, b]);
+    }
+}
+
+/// Outline of the heart disc: `x = 16 sin^3 t`, `y = 13 cos t - 5 cos 2t -
+/// 2 cos 3t - cos 4t`, scaled to 1 unit wide and centered on its middle.
+pub fn heart_outline(samples: usize) -> Vec<(f32, f32)> {
+    (0..samples)
+        .map(|k| {
+            let t = k as f32 / samples as f32 * std::f32::consts::TAU;
+            let x = 16.0 * t.sin().powi(3);
+            let y =
+                13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
+            (x / 32.0, (y + 2.5) / 32.0)
+        })
+        .collect()
+}
+
+/// The Hearts planet's identity disc: the parametric heart (`samples`
+/// points of its outline, at least 8) extruded 0.18 units deep with both
+/// faces fanned from the centroid, and a thin halo ring around it (a torus
+/// of 10 x 4 quads). Centered at the origin, the heart in the XY plane, +Y
+/// up, about one unit wide: 4 * samples + 80 triangles.
+pub fn heart_disc_mesh(samples: u32) -> Result<Mesh, String> {
+    if samples < 8 {
+        return Err(format!("the heart needs at least 8 samples, got {samples}"));
+    }
+    let n = samples as usize;
+    let outline = heart_outline(n);
+    let half = 0.09;
+    let mut vertices: Vec<Vector3> = Vec::with_capacity(2 * n + 2 + 40);
+    for z in [half, -half] {
+        vertices.extend(outline.iter().map(|&(x, y)| Vector3::new(x, y, z)));
+    }
+    let (cx, cy) = outline
+        .iter()
+        .fold((0.0, 0.0), |(a, b), &(x, y)| (a + x, b + y));
+    let (cx, cy) = (cx / n as f32, cy / n as f32);
+    vertices.push(Vector3::new(cx, cy, half));
+    vertices.push(Vector3::new(cx, cy, -half));
+    let (front, back) = (2 * n, 2 * n + 1);
+    let mut indices = Vec::new();
+    let z = Vector3::new(0.0, 0.0, 1.0);
+    for k in 0..n {
+        let k1 = (k + 1) % n;
+        facing(&vertices, &mut indices, [front, k, k1], z);
+        facing(&vertices, &mut indices, [back, n + k, n + k1], -z);
+        // The side quad faces away from the centroid.
+        let mid = (vertices[k] + vertices[k1]) * 0.5;
+        let out = Vector3::new(mid.x - cx, mid.y - cy, 0.0);
+        facing(&vertices, &mut indices, [k, k1, n + k1], out);
+        facing(&vertices, &mut indices, [k, n + k1, n + k], out);
+    }
+    // Halo: a torus around the heart, in its plane.
+    let (major, minor, segments, sides) = (0.66, 0.025, 10, 4);
+    let base = vertices.len();
+    for i in 0..segments {
+        let a = i as f32 / segments as f32 * std::f32::consts::TAU;
+        let center = Vector3::new(cx + major * a.cos(), cy + major * a.sin(), 0.0);
+        let radial = Vector3::new(a.cos(), a.sin(), 0.0);
+        for j in 0..sides {
+            let b = j as f32 / sides as f32 * std::f32::consts::TAU;
+            vertices.push(center + (radial * b.cos() + z * b.sin()) * minor);
+        }
+    }
+    for i in 0..segments {
+        for j in 0..sides {
+            let at = |i: usize, j: usize| base + (i % segments) * sides + j % sides;
+            let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+            let ring = Vector3::new(cx, cy, 0.0);
+            let center = (vertices[a] + vertices[b] + vertices[c] + vertices[d]) * 0.25;
+            let tube = {
+                let ang = (i as f32 + 0.5) / segments as f32 * std::f32::consts::TAU;
+                ring + Vector3::new(ang.cos(), ang.sin(), 0.0) * major
+            };
+            let out = center - tube;
+            facing(&vertices, &mut indices, [a, b, c], out);
+            facing(&vertices, &mut indices, [a, c, d], out);
+        }
+    }
+    Ok(Mesh { vertices, indices })
+}
