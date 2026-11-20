@@ -4,6 +4,7 @@
 pub mod prop_meshes;
 pub mod props;
 pub mod spec;
+pub mod waterfalls;
 
 pub use spec::{Attachment, AttachmentKind, AttachmentSpec, HostPose, bind_attachments};
 
