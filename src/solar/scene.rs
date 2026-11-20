@@ -14,6 +14,7 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
+use crate::solar::attach::props::PropLayers;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::card_ring::CardRing;
@@ -122,6 +123,9 @@ pub struct SolarScene {
     pub crown: Option<RoyalCrown>,
     /// Ring of diamond cards around House of Cards (`None`: no ring).
     pub cards: Option<CardRing>,
+    /// Surface props baked into sectors (`None`: none), drawn on the host
+    /// an `AttachmentKind::Props` names.
+    pub props: Option<PropLayers>,
     /// What rides on which body, by id, in draw order: the royal crown on
     /// the star and the card ring around House of Cards. The geometry
     /// itself lives in `crown` and `cards`; an attachment without its
@@ -197,6 +201,7 @@ impl SolarScene {
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
+            props: None,
             attachments: vec![
                 AttachmentSpec {
                     kind: AttachmentKind::RoyalCrown,
@@ -369,6 +374,10 @@ impl SolarScene {
                 let extent = match a.kind {
                     AttachmentKind::RoyalCrown => self.crown.as_ref().map(|c| c.extent),
                     AttachmentKind::CardRing => self.cards.as_ref().map(CardRing::extent),
+                    AttachmentKind::Props => self
+                        .props
+                        .as_ref()
+                        .map(|p| crate::solar::attach::Attachment::Props(p).extent()),
                 };
                 reach = reach.max(extent.unwrap_or(1.0));
             }
@@ -858,7 +867,7 @@ impl SolarScene {
     }
 
     /// Projected radius of body `index`, in pixels.
-    fn radius_px(&self, index: usize, projection: &ViewProjection, height: u32) -> f32 {
+    pub(crate) fn radius_px(&self, index: usize, projection: &ViewProjection, height: u32) -> f32 {
         projected_radius_px(
             projection,
             self.bodies[index].transform.position,

@@ -13,9 +13,12 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
+use crate::shading::lighting::lambert;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
+use crate::solar::attach::props::{PROP_MIN_PX, SECTOR_FACING};
 use crate::solar::card_ring::CardShader;
+use crate::solar::instance::eye_towards;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
 use crate::solar::thrusters::{FlameShader, NOZZLES, flame_length, flame_matrix};
 use raylib::math::Vector3;
@@ -26,6 +29,21 @@ pub enum EffectShader {
     Crown(CrownShader),
     Card(CardShader),
     Flame(FlameShader),
+    Prop(PropShader),
+}
+
+/// Flat-shaded surface prop: its part's color lit by the star, the light
+/// given in the host's object space (where the baked meshes live).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PropShader {
+    pub color: Vector3,
+    pub light: Vector3,
+}
+
+impl PropShader {
+    pub fn shade(&self, face_normal: Vector3) -> Vector3 {
+        self.color * (0.06 + 0.94 * lambert(face_normal, self.light))
+    }
 }
 
 impl EffectShader {
@@ -34,6 +52,7 @@ impl EffectShader {
             Self::Crown(c) => c.shade(s.object_position, s.face_normal, view.view_direction),
             Self::Card(c) => c.shade(s.object_position, s.face_normal),
             Self::Flame(f) => f.shade(s.object_position, s.face_normal, view.view_direction),
+            Self::Prop(p) => p.shade(s.face_normal),
         }
     }
 }
@@ -112,6 +131,45 @@ impl SolarScene {
                                     transform,
                                     self.clock.time,
                                 )),
+                            });
+                        }
+                    }
+                }
+                AttachmentKind::Props => {
+                    let Some(props) = &self.props else { continue };
+                    let projection = self.projection();
+                    // The whole layer hides while the planet is small.
+                    if self.radius_px(host, &projection, height) < PROP_MIN_PX {
+                        continue;
+                    }
+                    let t = self.bodies[host].transform;
+                    let model = Uniforms {
+                        model_matrix: t.matrix(),
+                    };
+                    let light = t.to_object_dir(self.light_at(t.position)).normalized();
+                    for layer in &props.layers {
+                        for sector in &layer.sectors {
+                            let center = t.position + t.to_world_dir(sector.bound_center) * t.scale;
+                            let normal = t.to_world_dir(sector.normal);
+                            // Sectors on the far hemisphere, then out of view.
+                            if normal.dot(eye_towards(&projection, center)) < SECTOR_FACING
+                                || !self.sphere_in_view(
+                                    center,
+                                    sector.bound_radius * t.scale,
+                                    width,
+                                    height,
+                                )
+                            {
+                                continue;
+                            }
+                            draws.push(EffectDraw {
+                                mesh: &sector.mesh,
+                                model,
+                                options: solid_options(threads),
+                                shader: EffectShader::Prop(PropShader {
+                                    color: layer.part.color(),
+                                    light,
+                                }),
                             });
                         }
                     }
