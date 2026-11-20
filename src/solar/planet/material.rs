@@ -12,6 +12,7 @@ use crate::solar::instance::{
 };
 use crate::solar::planet::clover::{CloverParams, PreparedClover};
 use crate::solar::planet::field::{HeightField, NORMAL_EPS};
+use crate::solar::planet::hearts::{NeonGridParams, PreparedHearts, grid_fade};
 use raylib::math::Vector3;
 
 /// Material of one solar body.
@@ -23,6 +24,9 @@ pub enum PlanetMaterial {
     /// The clover planet: its own shader over its own height field (land
     /// by height and slope, a sea with Fresnel and a star glint).
     Clover(CloverParams),
+    /// The Hearts planet: dark terraces under an emissive neon grid with
+    /// pulses and a heart at each crossing.
+    Hearts(NeonGridParams),
 }
 
 /// A material with its per-frame values computed, ready for the fragments.
@@ -37,6 +41,7 @@ pub enum PreparedPlanet {
         bump: f32,
     },
     Clover(PreparedClover),
+    Hearts(PreparedHearts),
 }
 
 /// Object-space shading normal of a relief at `object_position`: the
@@ -82,6 +87,17 @@ impl PlanetMaterial {
                     time: frame.time,
                 })
             }
+            Self::Hearts(params) => {
+                let transform = instance.transform;
+                let eye = eye_towards(&frame.projection, transform.position);
+                let u = instance_uniforms(&transform, frame.time, frame.light_world, eye);
+                PreparedPlanet::Hearts(PreparedHearts {
+                    field: params.field(),
+                    params: *params,
+                    light: u.light_direction,
+                    time: frame.time,
+                })
+            }
         }
     }
 
@@ -91,6 +107,11 @@ impl PlanetMaterial {
         match self {
             Self::Lab6(material) => Self::Lab6(adapted_material(material, quality, radius_px)),
             Self::Clover(_) => *self,
+            // The grid fades out while the planet is small on screen.
+            Self::Hearts(p) => Self::Hearts(NeonGridParams {
+                detail: p.detail * grid_fade(radius_px),
+                ..*p
+            }),
         }
     }
 }
@@ -114,6 +135,7 @@ impl PreparedPlanet {
                 let eye = transform.to_object_dir(v.view_direction).normalized();
                 clover.shade(s.object_position, eye)
             }
+            Self::Hearts(hearts) => hearts.shade(s.object_position),
         }
     }
 }

@@ -280,6 +280,8 @@ macro_rules! planet_params {
     };
 }
 
+pub(crate) use planet_params;
+
 planet_params! {
     CloverParams {
         seed: 7.0, 0.0, 9999.0, "seed of the clover centers, turns and heights (rounded)";

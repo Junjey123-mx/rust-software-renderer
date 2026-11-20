@@ -3,10 +3,15 @@
 //! ends in a short smooth ramp, so the normals stay finite. Heights are in
 //! planet radii.
 
-use crate::shading::math::smoothstep;
+use crate::celestial::{ParamSpec, check_range, find_spec};
+use crate::shading::lighting::lambert;
+use crate::shading::math::{hex, mix3, smoothstep};
 use crate::shading::noise::fbm;
-use crate::solar::planet::field::tangent;
+use crate::shading::sdf::{P2, circle, triangle};
+use crate::solar::planet::clover::planet_params;
+use crate::solar::planet::field::{HeightField, NORMAL_EPS, tangent};
 use raylib::math::Vector3;
+use std::f32::consts::{PI, TAU};
 
 /// Height of the highest terrace, radii.
 pub const HEARTS_HEIGHT: f32 = 0.06;
@@ -105,5 +110,120 @@ impl HeartsField {
         .fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
             (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3)
         })
+    }
+}
+
+planet_params! {
+    NeonGridParams {
+        seed: 11.0, 0.0, 9999.0, "seed of the terraces (rounded)";
+        bump: 1.0, 0.0, 1.0, "share of the terrace normal in the lighting";
+        line_width: 0.006, 0.0, 0.05, "width of the grid lines, planet radii";
+        cells: 24.0, 4.0, 96.0, "grid cells around the equator";
+        pulse_speed: 0.5, 0.0, 4.0, "pulses per second running along the lines";
+        heart_size: 0.18, 0.0, 0.45, "size of the heart at each crossing, cells";
+        glitch: 0.6, 0.0, 1.0, "strength of the glitch bands (0 = off)";
+        glitch_rate: 0.08, 0.0, 1.0, "share of latitude bands glitching at a time";
+        detail: 1.0, 0.0, 1.0, "share of the grid drawn (lowered with distance when drawn)";
+    }
+}
+
+impl NeonGridParams {
+    /// The terraces of this material's seed.
+    pub fn field(&self) -> HeartsField {
+        HeartsField::new(self.seed.round().max(0.0) as u32)
+    }
+}
+
+/// Projected radius (pixels) below which the grid is gone, and from which
+/// it is whole: thinner lines than a pixel would shimmer (moire).
+pub const GRID_FADE_PX: (f32, f32) = (40.0, 160.0);
+
+/// Share of the grid drawn at `radius_px` pixels of projected radius.
+pub fn grid_fade(radius_px: f32) -> f32 {
+    if radius_px.is_nan() {
+        return 0.0;
+    }
+    smoothstep(GRID_FADE_PX.0, GRID_FADE_PX.1, radius_px)
+}
+
+/// Signed distance to a heart of `size` (negative inside): two circles
+/// side by side over a downward triangle, the tip at `(0, -size)`.
+pub fn heart_sdf(p: P2, size: f32) -> f32 {
+    let s = size;
+    let lobes =
+        circle(p, (-0.5 * s, 0.25 * s), 0.5 * s).min(circle(p, (0.5 * s, 0.25 * s), 0.5 * s));
+    lobes.min(triangle(
+        p,
+        (-0.95 * s, 0.05 * s),
+        (0.95 * s, 0.05 * s),
+        (0.0, -s),
+    ))
+}
+
+const CANYON: Vector3 = hex(0x0B0414);
+const PLATEAU: Vector3 = hex(0x2A0F3D);
+const LINE: Vector3 = hex(0xFF2E63);
+const PULSE: Vector3 = hex(0xFFD1E0);
+const HEART: Vector3 = hex(0xFF0A54);
+const AMBIENT: f32 = 0.08;
+
+/// The neon grid over the terraces, with its per-frame values.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreparedHearts {
+    pub field: HeartsField,
+    pub params: NeonGridParams,
+    /// Unit direction towards the star, object space.
+    pub light: Vector3,
+    /// Scene clock (frozen while paused).
+    pub time: f32,
+}
+
+/// Emissive parts of the grid at the unit `n`: the line, the pulse that
+/// runs along it and the heart at the crossing, each in `[0, 1]`.
+pub fn grid_pattern(n: Vector3, t: f32, p: &NeonGridParams) -> (f32, f32, f32) {
+    let width = p.line_width;
+    if p.detail.is_nan() || p.detail <= 0.0 || width.is_nan() || width <= 0.0 {
+        return (0.0, 0.0, 0.0);
+    }
+    let cells = p.cells.max(1.0);
+    let lat = n.y.clamp(-1.0, 1.0).asin();
+    let lon = n.z.atan2(n.x);
+    let (u, v) = (lon / TAU * cells, lat / PI * (cells / 2.0));
+    let (fu, fv) = (
+        (u + 0.5).rem_euclid(1.0) - 0.5,
+        (v + 0.5).rem_euclid(1.0) - 0.5,
+    );
+    // Distances to the nearest meridian and parallel, radians on the
+    // sphere (planet radii).
+    let cell = TAU / cells;
+    let (du, dv) = (fu.abs() * cell * lat.cos(), fv.abs() * cell);
+    let line = (1.0 - smoothstep(0.5 * width, width, du.min(dv))) * p.detail;
+    // A pulse every four cells, sliding along the nearest line; the time
+    // term is wrapped first so a long session keeps its precision.
+    let along = if du < dv { v } else { u };
+    let shift = (p.pulse_speed * t * 0.25).rem_euclid(1.0);
+    let pulse = smoothstep(0.85, 1.0, (along * 0.25 - shift).rem_euclid(1.0)) * line;
+    let heart = (1.0 - smoothstep(-0.02, 0.0, heart_sdf((fu, fv), p.heart_size))) * p.detail;
+    (line, pulse, heart)
+}
+
+impl PreparedHearts {
+    /// Color at `object_position`: the terraces lit by the star through
+    /// their own normal (canyons darker than plateaus), plus the emissive
+    /// grid, pulses and hearts, which glow on the night side too.
+    pub fn shade(&self, object_position: Vector3) -> Vector3 {
+        let n = object_position.normalized();
+        let field = HeightField::Hearts(self.field);
+        let terrace = field.normal(n, NORMAL_EPS);
+        let normal = (n + (terrace - n) * self.params.bump.clamp(0.0, 1.0)).normalized();
+        let lit = AMBIENT + (1.0 - AMBIENT) * lambert(normal, self.light);
+        let level = if self.field.height > 0.0 {
+            self.field.height(n) / self.field.height
+        } else {
+            0.0
+        };
+        let base = mix3(CANYON, PLATEAU, level) * lit;
+        let (line, pulse, heart) = grid_pattern(n, self.time, &self.params);
+        base + LINE * line + PULSE * pulse + HEART * heart
     }
 }

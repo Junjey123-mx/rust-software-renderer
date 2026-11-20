@@ -846,7 +846,9 @@ impl SolarScene {
                 ..shared
             };
             let prepared = match (body.surface, self.relief_of(i)) {
-                (Some(surface), _) => surface.prepare(&drawn, &frame),
+                (Some(surface), _) => surface
+                    .adapted(self.quality, self.radius_px(i, &shared.projection, h))
+                    .prepare(&drawn, &frame),
                 (None, Some(r)) => PreparedPlanet::Relief {
                     base: prepare_instance(&drawn, &frame),
                     field: r.field,
