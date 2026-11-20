@@ -18,9 +18,12 @@ use crate::solar::SPHERE_RADIUS;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
 use crate::solar::attach::props::{PROP_MIN_PX, PropLayers, PropPart, beyond_horizon};
+use crate::solar::attach::traffic::{NEON_BODY, NEON_EDGE, NEON_FRESNEL, NeonShader};
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
+use crate::solar::instance::{eye_towards, projected_radius_px};
 use crate::solar::royal_crown::{CrownPart, CrownShader};
+use crate::solar::ship::ship_options;
 use crate::solar::thrusters::{FlameShader, NOZZLES, flame_length, flame_matrix};
 use raylib::math::Vector3;
 
@@ -35,6 +38,7 @@ pub enum EffectShader {
     Flame(FlameShader),
     Prop(PropShader),
     Waterfall(WaterfallShader),
+    Neon(NeonShader),
 }
 
 /// Flat-shaded surface prop: its part's color lit by the star, the light
@@ -66,6 +70,7 @@ impl EffectShader {
             Self::Flame(f) => f.shade(s.object_position, s.face_normal, view.view_direction),
             Self::Prop(p) => p.shade(s.face_normal),
             Self::Waterfall(w) => w.shade(s.object_position, s.face_normal),
+            Self::Neon(n) => n.shade(s.face_normal),
         }
     }
 }
@@ -243,6 +248,46 @@ impl SolarScene {
                 AttachmentKind::Props => {
                     let Some(props) = &self.props else { continue };
                     self.prop_layer_draws(&mut draws, host, props, width, height, threads);
+                }
+                AttachmentKind::Traffic => {
+                    let Some(traffic) = &self.traffic else {
+                        continue;
+                    };
+                    let projection = self.projection();
+                    let t = self.bodies[host].transform;
+                    for (i, (_, ship)) in traffic.ships.iter().enumerate() {
+                        let (center, forward, up) = traffic.world_pose(i, self.clock.time, &t);
+                        let r = ship.radius();
+                        let local = t.to_object_dir(center - t.position) / t.scale;
+                        // One test per ship: past the horizon, then out of
+                        // view.
+                        if self.patch_hidden(host, &projection, local, r / t.scale)
+                            || !self.sphere_in_view(center, r, width, height)
+                        {
+                            continue;
+                        }
+                        let px = projected_radius_px(&projection, center, r, height);
+                        // Object axes: +X right, +Y up, +Z back (the nose
+                        // is -Z).
+                        let right = forward.cross(up).normalized();
+                        let to_ship = |v: Vector3| {
+                            Vector3::new(v.dot(right), v.dot(up), -v.dot(forward)).normalized()
+                        };
+                        draws.push(EffectDraw {
+                            mesh: ship.lod(px),
+                            model: Uniforms {
+                                model_matrix: ship.matrix(center, forward, up),
+                            },
+                            options: ship_options(threads),
+                            shader: EffectShader::Neon(NeonShader {
+                                body: NEON_BODY,
+                                edge: NEON_EDGE,
+                                light: to_ship(self.light_at(center)),
+                                view: to_ship(eye_towards(&projection, center)),
+                                fresnel: NEON_FRESNEL,
+                            }),
+                        });
+                    }
                 }
                 AttachmentKind::City => {
                     let Some(city) = &self.city else { continue };

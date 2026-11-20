@@ -133,18 +133,19 @@ fn scaled_hash(id: &str) -> u64 {
 /// the clover and House of Cards: C (the orbit view shows it), J (it rises
 /// behind Crimson Entrance) and E (two pixels of its heart disc between
 /// the ship and the horizon) change; the layout keeps House at 40, so the
-/// rest do not.
+/// rest do not. Recaptured on C65, which adds the neon ships over Hearts:
+/// C and J change (ships in view), the rest do not.
 const P3_SCALED_A_J: [(&str, u64); 10] = [
     ("A", 0x1dbb86321bfc4240),
     ("B", 0xe59e2a67ca2766b7),
-    ("C", 0x77ed18d3686df0c9),
+    ("C", 0xf7c572f4dd37d0f4),
     ("D", 0x6f0809c2c61bdadb),
     ("E", 0xcf231405f64870a6),
     ("F", 0xbad58159c18ffe26),
     ("G", 0x833fb13d759a35d5),
     ("H", 0x6f0809c2c61bdadb),
     ("I", 0x0150a9073accf154),
-    ("J", 0x81cf8bda59e7fc53),
+    ("J", 0xfa09572be578a506),
 ];
 
 /// Clover planet scenarios of the scaled benchmark, captured on C49. C52
@@ -158,7 +159,8 @@ const P3_CLOVER_K: [(&str, u64); 3] = [
 
 /// Hearts planet scenarios of the scaled benchmark, captured on C61: the
 /// pyramid and the city up close (M) and the planet 12 radii away (M2).
-const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0x120445edf010d9fc), ("M2", 0x11743d10843778b2)];
+/// Recaptured on C65: both show the neon ships now.
+const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0x6401a3c8bcc7d5df), ("M2", 0x13e2c975371f51c9)];
 
 #[test]
 fn p3_scaled_a_j_match() {

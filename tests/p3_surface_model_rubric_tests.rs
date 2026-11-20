@@ -258,7 +258,9 @@ fn crown_and_cards_not_counted() {
             AttachmentKind::Props | AttachmentKind::City | AttachmentKind::Landmark => {
                 assert!(s.bodies[host].orbit.is_some() && s.relief_of(host).is_some());
             }
-            AttachmentKind::Waterfalls => {}
+            // Water and the ships flying over Hearts (C65) are not
+            // models on the ground.
+            AttachmentKind::Waterfalls | AttachmentKind::Traffic => {}
         }
     }
     assert!(s.bodies[0].orbit.is_none());

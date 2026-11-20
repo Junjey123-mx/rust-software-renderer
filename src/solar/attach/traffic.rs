@@ -1,17 +1,38 @@
 //! Neon traffic of the Hearts planet. The ships reuse the player's
 //! spacecraft mesh (the same `Arc`, never a copy) and switch to a
-//! procedural dart under `DART_PX`.
+//! procedural dart under `DART_PX`. They fly seeded great circles
+//! (`path::Path`) in the host's frame, so they orbit and turn with it.
+//! They are scenery: the player's ship neither collides with them nor
+//! feels them.
 
 use crate::geometry::{Mesh, Vertex};
-use crate::solar::SolarMeshes;
+use crate::pipeline::Transform;
+use crate::shading::math::hex;
+use crate::shading::noise::hash3;
+use crate::solar::attach::path::Path;
+use crate::solar::planet::HeightField;
 use crate::solar::ship::{MESH_CENTER, MESH_RADIUS, ShipState};
+use crate::solar::{SPHERE_RADIUS, SolarMeshes};
 use raylib::math::{Matrix, Vector3};
+use std::f32::consts::TAU;
 use std::sync::Arc;
 
 /// Projected radius under which a neon ship is drawn as its dart, pixels.
 pub const DART_PX: f32 = 30.0;
 /// Size of a neon ship relative to the player's.
 pub const NEON_SIZE: f32 = 0.4;
+/// Altitude band of the ships over the ground, planet radii.
+pub const SHIP_ALTITUDE: (f32, f32) = (0.3, 0.6);
+/// Angular speed band of their routes, radians per second.
+const SHIP_SPEED: (f32, f32) = (0.12, 0.3);
+/// Most ships or lightcycles a planet takes.
+pub const MAX_TRAFFIC: u8 = 16;
+/// Hull and rim of the neon ships.
+pub const NEON_BODY: Vector3 = hex(0x1A0B2E);
+pub const NEON_EDGE: Vector3 = hex(0x22E6FF);
+pub const NEON_FRESNEL: f32 = 2.5;
+/// Seeded tries for a route clear of an excluded cone.
+const ROUTE_TRIES: u32 = 32;
 
 /// Pushes the triangle `[a, b, c]` wound to face away from `inside`.
 fn push_out(m: &mut Mesh, [a, b, c]: [Vector3; 3], inside: Vector3) {
@@ -151,5 +172,85 @@ impl NeonShader {
             .clamp(0.0, 1.0)
             .powf(self.fresnel.max(0.1));
         self.body * (0.15 + 0.85 * lit) + self.edge * rim
+    }
+}
+
+/// A value in `[0, 1)` from the seed and two indices.
+fn unit_hash(seed: u32, i: u32, j: i32) -> f32 {
+    (hash3(i as i32, j, 0x7aff, seed) >> 8) as f32 / (1u32 << 24) as f32
+}
+
+fn lerp((a, b): (f32, f32), x: f32) -> f32 {
+    a + (b - a) * x
+}
+
+/// The traffic of one planet: its ships on their routes over `field`.
+#[derive(Debug, Clone)]
+pub struct Traffic {
+    pub ships: Vec<(Path, NeonShip)>,
+    /// The host's ground (`Flat` for a sphere).
+    pub field: HeightField,
+    /// Farthest reach from the host center, host radii.
+    pub reach: f32,
+}
+
+impl Traffic {
+    /// `ships` neon ships of `ship_radius` world units over a host of
+    /// `host_radius`: great circles of seeded axes, speeds, directions,
+    /// phases and altitudes (`SHIP_ALTITUDE`). With `exclude` (a unit
+    /// direction of the host and an angle) a route that passes within the
+    /// angle of it is drawn again from the next hashes; one that never
+    /// clears it after `ROUTE_TRIES` is left out.
+    pub fn new(
+        meshes: &SolarMeshes,
+        field: HeightField,
+        ships: u8,
+        seed: u32,
+        ship_radius: f32,
+        host_radius: f32,
+        exclude: Option<(Vector3, f32)>,
+    ) -> Self {
+        let ships = (0..u32::from(ships.min(MAX_TRAFFIC)))
+            .filter_map(|i| {
+                (0..ROUTE_TRIES).find_map(|k| {
+                    let h = |j: i32| unit_hash(seed, i, j + 8 * k as i32);
+                    let z = 2.0 * h(0) - 1.0;
+                    let (s, c) = (TAU * h(1)).sin_cos();
+                    let r = (1.0 - z * z).max(0.0).sqrt();
+                    let axis = Vector3::new(r * c, z, r * s);
+                    // Angular distance from the cone's center to the
+                    // circle: |asin(axis . dir)|.
+                    if let Some((dir, angle)) = exclude
+                        && axis.dot(dir.normalized()).abs() < angle.sin()
+                    {
+                        return None;
+                    }
+                    let speed = lerp(SHIP_SPEED, h(2)) * if h(3) < 0.5 { -1.0 } else { 1.0 };
+                    let path = Path::GreatCircle {
+                        axis,
+                        speed,
+                        phase: TAU * h(4),
+                        altitude: lerp(SHIP_ALTITUDE, h(5)),
+                    };
+                    Some((path, NeonShip::new(meshes, ship_radius)))
+                })
+            })
+            .collect();
+        Self {
+            ships,
+            field,
+            reach: 1.0 + field.max_height() + SHIP_ALTITUDE.1 + ship_radius / host_radius,
+        }
+    }
+
+    /// Center, nose and top of ship `i` at time `t`, world space, on a host
+    /// placed by `host`.
+    pub fn world_pose(&self, i: usize, t: f32, host: &Transform) -> (Vector3, Vector3, Vector3) {
+        let p = self.ships[i].0.pose(t, &self.field, SPHERE_RADIUS);
+        (
+            host.position + host.to_world_dir(p.pos) * host.scale,
+            host.to_world_dir(p.tangent).normalized(),
+            host.to_world_dir(p.up).normalized(),
+        )
     }
 }

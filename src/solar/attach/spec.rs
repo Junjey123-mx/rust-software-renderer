@@ -30,6 +30,9 @@ pub enum AttachmentKind {
     /// The Hearts city: buildings baked into sectors like the props (at
     /// most one per host).
     City,
+    /// Neon ships over the host (`traffic::Traffic`, at most one per
+    /// host).
+    Traffic,
 }
 
 /// One attachment and the id of the body it rides on.

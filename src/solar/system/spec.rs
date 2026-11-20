@@ -26,9 +26,13 @@ pub enum GeometrySpec {
     Hearts,
 }
 
-/// Geometry attached to a body (rings, crowns, loops); none yet.
+/// Data of what moves over a planet besides its surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AttachmentSpec {}
+pub enum AttachmentSpec {
+    /// Neon ships flying over the planet (`attach::traffic`) and, from
+    /// C67, lightcycles on its ground; all routes from `seed`.
+    Traffic { ships: u8, cycles: u8, seed: u32 },
+}
 
 /// The central star.
 #[derive(Debug, Clone, PartialEq)]
@@ -287,6 +291,17 @@ impl SystemSpec {
             finite("planet.phase", p.phase)?;
             finite("planet.spin", p.spin)?;
             non_negative("planet.mu", p.mu)?;
+            for a in &p.attachments {
+                let AttachmentSpec::Traffic { ships, cycles, .. } = *a;
+                for (name, n) in [
+                    ("planet.traffic.ships", ships),
+                    ("planet.traffic.cycles", cycles),
+                ] {
+                    if n > crate::solar::attach::traffic::MAX_TRAFFIC {
+                        return Err(SpecError::OutOfRange(name, f32::from(n)));
+                    }
+                }
+            }
         }
         for p in &self.planets {
             if let Some(host) = p.host
@@ -344,7 +359,11 @@ impl SystemSpec {
                 mu: 0.0,
                 material: PlanetMaterial::Hearts(hearts),
                 geometry: GeometrySpec::Hearts,
-                attachments: Vec::new(),
+                attachments: vec![AttachmentSpec::Traffic {
+                    ships: 6,
+                    cycles: 4,
+                    seed: 11,
+                }],
                 host: None,
             },
         );

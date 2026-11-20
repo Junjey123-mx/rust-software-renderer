@@ -16,6 +16,7 @@ use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
 use crate::solar::attach::landmark::Landmark;
 use crate::solar::attach::props::{PROP_SIZE, PropLayers, ScatterRule, bake, scatter};
+use crate::solar::attach::traffic::{NEON_SIZE, Traffic};
 use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
@@ -36,10 +37,12 @@ use crate::solar::planet::hearts::NeonGridParams;
 use crate::solar::planet::{HeightField, PlanetMaterial, PreparedPlanet};
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
+use crate::solar::ship::MESH_RADIUS;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
 use crate::solar::system::layout::{FIFTH_SLOT_RESERVED_EXTENT, OrbitLayout};
+use crate::solar::system::spec::AttachmentSpec as PlanetAttachment;
 use crate::solar::system::{PlanetId, ScaleProfile, SpecError, SystemSpec};
 use crate::solar::thrusters::Thrusters;
 use crate::solar::{
@@ -57,6 +60,9 @@ pub const HEARTS_LANDMARK: Vector3 = Vector3::new(0.3, 0.8, 0.5);
 pub const CITY_CLEARANCE: f32 = 0.3;
 /// Size of a Hearts building, planet radii.
 pub const BUILDING_SIZE: f32 = 0.06;
+/// Angle around the pyramid's foot no ship route crosses, radians (the
+/// pyramid, its disc and a ship's length).
+pub const TRAFFIC_CLEARANCE: f32 = 0.4;
 
 /// Which projection the solar scene renders through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -150,6 +156,9 @@ pub struct SolarScene {
     /// The Hearts city baked into sectors (`None`: none), drawn on the host
     /// an `AttachmentKind::City` names.
     pub city: Option<PropLayers>,
+    /// Neon ships of the planet an `AttachmentKind::Traffic` names
+    /// (`None`: none).
+    pub traffic: Option<Traffic>,
     /// What rides on which body, by id, in draw order: the royal crown on
     /// the star and the card ring around House of Cards. The geometry
     /// itself lives in `crown` and `cards`; an attachment without its
@@ -229,6 +238,7 @@ impl SolarScene {
             waterfalls: None,
             landmark: None,
             city: None,
+            traffic: None,
             attachments: vec![
                 AttachmentSpec {
                     kind: AttachmentKind::RoyalCrown,
@@ -357,6 +367,14 @@ impl SolarScene {
                 _ => {}
             }
         }
+        for (k, p) in spec.planets.iter().enumerate() {
+            for a in &p.attachments {
+                let PlanetAttachment::Traffic { ships, seed, .. } = *a;
+                if ships > 0 {
+                    scene.add_traffic(k + 1, ships, seed);
+                }
+            }
+        }
         scene.update();
         Ok(scene)
     }
@@ -433,6 +451,36 @@ impl SolarScene {
         Ok(())
     }
 
+    /// `ships` neon ships over body `index`, `NEON_SIZE` of the spacecraft,
+    /// their routes clear of its landmark.
+    fn add_traffic(&mut self, index: usize, ships: u8, seed: u32) {
+        let host = self.bodies[index].id;
+        let field = self.relief_of(index).map_or(HeightField::Flat, |r| r.field);
+        let landmark_here = self
+            .attachments
+            .iter()
+            .any(|a| a.kind == AttachmentKind::Landmark && a.host == host);
+        let exclude = self
+            .landmark
+            .as_ref()
+            .filter(|_| landmark_here)
+            .map(|l| (l.dir, TRAFFIC_CLEARANCE));
+        let ship_radius = NEON_SIZE * MESH_RADIUS * SHIP_SCALE;
+        self.traffic = Some(Traffic::new(
+            &self.meshes,
+            field,
+            ships,
+            seed,
+            ship_radius,
+            self.radius_of(index),
+            exclude,
+        ));
+        self.attachments.push(AttachmentSpec {
+            kind: AttachmentKind::Traffic,
+            host,
+        });
+    }
+
     /// The Project 3 system (`SystemSpec::project3`) at the project scale.
     pub fn project3_system(
         meshes: SolarMeshes,
@@ -501,6 +549,7 @@ impl SolarScene {
                         .props
                         .as_ref()
                         .map(|p| crate::solar::attach::Attachment::Props(p).extent()),
+                    AttachmentKind::Traffic => self.traffic.as_ref().map(|t| t.reach),
                     AttachmentKind::City => self
                         .city
                         .as_ref()
