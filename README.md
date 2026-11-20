@@ -4,6 +4,7 @@ Proyecto del curso **Gráficas por Computadora** — **Universidad del Valle de 
 
 Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado), una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado y, sobre todo ello, el **Laboratorio 6: planetas y estrellas con shaders**: tres cuerpos celestes con fragment shaders procedurales sobre la misma esfera.
 
+- [Proyecto 3 — Space Travel (entrega provisional)](#proyecto-3--space-travel-entrega-provisional)
 - [Laboratorio 6 — Planetas y estrellas con shaders](#laboratorio-6--planetas-y-estrellas-con-shaders)
 - [Camino al Proyecto 3 — Sistema solar navegable](#camino-al-proyecto-3--sistema-solar-navegable)
 - [Vista interactiva (opcional)](#vista-interactiva-de-la-nave-mejora-opcional)
@@ -13,6 +14,59 @@ Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de mode
 - [Arquitectura](#arquitectura-implementada)
 - [Cómo ejecutar y verificar](#cómo-ejecutar-el-proyecto)
 - [Autor](#autor)
+
+---
+
+## Proyecto 3 — Space Travel (entrega provisional)
+
+Entrega del proyecto final sobre la escena `--scene solar` del [Camino al Proyecto 3](#camino-al-proyecto-3--sistema-solar-navegable): The King's Crown, Crimson Entrance y House of Cards con la nave propia, todo con el rasterizador en CPU de este repositorio. Esta sección es **provisional**: deja el proyecto entregable (requisitos R1–R5) antes de las mejoras opcionales de la rúbrica, que se documentarán aquí a medida que se cierren. El estado de cada requisito habilitante y su evidencia está en [docs/project3_delivery_contract.md](docs/project3_delivery_contract.md).
+
+▶ [Recorrido continuo](docs/videos/project3/00-provisional-tour.mp4) · 32 s, 800×600, 30 fps, **sin warp, sin cambio de cámara y sin cortes**:
+- vuelo espacial desde fuera del sistema, con una ráfaga de velocidad de la luz;
+- acercamiento continuo a Crimson Entrance;
+- vuelta completa alrededor del planeta en vuelo local (más de 2π; lo comprueba `tests/p3_recording_tests.rs`);
+- alejamiento con turbo.
+
+El clip sale del guion `--timeline tour` ([`src/solar/record.rs`](src/solar/record.rs)): la nave arranca en un punto calculado en forma cerrada para que una línea recta llegue junto a la posición futura del planeta en su órbita.
+
+### Cómo ejecutar
+
+```bash
+cargo run --release -- --scene solar                       # pilotar la nave (cámara Follow)
+cargo run --release -- --scene solar --camera orbit        # sistema completo desde la cámara orbital
+cargo run --release -- --scene solar --record 32 --fps 30 --timeline tour | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - recorrido.mp4
+docs/videos/project3/encode.sh                             # regenera el clip (tras cargo build --release)
+cargo test                                                 # todas las pruebas
+```
+
+| Entrada | Acción |
+|---|---|
+| Ratón, `W` `A` `S` `D` | Orientar la nave; avanzar, retroceder y desplazarse de lado |
+| `SPACE` (mantener) | Velocidad de la luz, solo en vuelo espacial |
+| `L` | Entrar o salir del vuelo local sobre el planeta más cercano |
+| `E` / `Q` | Alejarse / acercarse al planeta en vuelo local |
+| `F1` `F2` `F3` | Viaje rápido junto a cada cuerpo (no se usa en el video) |
+| `V` | Cámara Follow ↔ cámara Orbit |
+| `P` | Pausa de órbitas y materiales |
+| `TAB`, `ESC` | Capturar o liberar el ratón; `ESC` con el ratón libre sale |
+
+### Integrantes y contribuciones
+
+| Integrante | Carné | Contribuciones |
+|---|---|---|
+| Vernel Josue Hernández Cáceres | 24584 | PENDIENTE: contribuciones (las confirma el integrante) |
+
+### Recursos externos
+
+- **raylib 5.5** (crate `raylib`): solo ventana, teclado, ratón y presentación del framebuffer como textura. No se usa para dibujo 3D, cámaras, shaders de GPU ni física.
+- **`assets/models/sphere.obj`**: esfera del docente, sin modificar, compartida por los tres cuerpos.
+- **`assets/models/Laboratorio3.obj`**: la nave `NaveBimotor` del Laboratorio 3, exportada desde Blender, sin modificar.
+- **ffmpeg**: herramienta externa para codificar los videos; el programa no la usa.
+- No se cargan texturas, imágenes ni modelos de terceros y no hay otros *crates*.
+
+### Declaración de asistencia de IA
+
+Este proyecto se desarrolló con asistencia de inteligencia artificial: **Claude Code (Anthropic)** se usó como asistente de programación para proponer la arquitectura, escribir e iterar el código y las pruebas, ejecutar mediciones y redactar documentación, incluida esta sección. El autor dirigió el trabajo, fijó el alcance y las decisiones de diseño, y revisa el resultado antes de publicarlo; los commits se hacen con su identidad.
 
 ---
 
