@@ -256,6 +256,7 @@ pub fn step(
 
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
     let mut scene = build_project3_scene(cli, lab6)?;
+    scene.lod_live = true;
     let mut mode = solar_mode(cli, lab6);
     let options = ShadedOptions {
         threads: lab6.threads.unwrap_or(0),

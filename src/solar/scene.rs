@@ -8,6 +8,7 @@
 
 use crate::celestial::Body;
 use crate::celestial::PreparedShader;
+use crate::geometry::Vertex;
 use crate::pipeline::{
     DirectionalLight, OrbitView, PerspectiveCamera, RenderError, RenderScratch, ShadedOptions,
     ShadedStats, Transform, Uniforms, ViewProjection, render_shaded_with_scratch, sphere_visible,
@@ -27,7 +28,8 @@ use crate::solar::instance::{
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::physics::{CollisionShape, GravitySource};
-use crate::solar::planet::PlanetMaterial;
+use crate::solar::planet::geometry::{LodState, Relief, lod_for, lod_step};
+use crate::solar::planet::{HeightField, PlanetMaterial};
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
@@ -151,6 +153,14 @@ pub struct SolarScene {
     /// scaled system, off in the pre-project one (whose bodies have no
     /// `mu`).
     pub gravity: bool,
+    /// Relief geometry by body index (`set_relief`); a body without an
+    /// entry is drawn with the course sphere.
+    pub relief: Vec<Option<Relief>>,
+    /// Level of detail with hysteresis (`lod_step`, the live viewer); off,
+    /// each frame takes `lod_for` of its own sizes (recording, benchmark).
+    pub lod_live: bool,
+    /// Level of each body across frames when `lod_live` is on.
+    lod_states: RefCell<Vec<LodState>>,
     /// Center of the orbits (the star).
     pub center: Vector3,
     /// Unit direction towards the light, world space.
@@ -200,6 +210,9 @@ impl SolarScene {
             thrusters: Some(Thrusters::default()),
             scratch: RefCell::new(RenderScratch::new()),
             stats: RefCell::new(FrameStats::default()),
+            relief: Vec::new(),
+            lod_live: false,
+            lod_states: RefCell::new(Vec::new()),
             culling: true,
             quality: Quality::Full,
             clock: SimulationClock::default(),
@@ -745,7 +758,7 @@ impl SolarScene {
             let s = scratch.rasterize(
                 framebuffer,
                 &model,
-                &self.meshes.sphere,
+                self.body_mesh(i, &shared.projection, h),
                 &shared.projection,
                 mode,
                 options,
@@ -826,15 +839,67 @@ impl SolarScene {
     /// quality policy and its projected size.
     fn drawn_body(&self, index: usize, projection: &ViewProjection, height: u32) -> BodyInstance {
         let body = &self.bodies[index];
-        let radius_px = projected_radius_px(
-            projection,
-            body.transform.position,
-            self.radius_of(index),
-            height,
-        );
+        let radius_px = self.radius_px(index, projection, height);
         BodyInstance {
             material: adapted_material(&body.material, self.quality, radius_px),
             ..*body
+        }
+    }
+
+    /// Projected radius of body `index`, in pixels.
+    fn radius_px(&self, index: usize, projection: &ViewProjection, height: u32) -> f32 {
+        projected_radius_px(
+            projection,
+            self.bodies[index].transform.position,
+            self.radius_of(index),
+            height,
+        )
+    }
+
+    /// Gives body `index` the relief of `field`, built now (or shared from
+    /// the cache of `meshes`) at unit scale; `Flat` goes back to the sphere.
+    pub fn set_relief(&mut self, index: usize, field: HeightField) -> Result<(), String> {
+        if index >= self.bodies.len() {
+            return Err(format!("no body {index}"));
+        }
+        if self.relief.len() <= index {
+            self.relief.resize(index + 1, None);
+        }
+        self.relief[index] = match field {
+            HeightField::Flat => None,
+            _ => Some(Relief {
+                field,
+                lods: self.meshes.relief.get_or_build(SPHERE_RADIUS, &field)?,
+            }),
+        };
+        Ok(())
+    }
+
+    /// Relief of body `index`, if it has one.
+    pub fn relief_of(&self, index: usize) -> Option<&Relief> {
+        self.relief.get(index).and_then(Option::as_ref)
+    }
+
+    /// Level of detail of body `index` at `px` pixels: `None` for a sphere
+    /// body. With `lod_live` it moves that body's hysteresis state.
+    pub fn lod_level(&self, index: usize, px: f32) -> Option<u8> {
+        self.relief_of(index)?;
+        if !self.lod_live {
+            return Some(lod_for(px));
+        }
+        let mut states = self.lod_states.borrow_mut();
+        if states.len() < self.bodies.len() {
+            states.resize(self.bodies.len(), LodState::default());
+        }
+        Some(lod_step(&mut states[index], px))
+    }
+
+    /// Mesh of body `index` this frame: its relief level, or the sphere.
+    fn body_mesh(&self, index: usize, projection: &ViewProjection, height: u32) -> &[Vertex] {
+        let px = self.radius_px(index, projection, height);
+        match (self.relief_of(index), self.lod_level(index, px)) {
+            (Some(relief), Some(level)) => relief.mesh(level),
+            _ => &self.meshes.sphere,
         }
     }
 
@@ -920,7 +985,13 @@ impl SolarScene {
     /// Whether body `index` passes the view test.
     pub fn body_in_view(&self, index: usize, width: u32, height: u32) -> bool {
         let b = &self.bodies[index];
-        self.sphere_in_view(b.transform.position, self.radius_of(index), width, height)
+        let relief = self.relief_of(index).map_or(0.0, |r| r.field.max_height());
+        self.sphere_in_view(
+            b.transform.position,
+            self.radius_of(index) * (1.0 + relief),
+            width,
+            height,
+        )
     }
 
     /// The shaded-stage buffers of this scene, for draws in other modules.
@@ -964,7 +1035,7 @@ impl SolarScene {
                 let drawn = self.drawn_body(i, &shared.projection, h);
                 render_instance_scratch(
                     framebuffer,
-                    &self.meshes.sphere,
+                    self.body_mesh(i, &shared.projection, h),
                     &drawn,
                     &frame,
                     &mut scratch,

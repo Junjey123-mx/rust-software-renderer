@@ -94,3 +94,60 @@ impl GeometryCache {
             .sum()
     }
 }
+
+/// Relief of one body: its height field and its levels of detail.
+#[derive(Debug, Clone)]
+pub struct Relief {
+    pub field: HeightField,
+    pub lods: LodMeshes,
+}
+
+impl Relief {
+    /// Mesh of `level` (one of `LOD_LEVELS`; out of range is clamped).
+    pub fn mesh(&self, level: u8) -> &Arc<Vec<Vertex>> {
+        let i = level.clamp(LOD_LEVELS[0], LOD_LEVELS[3]) - LOD_LEVELS[0];
+        &self.lods[i as usize]
+    }
+}
+
+/// Projected radius in pixels from which levels 3, 4 and 5 are used...
+const LOD_ENTER_PX: [f32; 3] = [48.0, 140.0, 360.0];
+/// ...and below which they fall back to 2, 3 and 4.
+const LOD_EXIT_PX: [f32; 3] = [40.0, 120.0, 300.0];
+
+/// Level of detail of one body across frames (live viewer only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LodState {
+    pub level: u8,
+}
+
+impl Default for LodState {
+    fn default() -> Self {
+        Self {
+            level: LOD_LEVELS[0],
+        }
+    }
+}
+
+/// Level for a body `px` pixels in radius, without history: the level a
+/// fresh `LodState` climbs to. Deterministic, for recording and benchmarks.
+pub fn lod_for(px: f32) -> u8 {
+    lod_step(&mut LodState::default(), px)
+}
+
+/// Level for `px` with hysteresis: it rises at 48, 140 and 360 px and only
+/// falls below 40, 120 and 300 px, so a size that wavers around one bound
+/// keeps its level. A non-finite size counts as 0 px.
+pub fn lod_step(state: &mut LodState, px: f32) -> u8 {
+    let px = if px.is_finite() { px } else { 0.0 };
+    let (low, high) = (LOD_LEVELS[0], LOD_LEVELS[3]);
+    state.level = state.level.clamp(low, high);
+    let i = |level: u8| (level - low) as usize;
+    while state.level < high && px >= LOD_ENTER_PX[i(state.level)] {
+        state.level += 1;
+    }
+    while state.level > low && px < LOD_EXIT_PX[i(state.level) - 1] {
+        state.level -= 1;
+    }
+    state.level
+}
