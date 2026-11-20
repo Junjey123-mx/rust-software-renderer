@@ -22,6 +22,7 @@ pub type LodMeshes = Arc<[Arc<Vec<Vertex>>; 4]>;
 /// The icosphere of `level` with every direction `n` at
 /// `n * radius * field.surface_radius(n)`, in the pipeline's triangle list.
 pub fn relief_mesh(level: u8, radius: f32, field: &HeightField) -> Result<Vec<Vertex>, String> {
+    field.validate()?;
     Ok(to_mesh(&icosphere(level)?, |n| {
         radius * field.surface_radius(n)
     }))
@@ -51,6 +52,10 @@ impl GeometryKey {
             HeightField::Clover(c) => {
                 let d = c.digest();
                 (2, [c.seed, d as u32, (d >> 32) as u32])
+            }
+            HeightField::Hearts(h) => {
+                let d = h.digest();
+                (3, [h.seed, d as u32, (d >> 32) as u32])
             }
         };
         Self {

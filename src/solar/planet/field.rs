@@ -4,6 +4,7 @@
 //! the unit direction from the center.
 
 use crate::solar::planet::clover::CloverField;
+use crate::solar::planet::hearts::HeartsField;
 use raylib::math::Vector3;
 
 /// Angular step of the central differences of `HeightField::normal` for
@@ -19,7 +20,7 @@ pub struct TestField {
     pub sea_level: Option<f32>,
 }
 
-/// Height field of a planet's surface (Hearts adds its own in C54).
+/// Height field of a planet's surface.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HeightField {
     /// The ideal sphere.
@@ -27,6 +28,8 @@ pub enum HeightField {
     Test(TestField),
     /// Four clover mountains over a low seabed (`clover.rs`).
     Clover(CloverField),
+    /// Terraces and canyons of the Hearts planet (`hearts.rs`).
+    Hearts(HeartsField),
 }
 
 /// A unit vector perpendicular to `n`, built from the axis along which `n`
@@ -54,8 +57,19 @@ impl HeightField {
                 t.amplitude * (f * n.x).sin() * (f * n.y).sin() * (f * n.z).sin()
             }
             Self::Clover(c) => c.height(n),
+            Self::Hearts(h) => h.height(n),
         };
         if h.is_finite() { h } else { 0.0 }
+    }
+
+    /// Checks the parameters of a field built by hand (the clover's and the
+    /// Hearts' own rules; the others are always valid).
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::Clover(c) => c.validate(),
+            Self::Hearts(h) => h.validate(),
+            Self::Flat | Self::Test(_) => Ok(()),
+        }
     }
 
     /// Water level in radii: the ground below it shows as water.
@@ -64,6 +78,7 @@ impl HeightField {
             Self::Flat => None,
             Self::Test(t) => t.sea_level,
             Self::Clover(c) => Some(c.sea),
+            Self::Hearts(_) => None,
         }
     }
 
@@ -81,6 +96,7 @@ impl HeightField {
             Self::Test(t) if t.amplitude.is_finite() => t.amplitude.abs(),
             Self::Test(_) => 0.0,
             Self::Clover(c) => c.max_height(),
+            Self::Hearts(h) => h.max_height(),
         };
         ground.max(self.sea_level().unwrap_or(0.0))
     }
