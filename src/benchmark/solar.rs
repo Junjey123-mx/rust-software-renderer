@@ -11,7 +11,7 @@ use crate::rendering::Framebuffer;
 use crate::solar::camera::CameraRig;
 use crate::solar::flight::FlightMode;
 use crate::solar::skybox::StarField;
-use crate::solar::{CameraMode, SolarMeshes, SolarScene};
+use crate::solar::{CameraMode, FrameStats, SolarMeshes, SolarScene};
 use raylib::math::Vector3;
 use std::error::Error;
 use std::io::Write;
@@ -75,6 +75,32 @@ pub struct SolarBenchRow {
     /// Peak resident memory of the process after the scenario, kilobytes
     /// (`VmHWM` of `/proc/self/status`; `None` where it is not available).
     pub peak_rss_kb: Option<u64>,
+    /// Counters of the last timed frame (identical in every round).
+    pub stats: FrameStats,
+    /// Level of detail of each body, `name:level` joined by `;` (`-` while
+    /// every body draws the one sphere mesh).
+    pub lod_levels: String,
+    /// Star-field seed of the scenario.
+    pub seed: u32,
+    /// Commit measured: `P3_COMMIT` from the environment (letters and
+    /// digits only), empty when unset.
+    pub commit: String,
+}
+
+/// Version of the solar CSV layout: 2 appends the frame counters, the level
+/// of detail, the seed and the commit after the version 1 columns.
+pub const SOLAR_CSV_VERSION: u32 = 2;
+
+/// Columns of the solar CSV, in order.
+pub const SOLAR_CSV_HEADER: &str = "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms,max_ms,peak_rss_kb,csv_version,objects_tested,objects_culled,draws,triangles_submitted,triangles_culled,lod_levels,seed,commit";
+
+/// `P3_COMMIT` reduced to letters and digits (it lands in a CSV field).
+fn commit_from_env() -> String {
+    std::env::var("P3_COMMIT")
+        .unwrap_or_default()
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect()
 }
 
 /// Peak resident set size of this process in kilobytes, read from
@@ -174,6 +200,12 @@ pub fn run_solar_benchmark(
             }
         }
         times.sort_by(f64::total_cmp);
+        let lod_levels = scene
+            .bodies
+            .iter()
+            .map(|b| format!("{}:-", b.body().name()))
+            .collect::<Vec<_>>()
+            .join(";");
         rows.push(SolarBenchRow {
             id,
             name,
@@ -188,6 +220,10 @@ pub fn run_solar_benchmark(
             min_ms: times[0],
             max_ms: times[times.len() - 1],
             peak_rss_kb: peak_rss_kb(),
+            stats: scene.last_stats().clone(),
+            lod_levels,
+            seed: scene.stars.seed,
+            commit: commit_from_env(),
         });
     }
     Ok(rows)
@@ -198,14 +234,11 @@ pub fn write_solar_csv(rows: &[SolarBenchRow], path: &Path) -> Result<(), Box<dy
         std::fs::create_dir_all(dir)?;
     }
     let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
-    writeln!(
-        out,
-        "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms,max_ms,peak_rss_kb"
-    )?;
+    writeln!(out, "{SOLAR_CSV_HEADER}")?;
     for r in rows {
         writeln!(
             out,
-            "{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{}",
+            "{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{},{SOLAR_CSV_VERSION},{},{},{},{},{},{},{},{}",
             r.id,
             r.name,
             r.width,
@@ -218,7 +251,15 @@ pub fn write_solar_csv(rows: &[SolarBenchRow], path: &Path) -> Result<(), Box<dy
             r.p95_ms,
             r.min_ms,
             r.max_ms,
-            r.peak_rss_kb.map_or(String::new(), |kb| kb.to_string())
+            r.peak_rss_kb.map_or(String::new(), |kb| kb.to_string()),
+            r.stats.objects_tested,
+            r.stats.objects_culled,
+            r.stats.draws,
+            r.stats.triangles_submitted,
+            r.stats.triangles_culled,
+            r.lod_levels,
+            r.seed,
+            r.commit
         )?;
     }
     out.flush()?;
@@ -265,6 +306,10 @@ mod tests {
             min_ms: 1.0,
             max_ms: 1.0,
             peak_rss_kb: None,
+            stats: FrameStats::default(),
+            lod_levels: String::new(),
+            seed: 42,
+            commit: String::new(),
         };
         write_solar_csv(&[row], &path).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
@@ -272,6 +317,6 @@ mod tests {
         assert!(text.starts_with(
             "scenario,name,width,height,threads,rounds,bodies,fragments_shaded,median_ms,p95_ms,min_ms,max_ms,peak_rss_kb\n"
         ));
-        assert!(text.lines().nth(1).unwrap().ends_with(",1.000,"));
+        assert!(text.lines().nth(1).unwrap().contains(",1.000,,2,"));
     }
 }
