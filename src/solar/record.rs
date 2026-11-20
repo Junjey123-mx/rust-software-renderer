@@ -10,6 +10,7 @@ use crate::rendering::Framebuffer;
 use crate::shading::math::hex;
 use crate::solar::flight::{FlightInput, FlightMode, space_step};
 use crate::solar::input::{Look, SolarAction};
+use crate::solar::system::PlanetId;
 use crate::solar::viewer::{
     HEIGHT, WIDTH, apply_toggles, build_project3_scene, build_scene, fly, solar_mode,
 };
@@ -31,6 +32,11 @@ pub enum SolarTimeline {
     /// local flight around it for a full lap and a boosted departure, all in
     /// one scene, one camera rig and without quick travel.
     Tour,
+    /// The final delivery tour: the whole `Tour` around Crimson Entrance,
+    /// then a cruise past the clover planet and the Hearts planet, steered
+    /// by a scripted pilot (keys and mouse turns, under the same physics),
+    /// and a departure: no quick travel, no cut (`FINAL_TOUR_SECONDS`).
+    FinalTour,
 }
 
 impl std::str::FromStr for SolarTimeline {
@@ -40,8 +46,9 @@ impl std::str::FromStr for SolarTimeline {
         match s {
             "flight" => Ok(Self::Flight),
             "tour" => Ok(Self::Tour),
+            "final-tour" => Ok(Self::FinalTour),
             other => Err(format!(
-                "unknown timeline '{other}' (expected material, orbit, light, showcase, flight or tour)"
+                "unknown timeline '{other}' (expected material, orbit, light, showcase, flight, tour or final-tour)"
             )),
         }
     }
@@ -128,6 +135,108 @@ pub fn tour_actions(previous: f32, t: f32) -> Vec<SolarAction> {
     actions
 }
 
+/// Planets of the final tour after the lap, with the second its leg starts.
+pub const FINAL_VISITS: [(PlanetId, f32); 2] =
+    [(PlanetId("clover"), 33.5), (PlanetId("hearts"), 41.0)];
+/// Second the final tour leaves the last planet (nose up, then light speed).
+pub const FINAL_DEPART: f32 = 52.0;
+/// Length of the final tour script, seconds (at most 60).
+pub const FINAL_TOUR_SECONDS: f32 = 56.0;
+/// Height of a fly-by above the surface, planet radii.
+pub const FLYBY_ALTITUDE: f32 = 1.0;
+/// Farther than this from its fly-by point (world units) the pilot uses
+/// light speed.
+pub const FLYBY_BOOST_RANGE: f32 = 12.0;
+/// Seconds a fly-by leg steers before its point can count as passed (the
+/// turn towards a point behind the ship).
+const FLYBY_TURN: f32 = 3.0;
+/// Turn of the pilot per second of heading error, and its largest turn per
+/// second, radians.
+const PILOT_GAIN: f32 = 3.0;
+const PILOT_MAX_TURN: f32 = 1.6;
+
+fn unit(v: Vector3) -> Option<Vector3> {
+    let len = v.length();
+    (len.is_finite() && len > 1e-6).then(|| v / len)
+}
+
+/// Mouse turn that brings `ship`'s nose towards `aim` over a few frames:
+/// yaw about the orbital plane's normal, pitch towards the aim's
+/// elevation, both proportional to the error and bounded.
+pub fn pilot_look(ship: &ShipState, aim: Vector3, dt: f32) -> Look {
+    let up = crate::solar::flight::SPACE_UP;
+    let Some(want) = unit(aim - ship.position) else {
+        return Look::default();
+    };
+    let flat = |v: Vector3| v - up * v.dot(up);
+    let (f, w) = (flat(ship.forward), flat(want));
+    let yaw = up.dot(f.cross(w)).atan2(f.dot(w));
+    let pitch = want.dot(up).clamp(-1.0, 1.0).asin() - ship.forward.dot(up).clamp(-1.0, 1.0).asin();
+    let turn = |e: f32| (e * PILOT_GAIN * dt).clamp(-PILOT_MAX_TURN * dt, PILOT_MAX_TURN * dt);
+    Look {
+        yaw: turn(yaw),
+        pitch: turn(pitch),
+    }
+}
+
+/// Where the pilot aims on a fly-by of body `index`: `FLYBY_ALTITUDE`
+/// radii over its surface on the side facing the star (its lit face) and a
+/// little above its orbital plane, so the planet grows beside the nose and
+/// passes under the ship's flank. Also the distance left to that point.
+pub fn flyby_aim(s: &SolarScene, index: usize) -> (Vector3, f32) {
+    let c = s.bodies[index].transform.position;
+    let radius = s.radius_of(index);
+    let inward = unit(s.center - c).unwrap_or(Vector3::new(1.0, 0.0, 0.0));
+    let aim = c
+        + inward * (radius * (1.0 + FLYBY_ALTITUDE))
+        + crate::solar::flight::SPACE_UP * (0.4 * radius);
+    (aim, (aim - s.ship.position).length())
+}
+
+/// Actions and mouse turn of the final tour for the frame at `t` (previous
+/// frame at `previous`) on the scene as it is: `Tour` up to the climb after
+/// the lap, then a fly-by of each `FINAL_VISITS` planet (light speed while
+/// far, cruise around it) and the departure. Never quick travel nor a
+/// camera switch.
+pub fn final_tour_frame(
+    s: &SolarScene,
+    previous: f32,
+    t: f32,
+    dt: f32,
+) -> (Vec<SolarAction>, Look) {
+    let first = FINAL_VISITS[0].1;
+    if t < first {
+        return (tour_actions(previous, t), Look::default());
+    }
+    if t >= FINAL_TOUR_SECONDS {
+        return (Vec::new(), Look::default());
+    }
+    if t >= FINAL_DEPART {
+        let held = if t < FINAL_DEPART + 1.2 {
+            vec![SolarAction::Forward, SolarAction::PitchUp]
+        } else {
+            vec![SolarAction::Forward, SolarAction::Boost]
+        };
+        return (held, Look::default());
+    }
+    let &(visit, at) = FINAL_VISITS.iter().rev().find(|(_, at)| t >= *at).unwrap();
+    let Some(index) = s.body_index(visit) else {
+        return (vec![SolarAction::Forward], Look::default());
+    };
+    let (aim, far) = flyby_aim(s, index);
+    // Once the point is behind (after the turn towards it), the pass is
+    // done: straight on.
+    if t > at + FLYBY_TURN && s.ship.forward.dot(aim - s.ship.position) <= 0.0 {
+        return (vec![SolarAction::Forward], Look::default());
+    }
+    let look = pilot_look(&s.ship, aim, dt);
+    let mut actions = vec![SolarAction::Forward];
+    if far > FLYBY_BOOST_RANGE && look.yaw.abs() < 0.3 * dt && look.pitch.abs() < 0.3 * dt {
+        actions.push(SolarAction::Boost);
+    }
+    (actions, look)
+}
+
 /// Distance flown by `template` (at rest, same speeds) along its nose over
 /// the space leg of the tour at `fps` frames per second (the frames before
 /// the local toggle).
@@ -200,9 +309,10 @@ pub fn script_frame(
     let dt = 1.0 / fps as f32;
     let t = frame as f32 / fps as f32;
     let previous = if frame == 0 { -1.0 } else { t - dt };
-    let actions = match timeline {
-        SolarTimeline::Flight => flight_actions(previous, t),
-        SolarTimeline::Tour => tour_actions(previous, t),
+    let (actions, look) = match timeline {
+        SolarTimeline::Flight => (flight_actions(previous, t), Look::default()),
+        SolarTimeline::Tour => (tour_actions(previous, t), Look::default()),
+        SolarTimeline::FinalTour => final_tour_frame(s, previous, t, dt),
     };
     let messages = apply_toggles(s, &actions);
     let sim = if s.clock.paused {
@@ -214,7 +324,7 @@ pub fn script_frame(
     s.clock.time = sim;
     s.clock.real_delta = dt;
     s.update();
-    fly(s, &actions, &[], Look::default(), dt);
+    fly(s, &actions, &[], look, dt);
     (actions, messages)
 }
 
@@ -222,7 +332,7 @@ pub fn script_frame(
 /// ship to its closed-form start in space flight under the follow rig.
 pub fn prepare_timeline(scene: &SolarScene, timeline: SolarTimeline, fps: u32) -> SolarScene {
     let mut s = scene.clone();
-    if timeline == SolarTimeline::Tour
+    if matches!(timeline, SolarTimeline::Tour | SolarTimeline::FinalTour)
         && let Some(ship) = tour_start(&s, fps)
     {
         s.ship = ship;
@@ -294,7 +404,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
     // The delivery tour flies the Project 3 system; the pre-project flight
     // keeps its own.
     let scene = match timeline {
-        SolarTimeline::Tour => build_project3_scene(cli, lab6)?,
+        SolarTimeline::Tour | SolarTimeline::FinalTour => build_project3_scene(cli, lab6)?,
         SolarTimeline::Flight => build_scene(cli, lab6)?,
     };
     let settings = SolarRecordSettings {
