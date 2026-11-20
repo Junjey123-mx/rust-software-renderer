@@ -5,6 +5,10 @@
 
 use raylib::math::Vector3;
 
+/// Angular step of the central differences of `HeightField::normal` for
+/// shading: about 0.06 degrees, below the finest level's edge (~1 degree).
+pub const NORMAL_EPS: f32 = 1e-3;
+
 /// A synthetic relief for tests: `amplitude * sin(fx) sin(fy) sin(fz)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TestField {
@@ -74,6 +78,17 @@ impl HeightField {
             Self::Test(_) => 0.0,
         };
         ground.max(self.sea_level().unwrap_or(0.0))
+    }
+
+    /// `normal`, refusing a step that is not a positive finite number (a
+    /// zero step would difference a point with itself).
+    pub fn try_normal(&self, n: Vector3, eps: f32) -> Result<Vector3, String> {
+        if !(eps.is_finite() && eps > 0.0) {
+            return Err(format!(
+                "normal step must be positive and finite, got {eps}"
+            ));
+        }
+        Ok(self.normal(n, eps))
     }
 
     /// Unit outward normal of the surface at `n`: central differences of

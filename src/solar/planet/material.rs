@@ -1,12 +1,15 @@
 //! Closed set of planet materials. `Lab6` wraps a laboratory 6 material and
 //! delegates to the existing instance shading (`prepare_instance`,
 //! `shade_instance`, `adapted_material`), so its pixels stay bit for bit.
+//! A relief body shades with the normal of its height field instead of the
+//! sphere's (`relief_normal`), through the same lighting.
 
 use crate::celestial::{CelestialMaterial, PreparedShader};
 use crate::pipeline::{FragmentView, SurfaceSample, Transform};
 use crate::solar::instance::{
     BodyInstance, FrameContext, Quality, adapted_material, prepare_instance, shade_instance,
 };
+use crate::solar::planet::field::{HeightField, NORMAL_EPS};
 use raylib::math::Vector3;
 
 /// Material of one solar body.
@@ -21,6 +24,34 @@ pub enum PlanetMaterial {
 #[derive(Debug, Clone)]
 pub enum PreparedPlanet {
     Lab6(PreparedShader),
+    /// A body drawn with a relief mesh: its shader lit by the field's
+    /// normal, `bump` of the way from the radial one (0: the shader as is).
+    Relief {
+        base: PreparedShader,
+        field: HeightField,
+        bump: f32,
+    },
+}
+
+/// Object-space shading normal of a relief at `object_position`: the
+/// field's normal on the unit direction (`NORMAL_EPS`), `bump` of the way
+/// from the radial normal (0 or less: radial; 1 or more: the field's).
+/// The planet's rotation takes it to the world with the fragment, since
+/// the lighting runs in object space.
+pub fn relief_normal(field: &HeightField, object_position: Vector3, bump: f32) -> Vector3 {
+    let len = object_position.length();
+    if !(len.is_finite() && len > 0.0) {
+        return Vector3::new(0.0, 1.0, 0.0);
+    }
+    let radial = object_position / len;
+    if bump.is_nan() || bump <= 0.0 {
+        return radial;
+    }
+    let bumped = field.normal(radial, NORMAL_EPS);
+    if bump >= 1.0 {
+        return bumped;
+    }
+    (radial + (bumped - radial) * bump).normalized()
 }
 
 impl PlanetMaterial {
@@ -52,6 +83,15 @@ impl PreparedPlanet {
     pub fn shade(&self, transform: &Transform, s: &SurfaceSample, v: &FragmentView) -> Vector3 {
         match self {
             Self::Lab6(prepared) => shade_instance(prepared, transform, s, v),
+            Self::Relief { base, field, bump } if *bump > 0.0 => {
+                let sample = SurfaceSample {
+                    normal: relief_normal(field, s.object_position, *bump),
+                    ..*s
+                };
+                shade_instance(base, transform, &sample, v)
+            }
+            // Bump off (or NaN): the shader exactly as on the sphere.
+            Self::Relief { base, .. } => shade_instance(base, transform, s, v),
         }
     }
 }

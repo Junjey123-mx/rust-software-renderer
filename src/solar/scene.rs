@@ -7,7 +7,6 @@
 //! draw order.
 
 use crate::celestial::Body;
-use crate::celestial::PreparedShader;
 use crate::geometry::Vertex;
 use crate::pipeline::{
     DirectionalLight, OrbitView, PerspectiveCamera, RenderError, RenderScratch, ShadedOptions,
@@ -24,12 +23,11 @@ use crate::solar::flight::{
 };
 use crate::solar::instance::{
     Quality, adapted_material, prepare_instance, projected_radius_px, render_instance_scratch,
-    shade_instance,
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::physics::{CollisionShape, GravitySource};
 use crate::solar::planet::geometry::{LodState, Relief, lod_for, lod_step};
-use crate::solar::planet::{HeightField, PlanetMaterial};
+use crate::solar::planet::{HeightField, PlanetMaterial, PreparedPlanet};
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
@@ -747,10 +745,16 @@ impl SolarScene {
                 light_world: self.light_for(body),
                 ..shared
             };
-            jobs.push(Job::Body(
-                Box::new(prepare_instance(&drawn, &frame)),
-                drawn.transform,
-            ));
+            let base = prepare_instance(&drawn, &frame);
+            let prepared = match self.relief_of(i) {
+                Some(r) => PreparedPlanet::Relief {
+                    base,
+                    field: r.field,
+                    bump: r.bump,
+                },
+                None => PreparedPlanet::Lab6(base),
+            };
+            jobs.push(Job::Body(Box::new(prepared), drawn.transform));
             let model = Uniforms {
                 model_matrix: drawn.transform.matrix(),
             };
@@ -824,7 +828,7 @@ impl SolarScene {
             )?);
         }
         scratch.shade_batch(options.threads, |tag, s, v| match &jobs[tag as usize] {
-            Job::Body(prepared, transform) => shade_instance(prepared, transform, s, v),
+            Job::Body(prepared, transform) => prepared.shade(transform, s, v),
             Job::Plasma(arc, transform) => {
                 arc.shade(s.object_position, transform.to_object_dir(v.view_direction))
             }
@@ -870,6 +874,7 @@ impl SolarScene {
             _ => Some(Relief {
                 field,
                 lods: self.meshes.relief.get_or_build(SPHERE_RADIUS, &field)?,
+                bump: 1.0,
             }),
         };
         Ok(())
@@ -1050,7 +1055,7 @@ enum Job {
     /// Boxed: a prepared shader is large and a frame has only a few jobs
     /// (at most the bodies, the star's arcs, the effect draws and the
     /// spacecraft).
-    Body(Box<PreparedShader>, Transform),
+    Body(Box<PreparedPlanet>, Transform),
     /// One plasma arc and the transform of the star it rises from.
     Plasma(ArcShader, Transform),
     /// One draw of an attached effect (`effects`).

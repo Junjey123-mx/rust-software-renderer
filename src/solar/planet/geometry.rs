@@ -100,6 +100,9 @@ impl GeometryCache {
 pub struct Relief {
     pub field: HeightField,
     pub lods: LodMeshes,
+    /// Share of the field's normal in the shading (1: full relief, 0: the
+    /// sphere's normal, to compare).
+    pub bump: f32,
 }
 
 impl Relief {
