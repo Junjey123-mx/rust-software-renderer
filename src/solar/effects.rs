@@ -19,7 +19,8 @@ use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
 use crate::solar::attach::props::{PROP_MIN_PX, PropLayers, PropPart, beyond_horizon};
 use crate::solar::attach::traffic::{
-    CYCLE_EDGE, NEON_BODY, NEON_EDGE, NEON_FRESNEL, NeonShader, TrailShader,
+    CYCLE_EDGE, MAX_TRAFFIC, NEON_BODY, NEON_EDGE, NEON_FRESNEL, NeonShader, TrailBatchShader,
+    TrailShader,
 };
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
@@ -33,7 +34,7 @@ use raylib::math::Vector3;
 pub const HEART_DISC: Vector3 = Vector3::new(1.0, 0.08, 0.3);
 
 /// What a draw is shaded with.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EffectShader {
     Crown(CrownShader),
     Card(CardShader),
@@ -42,6 +43,8 @@ pub enum EffectShader {
     Waterfall(WaterfallShader),
     Neon(NeonShader),
     Trail(TrailShader),
+    /// Boxed: its chord lists outweigh every other shader.
+    TrailBatch(Box<TrailBatchShader>),
 }
 
 /// Flat-shaded surface prop: its part's color lit by the star, the light
@@ -75,12 +78,13 @@ impl EffectShader {
             Self::Waterfall(w) => w.shade(s.object_position, s.face_normal),
             Self::Neon(n) => n.shade(s.face_normal),
             Self::Trail(t) => t.shade(s.object_position),
+            Self::TrailBatch(t) => t.shade(s.object_position),
         }
     }
 }
 
 /// One mesh of an effect ready to draw this frame.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct EffectDraw<'a> {
     pub mesh: &'a [Vertex],
     pub model: Uniforms,
@@ -299,29 +303,59 @@ impl SolarScene {
                     let model = Uniforms {
                         model_matrix: t.matrix(),
                     };
-                    for (i, trail) in traffic.trails.iter().enumerate() {
-                        if trail.is_empty() || (small && i >= traffic.ships.len()) {
-                            continue;
+                    let visible = |i: usize| {
+                        if traffic.trails[i].is_empty() || (small && i >= traffic.ships.len()) {
+                            return None;
                         }
                         let (head, tail) = traffic.trail_ends(i, self.clock.time);
                         let mid = (head + tail) * 0.5;
                         let r = (head - tail).length() * 0.5 + 0.05 * SPHERE_RADIUS;
                         let center = t.position + t.to_world_dir(mid) * t.scale;
-                        if self.patch_hidden(host, &projection, mid, r)
-                            || !self.sphere_in_view(center, r * t.scale, width, height)
-                        {
-                            continue;
+                        let hidden = self.patch_hidden(host, &projection, mid, r)
+                            || !self.sphere_in_view(center, r * t.scale, width, height);
+                        (!hidden).then_some((head, tail))
+                    };
+                    if traffic.batched {
+                        // One draw per group with a trail in view.
+                        for g in 0..2 {
+                            let (range, batch) = traffic.group(g);
+                            if batch.is_empty() || !range.clone().any(|i| visible(i).is_some()) {
+                                continue;
+                            }
+                            let mut shader = TrailBatchShader {
+                                color: traffic.trail_color(range.start),
+                                heads: [Vector3::zero(); MAX_TRAFFIC as usize],
+                                tails: [Vector3::zero(); MAX_TRAFFIC as usize],
+                                count: range.len(),
+                            };
+                            for (k, i) in range.enumerate() {
+                                let (head, tail) = traffic.trail_ends(i, self.clock.time);
+                                shader.heads[k] = head;
+                                shader.tails[k] = tail;
+                            }
+                            draws.push(EffectDraw {
+                                mesh: batch,
+                                model,
+                                options: ship_options(threads),
+                                shader: EffectShader::TrailBatch(Box::new(shader)),
+                            });
                         }
-                        draws.push(EffectDraw {
-                            mesh: trail,
-                            model,
-                            options: ship_options(threads),
-                            shader: EffectShader::Trail(TrailShader {
-                                color: traffic.trail_color(i),
-                                head,
-                                tail,
-                            }),
-                        });
+                    } else {
+                        for (i, trail) in traffic.trails.iter().enumerate() {
+                            let Some((head, tail)) = visible(i) else {
+                                continue;
+                            };
+                            draws.push(EffectDraw {
+                                mesh: trail,
+                                model,
+                                options: ship_options(threads),
+                                shader: EffectShader::Trail(TrailShader {
+                                    color: traffic.trail_color(i),
+                                    head,
+                                    tail,
+                                }),
+                            });
+                        }
                     }
                     // Lightcycles: like the props, hidden while the planet
                     // is small, then one test each.

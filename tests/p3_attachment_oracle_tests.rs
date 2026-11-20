@@ -53,7 +53,7 @@ fn kinds(s: &SolarScene) -> Vec<&'static str> {
             EffectShader::Prop(_) => "prop",
             EffectShader::Waterfall(_) => "waterfall",
             EffectShader::Neon(_) => "neon",
-            EffectShader::Trail(_) => "trail",
+            EffectShader::Trail(_) | EffectShader::TrailBatch(_) => "trail",
         })
         .collect()
 }

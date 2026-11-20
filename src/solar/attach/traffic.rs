@@ -310,6 +310,37 @@ impl TrailShader {
     }
 }
 
+/// Emissive trails of one batch: like `TrailShader`, each fragment fading
+/// along the chord of the trail nearest to it (`count` chords).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrailBatchShader {
+    pub color: Vector3,
+    pub heads: [Vector3; MAX_TRAFFIC as usize],
+    pub tails: [Vector3; MAX_TRAFFIC as usize],
+    pub count: usize,
+}
+
+impl TrailBatchShader {
+    pub fn shade(&self, p: Vector3) -> Vector3 {
+        let mut best = (f32::MAX, 1.0);
+        for (&head, &tail) in self.heads.iter().zip(&self.tails).take(self.count) {
+            let chord = head - tail;
+            let len2 = chord.dot(chord);
+            let along = if len2 > 0.0 {
+                ((p - tail).dot(chord) / len2).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let off = p - (tail + chord * along);
+            let d2 = off.dot(off);
+            if d2 < best.0 {
+                best = (d2, along);
+            }
+        }
+        self.color * (0.15 + 0.85 * best.1)
+    }
+}
+
 /// True when no point of `path` (128 samples of one lap) comes within
 /// `margin` radians of a site (unit directions).
 pub fn route_clear_of_buildings(path: &Path, sites: &[Vector3], margin: f32) -> bool {
@@ -342,6 +373,12 @@ pub struct Traffic {
     pub trails: Vec<Vec<Vertex>>,
     /// Sampling buffer of the trails.
     poses: Vec<PathPose>,
+    /// Every trail of the planet in one buffer, the ships' then the
+    /// cycles' (`split` vertices in): one draw per group in view.
+    pub batch: Vec<Vertex>,
+    split: usize,
+    /// Draw the trails by group (default) or one by one (for the A/B).
+    pub batched: bool,
     /// The host's ground (`Flat` for a sphere).
     pub field: HeightField,
     /// Farthest reach from the host center, host radii.
@@ -393,6 +430,9 @@ impl Traffic {
             cycle_mesh: Arc::clone(&meshes.lightcycle),
             trails: Vec::new(),
             poses: Vec::new(),
+            batch: Vec::new(),
+            split: 0,
+            batched: true,
             field,
             reach: 1.0 + field.max_height() + SHIP_ALTITUDE.1 + ship_radius / host_radius,
         }
@@ -454,6 +494,27 @@ impl Traffic {
         for ((path, spec), out) in routes.zip(&mut self.trails) {
             // The specs are constants inside TRAIL_SEGS: never an error.
             let _ = build_trail(path, t, spec, &self.field, &mut self.poses, out);
+        }
+        self.batch.clear();
+        for (i, trail) in self.trails.iter().enumerate() {
+            if i == self.ships.len() {
+                self.split = self.batch.len();
+            }
+            self.batch.extend_from_slice(trail);
+        }
+        if self.cycles.is_empty() {
+            self.split = self.batch.len();
+        }
+    }
+
+    /// Group `g` of the batch (0: the ships', 1: the cycles'): its trail
+    /// indices and its vertices.
+    pub fn group(&self, g: usize) -> (std::ops::Range<usize>, &[Vertex]) {
+        let ships = self.ships.len();
+        if g == 0 {
+            (0..ships, &self.batch[..self.split])
+        } else {
+            (ships..ships + self.cycles.len(), &self.batch[self.split..])
         }
     }
 

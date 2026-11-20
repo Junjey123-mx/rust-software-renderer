@@ -1034,7 +1034,7 @@ impl SolarScene {
             }
         }
         for draw in &effects {
-            jobs.push(Job::Effect(draw.shader));
+            jobs.push(Job::Effect(draw.shader.clone()));
             let tag = (jobs.len() - 1) as u32;
             stats.add(&scratch.rasterize(
                 framebuffer,
