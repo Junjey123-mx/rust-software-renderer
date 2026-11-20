@@ -1,6 +1,7 @@
 //! Geometry bound to a host body (the royal crown, the card ring): one
 //! contract instead of an `Option` field per decoration.
 
+pub mod prop_meshes;
 pub mod props;
 pub mod spec;
 
