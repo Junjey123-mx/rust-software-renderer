@@ -14,6 +14,7 @@ use crate::pipeline::{
 };
 use crate::rasterization::TriangleMode;
 use crate::rendering::Framebuffer;
+use crate::solar::atmosphere::{Shell, air_of, draw_atmospheres};
 use crate::solar::attach::landmark::Landmark;
 use crate::solar::attach::props::{PROP_SIZE, PropLayers, ScatterRule, bake, scatter};
 use crate::solar::attach::traffic::{NEON_SIZE, Traffic};
@@ -150,6 +151,10 @@ pub struct SolarScene {
     pub comets: Option<CometField>,
     /// Lights of the ship that switch on in a planet's shadow (Project 3).
     pub ship_lights: bool,
+    /// Planet atmospheres (`atmosphere::draw_atmospheres`), on at the Grand
+    /// scale of the live viewer only, so recordings and frame oracles keep
+    /// their frames.
+    pub atmospheres: bool,
     /// Visual bank of the ship, radians (positive dips the right wing):
     /// the live viewer leans it into turns and strafes
     /// (`flight::bank_target`). Only the drawing rolls; the flight state
@@ -265,6 +270,7 @@ impl SolarScene {
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
             comets: None,
             ship_lights: false,
+            atmospheres: false,
             bank: 0.0,
             surface_altitude: None,
             atmosphere_blend: 0.0,
@@ -651,13 +657,15 @@ impl SolarScene {
         view: OrbitView,
         light_world: Vector3,
     ) -> Result<Self, SpecError> {
-        Self::scaled_from_spec_with(
+        let mut scene = Self::scaled_from_spec_with(
             meshes,
             view,
             light_world,
             &SystemSpec::grand(),
             ScaleProfile::grand(),
-        )
+        )?;
+        scene.atmospheres = true;
+        Ok(scene)
     }
 
     /// `project3_with_sets` at the Grand scale.
@@ -673,6 +681,7 @@ impl SolarScene {
             Self::scaled_from_spec_with(meshes, view, light_world, &spec, ScaleProfile::grand())
                 .map_err(|e| format!("--set: {e}"))?;
         scene.apply_overrides(&shader_sets)?;
+        scene.atmospheres = true;
         Ok(scene)
     }
 
@@ -1288,7 +1297,29 @@ impl SolarScene {
             let drawn = self.drawn_ship();
             draw_ship_lights(framebuffer, camera, &drawn, level, self.clock.time);
         }
+        if let (true, ViewProjection::Perspective(camera)) = (self.atmospheres, &shared.projection)
+        {
+            draw_atmospheres(framebuffer, camera, &self.air_shells());
+        }
         Ok(scratch.batch_len())
+    }
+
+    /// The air of every planet with one (`atmosphere::air_of`), from its
+    /// base sphere to its atmosphere top, lit from the star.
+    pub fn air_shells(&self) -> Vec<Shell> {
+        (1..self.bodies.len())
+            .filter_map(|i| {
+                let air = air_of(self.bodies[i].name)?;
+                let center = self.bodies[i].transform.position;
+                Some(Shell {
+                    center,
+                    ground: self.radius_of(i),
+                    top: self.atmosphere_top(i),
+                    sun: (self.center - center).normalized(),
+                    air,
+                })
+            })
+            .collect()
     }
 
     /// The ship as drawn: rolled about its nose by the visual `bank`. The

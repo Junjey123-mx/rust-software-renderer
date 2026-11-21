@@ -220,6 +220,7 @@ Los puntos pendientes de C80 quedan así:
 
 - `p3_ace_crystal_tests`
 - `p3_atmospheric_flight_tests`
+- `p3_atmospheres_tests`
 - `p3_attachment_oracle_tests`
 - `p3_attachment_tests`
 - `p3_benchmark_csv_tests`

@@ -1,6 +1,7 @@
 //! Camino al Proyecto 3: the solar scene that composes the laboratory six
 //! bodies and the spacecraft on the shared CPU pipeline.
 
+pub mod atmosphere;
 pub mod attach;
 pub mod audio;
 pub mod camera;
