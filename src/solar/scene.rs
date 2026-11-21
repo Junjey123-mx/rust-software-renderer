@@ -19,7 +19,7 @@ use crate::solar::attach::props::{PROP_SIZE, PropLayers, ScatterRule, bake, scat
 use crate::solar::attach::traffic::{NEON_SIZE, Traffic};
 use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
-use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
+use crate::solar::camera::{ATMOSPHERE_RIG, CameraRig, FollowRig, orbit_perspective};
 use crate::solar::capture::OrbitCapture;
 use crate::solar::card_ring::CardRing;
 use crate::solar::comets::{CometField, draw_comets};
@@ -153,6 +153,16 @@ pub struct SolarScene {
     /// (`flight::bank_target`). Only the drawing rolls; the flight state
     /// keeps its attitude.
     pub bank: f32,
+    /// Target height above the ground of atmospheric flight (live viewer,
+    /// `capture::SolarScene::atmospheric_step`); `None` outside it.
+    pub surface_altitude: Option<f32>,
+    /// How far the follow camera has moved to its atmospheric framing, 0
+    /// (space) to 1 (`camera::ATMOSPHERE_RIG`), eased by the live viewer.
+    pub atmosphere_blend: f32,
+    /// The camera recovery after leaving a planet, while it runs.
+    pub camera_recovery: Option<crate::solar::capture::CameraRecovery>,
+    /// Whether the last controller frame ended in local flight.
+    pub was_local: bool,
     /// Magnetic arcs that rise out of The King's Crown, drawn with its
     /// transform (no arcs: nothing drawn).
     pub plasma: PlasmaLoops,
@@ -254,6 +264,10 @@ impl SolarScene {
             comets: None,
             ship_lights: false,
             bank: 0.0,
+            surface_altitude: None,
+            atmosphere_blend: 0.0,
+            camera_recovery: None,
+            was_local: false,
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
@@ -962,9 +976,11 @@ impl SolarScene {
             (CameraMode::Perspective, CameraRig::Orbit) => {
                 ViewProjection::Perspective(self.perspective_camera())
             }
-            (CameraMode::Perspective, CameraRig::Follow) => {
-                ViewProjection::Perspective(self.follow.camera(&self.ship))
-            }
+            (CameraMode::Perspective, CameraRig::Follow) => ViewProjection::Perspective(
+                self.follow
+                    .blended(&ATMOSPHERE_RIG, self.atmosphere_blend)
+                    .camera(&self.ship),
+            ),
         }
     }
 

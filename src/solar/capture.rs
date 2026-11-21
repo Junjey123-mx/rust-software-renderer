@@ -21,6 +21,7 @@ use crate::solar::card_ring::CardRing;
 use crate::solar::flight::{
     FlightInput, FlightMode, bank_target, ease_bank, local_frame, space_step_in,
 };
+use raylib::math::Vector3;
 
 /// Seconds a ship has to stay in the capture shell, slow and not
 /// receding, before it is captured.
@@ -171,8 +172,15 @@ impl SolarScene {
     pub fn capture_step(&mut self, input: &FlightInput, dt: f32) {
         // The ship leans into turns and strafes, and back to level.
         self.bank = ease_bank(self.bank, bank_target(input, dt), dt);
+        // A change of mode since the last frame (`L`, `G`, quick travel).
+        self.note_flight_change();
         self.capture_move(input, dt);
+        self.note_flight_change();
+        if self.flight == FlightMode::Space {
+            self.surface_altitude = None;
+        }
         self.level_attitude(dt);
+        self.ease_atmosphere_camera(dt);
     }
 
     /// The move of `capture_step` and the change of state.
@@ -211,7 +219,12 @@ impl SolarScene {
             }
             OrbitState::Free | OrbitState::Approach { .. } => {
                 self.free_step(input, dt);
-                self.approach_check(dt)
+                // The turbo just left an atmosphere: the escape burn runs.
+                if matches!(self.capture.state, OrbitState::Escape { .. }) {
+                    return;
+                }
+                self.approach_check(dt);
+                self.atmosphere_entry(input);
             }
         }
     }
@@ -224,6 +237,9 @@ impl SolarScene {
     fn free_step(&mut self, input: &FlightInput, dt: f32) {
         match self.flight {
             FlightMode::Space => self.space_step(input, dt),
+            FlightMode::Local { planet, .. } if self.capture.enabled => {
+                self.atmospheric_step(planet, input, dt)
+            }
             FlightMode::Local { .. } => self.local_step(input, dt),
         }
     }
@@ -375,36 +391,245 @@ impl SolarScene {
     }
 
     /// The attitude levelling of the live viewer's controller after this
-    /// frame's move: full (roll and pitch) while captured, roll only while
-    /// approaching or in local flight, and in space flight a roll that
-    /// fades in across the release shell of the nearest planet (gravity on,
-    /// not at light speed). Nothing during the escape burn.
+    /// frame's move: full (roll and pitch) while captured or in atmospheric
+    /// flight, roll only while approaching or in plain local flight. In
+    /// space flight (the escape burn included) the planet no longer steers
+    /// the attitude: only the camera recovery runs, once per departure.
     fn level_attitude(&mut self, dt: f32) {
         match self.capture.state {
             OrbitState::Captured { planet, .. } => self.align_to_planet(planet, 1.0, true, dt),
             OrbitState::Approach { planet, .. } => self.align_to_planet(planet, 0.7, false, dt),
-            OrbitState::Escape { .. } => {}
-            OrbitState::Free => {
-                if let FlightMode::Local { planet, .. } = self.flight {
-                    self.align_to_planet(planet, 1.0, false, dt);
-                    return;
+            OrbitState::Escape { .. } => self.recover_space_view(dt),
+            OrbitState::Free => match self.flight {
+                FlightMode::Local { planet, .. } => {
+                    let pitch = self.surface_altitude.is_some();
+                    self.align_to_planet(planet, 1.0, pitch, dt);
                 }
-                if !self.gravity || self.ship.boost > 0.5 {
-                    return;
-                }
-                let nearest = (0..self.bodies.len())
-                    .filter_map(|i| {
-                        let z = self.capture_zone(i)?;
-                        let d = self.distance_to(i);
-                        let reach = z.release + self.radius_of(i);
-                        let w = 1.0 - smoothstep(z.capture, reach, d);
-                        (w > 0.0).then_some((i, w))
-                    })
-                    .max_by(|a, b| a.1.total_cmp(&b.1));
-                if let Some((planet, weight)) = nearest {
-                    self.align_to_planet(planet, 0.6 * weight, false, dt);
-                }
-            }
+                FlightMode::Space => self.recover_space_view(dt),
+            },
+        }
+    }
+}
+
+/// Height of a planet's atmosphere above its highest relief, radii: space
+/// flight below it enters atmospheric flight.
+pub const ATMOSPHERE_MARGIN: f32 = 0.3;
+/// Exploration height above the ground of atmospheric flight entered from
+/// space, in clearances (`FlightScale::clearance`).
+pub const EXPLORE_HEIGHT: f32 = 1.5;
+/// Time constant of the height controller, seconds.
+pub const ALTITUDE_EASE: f32 = 0.45;
+/// Time constant of the move to the atmospheric camera framing, seconds.
+pub const RIG_EASE: f32 = 0.6;
+/// Seconds of the camera recovery after leaving a planet.
+pub const RECOVERY_SECONDS: f32 = 0.9;
+/// Vertical of space flight: the ship's `up` at the start of the game, the
+/// one the follow camera frames in space.
+pub const SPACE_UP: Vector3 = Vector3::new(0.0, 1.0, 0.0);
+
+/// The camera recovery after leaving a planet: `progress` from 0 to 1 over
+/// `RECOVERY_SECONDS`, from the atmospheric framing `from_blend`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraRecovery {
+    pub progress: f32,
+    pub from_blend: f32,
+}
+
+impl SolarScene {
+    /// Radius of planet `planet` (center to ground) right below the ship.
+    pub fn ground_below(&self, planet: usize) -> f32 {
+        let radius = self.radius_of(planet);
+        let t = self.bodies[planet].transform;
+        let d = (self.ship.position - t.position).normalized();
+        self.relief_of(planet).map_or(radius, |r| {
+            radius * r.field.surface_radius(t.to_object_dir(d).normalized())
+        })
+    }
+
+    /// Distance from the center of `planet` where its atmosphere begins:
+    /// `ATMOSPHERE_MARGIN` radii above its highest relief, so a ship enters
+    /// it before reaching the collision sphere of space flight.
+    pub fn atmosphere_top(&self, planet: usize) -> f32 {
+        let relief = self.relief_of(planet).map_or(0.0, |r| r.field.max_height());
+        self.radius_of(planet) * (1.0 + relief + ATMOSPHERE_MARGIN)
+    }
+
+    /// Atmospheric flight around `planet`: turns and moves on the tangent
+    /// plane (`local_step` with no radial input), then a height controller
+    /// eases the height above the ground right below the ship towards
+    /// `surface_altitude`, which `E`/`Q` move between the clearance and
+    /// the top of the atmosphere. The clearance stays a hard floor, the
+    /// ship follows the relief up and down, and nothing pushes it out.
+    /// The space bar (turbo) leaves; gravity off leaves too.
+    pub fn atmospheric_step(&mut self, planet: usize, input: &FlightInput, dt: f32) {
+        if input.boost || !self.gravity {
+            self.leave_atmosphere(planet, input, dt);
+            return;
+        }
+        let scale = self.flight_scale(planet);
+        let ceiling = (self.atmosphere_top(planet) - self.radius_of(planet)).max(scale.clearance);
+        let current = self.distance_to(planet) - self.ground_below(planet);
+        let target = self.surface_altitude.unwrap_or(current);
+        // Entered above the atmosphere (from an orbit with `L`): the ship
+        // keeps its height, and `E` cannot climb higher than either.
+        let target = (target + input.radial * scale.radial_speed * dt)
+            .clamp(scale.clearance, ceiling.max(target));
+        self.surface_altitude = Some(target);
+        let drive = FlightInput {
+            radial: 0.0,
+            boost: false,
+            ..*input
+        };
+        self.local_step(&drive, dt);
+        let center = self.bodies[planet].transform.position;
+        let offset = self.ship.position - center;
+        let distance = offset.length();
+        if !(distance.is_finite() && distance > 0.0 && dt > 0.0) {
+            return;
+        }
+        let ground = self.ground_below(planet);
+        let k = 1.0 - (-dt / ALTITUDE_EASE).exp();
+        let eased = (distance + (ground + target - distance) * k).max(ground + scale.clearance);
+        let up = offset / distance;
+        self.ship.position = center + up * eased;
+        self.ship.velocity += up * ((eased - distance) / dt);
+    }
+
+    /// Enters atmospheric flight around `planet`; `descend` aims for the
+    /// exploration height (from space), otherwise the current height.
+    pub fn enter_atmosphere(&mut self, planet: usize, descend: bool) {
+        let scale = self.flight_scale(planet);
+        let current = (self.distance_to(planet) - self.ground_below(planet)).max(scale.clearance);
+        self.flight = FlightMode::Local {
+            planet,
+            previous_planet_position: self.bodies[planet].transform.position,
+        };
+        self.capture.state = OrbitState::Free;
+        self.surface_altitude = Some(if descend {
+            current.min(EXPLORE_HEIGHT * scale.clearance)
+        } else {
+            current
+        });
+    }
+
+    /// Space flight with gravity, not at light speed, inside a planet's
+    /// atmosphere (`atmosphere_top`) that has not just released the ship:
+    /// atmospheric flight around the nearest such planet, at any speed.
+    fn atmosphere_entry(&mut self, input: &FlightInput) {
+        if self.flight != FlightMode::Space
+            || !self.gravity
+            || input.boost
+            || matches!(self.capture.state, OrbitState::Captured { .. })
+        {
+            return;
+        }
+        let nearest = (0..self.bodies.len())
+            .filter(|&i| Some(i) != self.capture.blocked && self.capture_zone(i).is_some())
+            .filter(|&i| self.distance_to(i) < self.atmosphere_top(i))
+            .min_by(|&a, &b| self.distance_to(a).total_cmp(&self.distance_to(b)));
+        if let Some(planet) = nearest {
+            self.enter_atmosphere(planet, true);
+        }
+    }
+
+    /// Leaves atmospheric flight: with the turbo, off along the tangent and
+    /// upwards at the escape pace of `captured_step` (no jump in position,
+    /// the nose on the tangent) and burning while the space bar is held;
+    /// with gravity off, drifting with the last step's velocity. Either way
+    /// the planet cannot take the ship back until it leaves the release
+    /// shell.
+    fn leave_atmosphere(&mut self, planet: usize, input: &FlightInput, dt: f32) {
+        self.flight = FlightMode::Space;
+        self.surface_altitude = None;
+        self.capture.blocked = Some(planet);
+        if !input.boost {
+            self.capture.state = OrbitState::Free;
+            self.space_step(input, dt);
+            return;
+        }
+        let center = self.bodies[planet].transform.position;
+        let Some(frame) = local_frame(&self.ship, center, self.radius_of(planet)) else {
+            return;
+        };
+        let scale = self.flight_scale(planet);
+        let distance = self.distance_to(planet);
+        let release = (ORBIT_DRIFT * scale.local_speed)
+            .max(RELEASE_MARGIN * (2.0 * self.bodies[planet].mu / distance).sqrt());
+        let climb = (frame.tangent + frame.normal * 0.6).normalized();
+        self.ship.forward = frame.tangent;
+        self.ship.up = frame.normal;
+        self.ship.renormalize();
+        self.ship.velocity = self.body_velocity(planet) + climb * release;
+        self.capture.state = OrbitState::Escape { planet, time: 0.0 };
+        let burn = FlightInput {
+            throttle: 1.0,
+            ..*input
+        };
+        self.space_step(&burn, dt);
+    }
+
+    /// Starts the camera recovery when the ship has just gone from local
+    /// (captured or atmospheric) flight to space flight, once per
+    /// departure; local flight cancels a recovery under way.
+    fn note_flight_change(&mut self) {
+        let local = matches!(self.flight, FlightMode::Local { .. });
+        if self.was_local && !local {
+            self.camera_recovery = Some(CameraRecovery {
+                progress: 0.0,
+                from_blend: self.atmosphere_blend,
+            });
+        }
+        if local {
+            self.camera_recovery = None;
+        }
+        self.was_local = local;
+    }
+
+    /// One frame of the camera recovery: the ship rolls about its nose
+    /// towards `SPACE_UP` and the follow rig returns from the atmospheric
+    /// framing, on a smoothstep schedule of `RECOVERY_SECONDS` that takes
+    /// each frame the matching share of what is left, so the end is exact
+    /// at any frame rate. Position, velocity and the nose are untouched (the
+    /// escape tangent is kept); with the nose along the vertical the roll
+    /// is undefined and waits.
+    pub fn recover_space_view(&mut self, dt: f32) {
+        let Some(mut r) = self.camera_recovery else {
+            return;
+        };
+        if !(dt.is_finite() && dt > 0.0) {
+            return;
+        }
+        let before = smoothstep(0.0, 1.0, r.progress);
+        r.progress += dt / RECOVERY_SECONDS;
+        // Float steps that land a hair short of the end finish it.
+        if r.progress > 1.0 - 1e-4 {
+            r.progress = 1.0;
+        }
+        let after = smoothstep(0.0, 1.0, r.progress);
+        let share = if before >= 1.0 {
+            1.0
+        } else {
+            (after - before) / (1.0 - before)
+        };
+        let f = self.ship.forward;
+        let target = SPACE_UP - f * SPACE_UP.dot(f);
+        if target.length() > 0.05 {
+            let target = target.normalized();
+            let up = self.ship.up;
+            let angle = up.cross(target).dot(f).atan2(up.dot(target));
+            self.ship.rotate(f, share * angle);
+        }
+        self.atmosphere_blend = r.from_blend * (1.0 - after);
+        self.camera_recovery = (r.progress < 1.0).then_some(r);
+    }
+
+    /// Moves the follow camera to the atmospheric framing while in
+    /// atmospheric flight (time constant `RIG_EASE`); the recovery brings
+    /// it back in space.
+    fn ease_atmosphere_camera(&mut self, dt: f32) {
+        if self.surface_altitude.is_some() && dt.is_finite() && dt > 0.0 {
+            let k = 1.0 - (-dt / RIG_EASE).exp();
+            self.atmosphere_blend += (1.0 - self.atmosphere_blend) * k;
         }
     }
 }
