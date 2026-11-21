@@ -38,3 +38,19 @@ Cada cuadro se guardó como PPM y se convirtió con Pillow (PNG) o con ffmpeg: p
 Las animaciones 05–11 se generaron durante el trabajo de los cometas, antes de las cascadas monumentales, el oleaje y las luces automáticas, y no muestran Clover Haven de cerca. La nave puede verse en ellas sin las luces, que se encienden solo a la sombra de un planeta.
 
 Los recorridos `00-provisional-tour.mp4` y `01-final-tour.mp4`/`.gif` son evidencia histórica de la versión de cuatro planetas. **No son el video final de esta expansión**, que grabará el autor (sección «Video de demostración» del README).
+
+## Segunda pasada: capturas 16–22 (escala Grand)
+
+Se generaron el 2026-11-20 con el código final de la segunda pasada (commit `03596af`) y una herramienta temporal fuera del repositorio. La herramienta construye `SolarScene::grand_system` a 800×600, pone la cámara Follow, coloca la nave respecto de un planeta y dibuja con `render_frame` en el rasterizador por CPU, con todos los núcleos.
+
+| Archivo | Encuadre | Mediana de 5 cuadros |
+|---|---|---:|
+| `16-grand-spawn.png` | Punto de aparición a `t = 6` s, mirando hacia la estrella | 12.9 ms |
+| `17-grand-clover-sea.png` | A 1.9 R de Clover Haven, del lado iluminado | 52.8 ms |
+| `18-clover-monumental-curtain.png` | A 0.4 R de la segunda cascada monumental, de costado, en el instante en que mira a la estrella (`t = 65.25` s) | 86.6 ms |
+| `19-ace-crystal.png` | A 1.9 R de Ace Crystal, del lado iluminado | 53.6 ms |
+| `20-joker-harlequin.png` | A 2 R del Joker, del lado iluminado | 60.2 ms |
+| `21-headlight-night.png` | Vuelo rasante a 1.12 R en la cara de noche de Crimson Entrance, con las luces encendidas (sombra 1.0) | 114.3 ms |
+| `22-ship-bank.png` | A 2.4 R de House of Cards con un alabeo fijado en 0.5 rad | 24.9 ms |
+
+En la captura 22 el alabeo se fijó a mano para la foto. En el visor lo produce el controlador al pulsar `A`/`D` o girar con el ratón.

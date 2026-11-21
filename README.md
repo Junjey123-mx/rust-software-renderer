@@ -2,7 +2,7 @@
 
 **Proyecto 3 de Gráficas por Computadora** — Universidad del Valle de Guatemala (UVG), segundo ciclo 2026
 
-*Un sistema solar de naipes, neón y plasma, dibujado píxel a píxel por un rasterizador por CPU escrito en Rust.* Una estrella con corona, cinco planetas y una nave que se pilota a mano. Este repositorio también contiene los laboratorios que lo hicieron posible: el **Laboratorio 4** (carga de OBJ), el **Laboratorio 5** (relleno de triángulos) y el **Laboratorio 6** (planetas y estrellas con shaders).
+*Un sistema solar de naipes, neón y plasma, dibujado píxel a píxel por un rasterizador por CPU escrito en Rust.* Una estrella con corona, cinco planetas (seis en el visor interactivo, con Ace Crystal) y una nave que se pilota a mano. Este repositorio también contiene los laboratorios que lo hicieron posible: el **Laboratorio 4** (carga de OBJ), el **Laboratorio 5** (relleno de triángulos) y el **Laboratorio 6** (planetas y estrellas con shaders).
 
 ![Captura orbital alrededor de Clover Haven y escape tangencial](docs/videos/project3/02-orbital-capture.gif)
 
@@ -10,11 +10,11 @@
 
 | Ficha técnica | |
 |---|---|
-| Cuerpos | 1 estrella + 5 planetas (Crimson Entrance, Clover Haven, Neon Hearts, House of Cards y Joker) |
+| Cuerpos | 1 estrella + 5 planetas (Crimson Entrance, Clover Haven, Neon Hearts, House of Cards y Joker). El visor interactivo usa la escala Grand y suma un sexto planeta, Ace Crystal |
 | Nave | `NaveBimotor` del Laboratorio 3 (Blender), con propulsores, luces automáticas y sonido procedural |
 | Render | Rasterizador por CPU propio, con Z-buffer, sombreado por fragmento, LOD y descarte. raylib solo abre la ventana, lee la entrada, presenta el framebuffer y reproduce el audio |
 | Física | Paso fijo de 1/240 s, gravedad ablandada, colisión por barrido, captura orbital con histéresis |
-| Pruebas | 1033 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
+| Pruebas | 1061 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
 
 **Índice:** [Universo](#el-universo-red-black) · [Galería](#galería) · [Sistema solar](#el-sistema-solar) · [Nave](#la-nave) · [Vuelo](#vuelo-gravedad-captura-y-escape) · [Controles](#controles) · [Ambiente](#ambiente-cielo-cometas-agua-luces-y-sonido) · [Bajo el capó](#bajo-el-capó) · [Ejecutar](#instalación-y-ejecución) · [Rúbrica](#rúbrica-oficial-y-puntos-reclamados) · [Estado final](#estado-final-del-proyecto) · [Autoría](#autor-y-contribuciones) · [Video](#video-de-demostración) · [Laboratorio 6](#laboratorio-6--planetas-y-estrellas-con-shaders) · [Camino al Proyecto 3](#camino-al-proyecto-3--sistema-solar-navegable) · [Vista interactiva](#vista-interactiva-de-la-nave-mejora-opcional) · [Tres modos](#demostración-interactiva--tres-modos-de-rasterización) · [Laboratorio 5](#laboratorio-5--filling-triangles) · [Laboratorio 4](#laboratorio-4--carga-de-modelos-obj) · [Arquitectura](#arquitectura-implementada) · [Autor](#autor)
 
@@ -61,9 +61,18 @@ Todas las imágenes son salidas reales del framebuffer de CPU, sin retoques. La 
 
 Cómo se generó cada imagen: [docs/results/project3/media_expansion.md](docs/results/project3/media_expansion.md).
 
+**Segunda pasada: escala Grand del visor interactivo.** Las capturas 16–22 salen del mismo framebuffer de CPU con el sistema que abre `--scene solar` (escala Grand, seis planetas) y la cámara Follow detrás de la nave. Las capturas 01–15 conservan la escala de proyecto.
+
+| | |
+|---|---|
+| ![Escala Grand al iniciar](docs/screenshots/project3/16-grand-spawn.png) **16** Al iniciar: la estrella domina y los planetas quedan lejos | ![Clover Haven a escala Grand](docs/screenshots/project3/17-grand-clover-sea.png) **17** Clover Haven a escala Grand: mar luminoso con corrientes |
+| ![Cascada monumental en cortina](docs/screenshots/project3/18-clover-monumental-curtain.png) **18** Una cascada monumental cae en cortina hasta el mar | ![Ace Crystal](docs/screenshots/project3/19-ace-crystal.png) **19** Ace Crystal, sexto planeta: agujas de cristal |
+| ![Joker arlequín](docs/screenshots/project3/20-joker-harlequin.png) **20** El Joker: máscara, costuras de neón y paneles de arlequín | ![Faro en la sombra](docs/screenshots/project3/21-headlight-night.png) **21** El faro ilumina el suelo en la cara de noche de Crimson Entrance |
+| ![Alabeo](docs/screenshots/project3/22-ship-bank.png) **22** La nave se inclina al desplazarse de lado | |
+
 ### El sistema solar
 
-La nave es la unidad de medida: su radio envolvente es 0.319 u. Los planetas miden de 3 a 6 radios de nave y la estrella de 3 a 5 radios del planeta mayor (`ScaleProfile`). Las órbitas mantienen al menos 3 u entre las cáscaras de los vecinos (`OrbitLayout`).
+La nave es la unidad de medida: su radio envolvente es 0.319 u. En la **escala de proyecto** los planetas miden de 3 a 6 radios de nave y la estrella de 3 a 5 radios del planeta mayor (`ScaleProfile::project3`). Las órbitas mantienen al menos 3 u entre las cáscaras de los vecinos (`OrbitLayout`). Las pruebas, los oráculos, el benchmark y el recorrido grabado usan esta escala; el visor interactivo usa la [escala Grand](#escala-grand-del-visor-interactivo).
 
 | Cuerpo | Radio (u) | Órbita (u) | Velocidad (u/s) | Qué lo distingue |
 |---|---:|---:|---:|---|
@@ -72,10 +81,28 @@ La nave es la unidad de medida: su radio envolvente es 0.319 u. Los planetas mid
 | **Clover Haven** | 1.45 | 21.0 | 0.90 | Isla-trébol de cuatro montañas en un océano con olas, espuma y oleaje. Tiene árboles, rocas, 4 cascadas clásicas y 3 monumentales |
 | **Neon Hearts** | 1.30 | 29.5 | 0.85 | Rejilla neón con *glitch*, pirámide-corazón, ciudad, naves neón y motos de luz con estelas |
 | **House of Cards** | 1.75 | 40.0 | 0.75 | Gigante gaseoso de tormentas en rombo con un anillo de 20 cartas que giran y se mecen |
-| **Joker** | 1.60 | 49.0 | 0.70 | Relieve propio de rombos facetados y asimétricos y shader de arlequín: esmeralda y púrpura, ola burdeos-magenta, *glitch* y crestas magenta |
-| **Ace Crystal** | — | — | — | Diseño aprobado por el autor y **no implementado** en esta entrega (ver [Estado final](#estado-final-del-proyecto)) |
+| **Joker** | 1.60 | 49.0 | 0.70 | Arlequín teatral: máscaras de comedia y tragedia, paneles en negro, morado, esmeralda, magenta y burdeos, costuras de neón en zigzag, picos de bufón y una banda de *glitch* sobre un relieve de rombos facetados |
+| **Ace Crystal** | — | — | — | Solo en la escala Grand del visor (ver abajo) |
 
 Las órbitas son circulares y en forma cerrada: la posición depende solo del tiempo simulado, a cualquier FPS. Cada planeta gira además sobre su eje, y todo lo que lleva encima gira con él: árboles, cascadas, ciudad y cartas.
+
+#### Escala Grand del visor interactivo
+
+`--scene solar` abre el mismo sistema a la **escala Grand** (`ScaleProfile::grand`, `SystemSpec::grand`): la nave no cambia de tamaño, los planetas miden cinco veces su radio de proyecto (17–27 radios de nave) y la estrella siete veces (37.8 u, 4.3 veces el planeta mayor). Las órbitas son las más cerradas que dejan 6 u entre cáscaras.
+
+| Cuerpo | Radio (u) | Órbita (u) | Velocidad (u/s) |
+|---|---:|---:|---:|
+| The King's Crown | 37.80 | — | — |
+| Crimson Entrance | 5.50 | 78.5 | 2.0 |
+| Clover Haven | 7.25 | 100.5 | 1.8 |
+| Neon Hearts | 6.50 | 129.0 | 1.7 |
+| House of Cards | 8.75 | 165.5 | 1.5 |
+| Joker | 8.00 | 198.5 | 1.4 |
+| **Ace Crystal** | 7.00 | 225.0 | 1.3 |
+
+- **Qué se recalibra:** crucero y empuje ×2 (6 u/s), cometas cuatro veces más amplios, la nave aparece más allá de la última cáscara y `mu` sale de la misma regla de diseño, así que la gravedad nunca supera un cuarto del empuje.
+- **Qué se conserva solo:** la captura orbital, el vuelo local, la colisión, los adornos, el LOD y el descarte ya se miden en radios del planeta o en píxeles; la cámara de seguimiento se mide en la nave, que no cambia.
+- **Ace Crystal:** mundo de esquirlas facetadas cubierto de agujas de cristal tridimensionales en cian, celeste, turquesa, blanco y lila, con brillo especular, borde de Fresnel y brillo propio (captura 19). Existe solo en la escala Grand, y `F6` lleva a él.
 
 ### La nave
 
@@ -84,9 +111,10 @@ Las órbitas son circulares y en forma cerrada: la posición depende solo del ti
 - **Luces automáticas:** cuando un planeta tapa la estrella, la nave enciende sus luces con una penumbra suave:
   - luz roja en la punta izquierda y verde en la derecha;
   - estrobo blanco en la cola, 0.12 s cada segundo;
-  - un haz cálido delante de la nariz.
+  - un faro delante de la nariz que **ilumina el terreno**: un cono con aura y alcance de 16 u que aclara el suelo, los adornos y la ciudad en la cara de noche (captura 21).
 
   Al sol se apagan solas (captura 12).
+- **Alabeo:** en el visor, la nave se inclina hasta 32° hacia el lado al que se desplaza con `A`/`D` o gira con el ratón, y vuelve a nivel con suavidad al soltar (captura 22). Solo se inclina el dibujo; la física y la cámara no cambian.
 - **Vuelo inercial:** empuje, frenado de los amortiguadores (`X`) y giro suavizado, con la misma física a 10, 30, 60 o 144 FPS.
 
 ### Vuelo: gravedad, captura y escape
@@ -102,7 +130,8 @@ Las órbitas son circulares y en forma cerrada: la posición depende solo del ti
 - **Histéresis:** el planeta que soltó la nave no puede recapturarla hasta que salga de una cáscara de suelta más amplia.
 - **House of Cards:** su órbita asistida queda por encima del anillo de cartas, incluso con `Q`.
 - **Vuelo local (`L`):** desde el espacio, rodea el planeta más cercano siguiendo el terreno exacto. Desde una captura, cambia a exploración local sin deriva.
-- **Viaje rápido (`F1`–`F5`):** lleva la nave junto a cada planeta y termina cualquier captura.
+- **Nivelación con el planeta:** en el visor, el «arriba» de la nave se alinea con la vertical del planeta por rotaciones mínimas y suavizadas: del todo en la captura (donde además la nariz se acuesta sobre la tangente) y en el vuelo local, en parte al acercarse, y cada vez menos con la distancia en vuelo libre con gravedad. No hay saltos ni vuelcos, y la cámara la acompaña.
+- **Viaje rápido (`F1`–`F6`):** lleva la nave junto a cada planeta y termina cualquier captura. `F6` es Ace Crystal, que solo existe en la escala Grand.
 
 Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escape-tangencial-srcsolarcapturers).
 
@@ -114,7 +143,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | `SPACE` (mantener) | Velocidad de la luz en vuelo espacial; **escape tangencial** desde una captura orbital |
 | `E` / `Q` | Subir / bajar. En vuelo local cambian la distancia al suelo, y en captura, la altura de la órbita |
 | `L` | Entrar o salir del vuelo local. Desde una captura, pasar a exploración local |
-| `F1` `F2` `F3` `F4` `F5` | Viaje rápido a Crimson Entrance, Clover Haven, Neon Hearts, House of Cards y Joker |
+| `F1` `F2` `F3` `F4` `F5` `F6` | Viaje rápido a Crimson Entrance, Clover Haven, Neon Hearts, House of Cards, Joker y Ace Crystal (solo escala Grand) |
 | `G` | Gravedad (y con ella la captura orbital) encendida / apagada |
 | `M` | Sonido encendido / apagado |
 | `X` | Amortiguadores inerciales |
@@ -128,9 +157,10 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 
 - **Cielo animado:** la nebulosa pintada pasa de púrpura a azul y vuelve en 90 s. El cambio avanza en una onda que barre el cielo, así que nunca cambia todo de golpe (captura 13). Las escenas de los laboratorios conservan su cielo fijo.
 - **Cometas:** tres cometas recorren elipses alrededor de la estrella. Su cola apunta lejos de ella, se dibujan detrás del Z-buffer y se omiten fuera del cuadro (captura 14).
-- **Agua y cascadas:** el océano de Clover Haven combina dos trenes de olas, espuma que rueda hacia la costa y bandas de oleaje que cruzan el mar abierto.
-  - **Cascadas clásicas:** cuatro, una por montaña.
-  - **Cascadas monumentales:** tres, el triple de anchas, que nacen más arriba en otra ladera y bajan por el gradiente hasta el mar.
+- **Agua y cascadas:** el océano de Clover Haven pasa de bajíos turquesa a una laguna cian y a un azul luminoso en mar abierto. Combina dos trenes de olas, una línea de rompiente en la costa, espuma, bandas de oleaje, corrientes que derivan con el tiempo, destellos de sol y un brillo verde azulado tenue de noche (capturas 17 y 18).
+  - **Cascadas clásicas:** cuatro, una por montaña, de doble cara y más claras.
+  - **Cascadas monumentales:** tres, seis veces más anchas que una clásica, que nacen más arriba en otra ladera, salen del borde y caen en parábola sobre la ladera hasta el mar, abriéndose 1.5 veces, con una cúpula de espuma al pie (captura 18).
+  - **Distancia:** las siete se dibujan desde que el planeta mide 16 px de radio en pantalla, antes que los árboles y las rocas.
   - **Recuento:** 4 + 3 = 7 cascadas, todas con agua que fluye.
 - **Iluminación:** la estrella ilumina cada planeta desde su posición real (día y noche), y la corona y el plasma brillan solos. La nave enciende sus luces en la sombra.
 - **Audio procedural:** no hay archivos de sonido. Al iniciar, el programa sintetiza tres sonidos:
@@ -162,7 +192,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 
 ### Pruebas automatizadas
 
-`cargo test --release` corre **1033 pruebas** y todas pasan. Cada mejora de la expansión tiene su suite:
+`cargo test --release` corre **1061 pruebas** y todas pasan. Cada mejora de la expansión tiene su suite:
 
 | Suite | Qué cubre |
 |---|---|
@@ -174,6 +204,10 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | `p3_monumental_waterfall_tests` | Cascadas monumentales y oleaje |
 | `p3_ship_lights_tests` | Luces automáticas |
 | `p3_audio_tests` | Audio procedural |
+| `p3_grand_scale_tests` | Escala Grand: proporciones, órbitas, aparición, gravedad, cometas, captura en cada planeta, Ace y `F6` |
+| `p3_ship_attitude_tests` | Alabeo y nivelación con el planeta, sin saltos |
+| `p3_ace_crystal_tests` | Ace Crystal: paleta, agujas, límites y dibujo |
+| `p3_clover_water_identity_tests` | Mar luminoso, corrientes y cascadas en cortina |
 
 Los oráculos de cuadro (FNV-1a) fijan la salida exacta de cada escenario. Los de los laboratorios no cambiaron. La lista completa de suites y los comandos de validación están en [project3_final_validation.md](docs/project3_final_validation.md).
 
@@ -182,7 +216,7 @@ Los oráculos de cuadro (FNV-1a) fijan la salida exacta de cada escenario. Los d
 Requisitos: Rust estable (probado con 1.97) y Cargo. El crate `raylib = "5.5"` compila sin paquetes adicionales en Fedora 43.
 
 ```bash
-cargo run --release -- --scene solar                       # pilotar la nave (cámara Follow)
+cargo run --release -- --scene solar                       # pilotar la nave (cámara Follow, escala Grand)
 cargo run --release -- --scene solar --camera orbit        # el sistema completo desde la cámara orbital
 cargo run --release -- --scene solar --record 56 --fps 30 --timeline final-tour | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - recorrido.mp4
 cargo test --release                                       # todas las pruebas
@@ -233,6 +267,10 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 - **Forma de colisión en vuelo espacial:** es la esfera del relieve más alto; el vuelo local sigue el terreno exacto.
 - **Escenas pesadas:** el escenario medido más lento tarda 92.9 ms por cuadro con todos los núcleos a 800×600 (relieve rasante con el nivel 5 forzado, solo para comparar). Con el nivel elegido por distancia, la misma vista tarda 82.8 ms.
 - **FPS del HUD en la captura 06:** es 1 / tiempo de `render_frame`, sin la presentación de la ventana.
+- **Dos escalas:** el visor interactivo usa la escala Grand con seis planetas. Las pruebas, los oráculos, el benchmark, el recorrido grabado y las capturas 01–15 usan la escala de proyecto con cinco, así que esa evidencia no muestra Ace Crystal ni el tamaño nuevo.
+- **Solo en el visor:** el alabeo y la nivelación con el planeta los aplica el controlador del visor. Las grabaciones y las pruebas históricas no los usan.
+- **Cristales de Ace:** como las cartas de House of Cards, no tienen colisión propia; la nave choca con la esfera del relieve más alto.
+- **Costo a escala Grand:** con todos los núcleos a 800×600 (mediana de 5 cuadros, sin otra carga en el equipo), el cuadro inicial tarda 13 ms, una vista cercana de un planeta de 53 a 60 ms, una vista rasante sobre una cascada monumental 87 ms y un vuelo rasante de noche sobre Crimson Entrance 114 ms (los encuadres de las capturas 16–22).
 - **Audio:** se comprobó que el dispositivo se abre y que los tres sonidos se cargan en el visor. Lo que se oye depende del equipo, y las pruebas automáticas cubren la síntesis, no la reproducción.
 
 ### Estado final del proyecto
@@ -241,8 +279,9 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 |---|---|
 | Cinco planetas, estrella, nave, propulsores, gravedad, colisión, vuelo local, viaje rápido, LOD y descarte | Implementado y probado |
 | Expansión: Joker, corrección de colisión a bajo FPS, cielo animado, cometas, captura orbital y escape tangencial, cascadas monumentales y oleaje, luces automáticas, audio procedural | Implementado y probado |
-| Ace Crystal (sexto planeta) | **No ejecutado.** El diseño está aprobado, pero un sexto cuerpo movería la disposición, el punto de aparición y todos los oráculos a horas de la entrega, y el menú ya cuenta como máximo cinco planetas |
-| Reescalado mayor de planetas y estrella | **No aplicado.** Se evaluó con la regla del `OrbitLayout`: las órbitas pasarían de 14–49 u a unas 27–86 u, y cruzar el sistema a crucero tomaría ~1 min. Sería un cambio controlado de `ScaleProfile`, pero rompe todos los oráculos y el recorrido grabado ([evaluación](docs/project3_rescale_evaluation.md)) |
+| Segunda pasada: escala Grand, Clover Haven (mar y cascadas en cortina), Joker teatral, Ace Crystal, alabeo, nivelación con el planeta y faro que ilumina el terreno | Implementado y probado ([auditoría y resultados](docs/project3_visual_correction.md)) |
+| Ace Crystal (sexto planeta) | **Implementado solo en el visor** (escala Grand, `F6`). La escala de proyecto conserva cinco planetas, y el menú de la rúbrica cuenta como máximo cinco |
+| Reescalado mayor de planetas y estrella | **Aplicado al visor** como escala Grand (planetas ×5, estrella ×7, órbitas de 78.5 a 225 u, crucero y empuje ×2). La escala de proyecto se conserva para pruebas, oráculos y recorrido grabado ([evaluación previa](docs/project3_rescale_evaluation.md)) |
 | Video final de la entrega | Lo grabará el autor ([Video de demostración](#video-de-demostración)) |
 
 ### Autor y contribuciones
