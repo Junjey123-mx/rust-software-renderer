@@ -17,7 +17,9 @@
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
 use crate::solar::card_ring::CardRing;
-use crate::solar::flight::{FlightInput, FlightMode, local_frame, space_step_in};
+use crate::solar::flight::{
+    FlightInput, FlightMode, bank_target, ease_bank, local_frame, space_step_in,
+};
 
 /// Seconds a ship has to stay in the capture shell, slow and not
 /// receding, before it is captured.
@@ -165,6 +167,8 @@ impl SolarScene {
     /// The follow-rig controller with capture: runs the frame's flight
     /// (space, local, assisted orbit or escape burn) and moves the state.
     pub fn capture_step(&mut self, input: &FlightInput, dt: f32) {
+        // The ship leans into turns and strafes, and back to level.
+        self.bank = ease_bank(self.bank, bank_target(input, dt), dt);
         // Leaving the release shell lifts the block.
         if let Some(b) = self.capture.blocked
             && self

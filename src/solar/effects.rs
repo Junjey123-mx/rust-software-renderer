@@ -517,7 +517,8 @@ impl SolarScene {
             }
         }
         if let Some(thrusters) = &self.thrusters {
-            let ship = &self.ship;
+            let drawn = self.drawn_ship();
+            let ship = &drawn;
             let time = self.clock.time;
             let lengths = [0, 1, 2].map(|i| flame_length(ship, i, time));
             let longest = lengths.iter().fold(0.0f32, |a, &b| a.max(b));

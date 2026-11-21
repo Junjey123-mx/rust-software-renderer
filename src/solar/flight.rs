@@ -559,3 +559,31 @@ fn local_motion<S: Fn(Vector3) -> f32>(
         (frame.distance + input.radial * scale.radial_speed * dt).max(ground + scale.clearance);
     ship.position = planet + normal * distance;
 }
+
+/// Largest visual bank of the spacecraft, radians (about 32°).
+pub const MAX_BANK: f32 = 0.56;
+/// Time constant of the bank, seconds: it leans in and comes back to
+/// level this fast.
+pub const BANK_EASE: f32 = 0.22;
+
+/// Bank the ship shows for this frame's input, radians (positive dips the
+/// right wing): into the strafe (`A`/`D`) and into the turn, scripted
+/// (`yaw` +1 turns left) or the mouse's (`look.yaw` this frame), clamped
+/// to `MAX_BANK`.
+pub fn bank_target(input: &FlightInput, dt: f32) -> f32 {
+    let unit = |v: f32| if v.is_finite() { v } else { 0.0 };
+    let mouse = if dt > 0.0 {
+        unit(input.look.yaw) / dt
+    } else {
+        0.0
+    };
+    (0.5 * unit(input.strafe) - 0.45 * unit(input.yaw) - 0.2 * mouse).clamp(-MAX_BANK, MAX_BANK)
+}
+
+/// `bank` eased towards `target` over `dt` seconds (`BANK_EASE`).
+pub fn ease_bank(bank: f32, target: f32, dt: f32) -> f32 {
+    if !(dt.is_finite() && dt > 0.0) || !bank.is_finite() {
+        return if bank.is_finite() { bank } else { 0.0 };
+    }
+    bank + (target - bank) * (1.0 - (-dt / BANK_EASE).exp())
+}

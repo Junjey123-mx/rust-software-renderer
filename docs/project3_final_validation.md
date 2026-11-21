@@ -288,6 +288,7 @@ Los puntos pendientes de C80 quedan así:
 - `p3_scene_spec_oracle_tests`
 - `p3_ship_velocity_tests`
 - `p3_ship_lights_tests`
+- `p3_ship_attitude_tests`
 - `p3_sky_cycle_tests`
 - `p3_surface_model_rubric_tests`
 - `p3_system_spec_tests`

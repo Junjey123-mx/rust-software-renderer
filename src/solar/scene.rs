@@ -147,6 +147,11 @@ pub struct SolarScene {
     pub comets: Option<CometField>,
     /// Lights of the ship that switch on in a planet's shadow (Project 3).
     pub ship_lights: bool,
+    /// Visual bank of the ship, radians (positive dips the right wing):
+    /// the live viewer leans it into turns and strafes
+    /// (`flight::bank_target`). Only the drawing rolls; the flight state
+    /// keeps its attitude.
+    pub bank: f32,
     /// Magnetic arcs that rise out of The King's Crown, drawn with its
     /// transform (no arcs: nothing drawn).
     pub plasma: PlasmaLoops,
@@ -244,6 +249,7 @@ impl SolarScene {
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
             comets: None,
             ship_lights: false,
+            bank: 0.0,
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
@@ -1087,9 +1093,10 @@ impl SolarScene {
         let ship_visible = self.sphere_in_view(self.ship.position, self.ship.radius(), w, h);
         stats.test(ship_visible);
         if ship_visible {
-            jobs.push(Job::Ship(ship_light(&self.ship, self.ship_light())));
+            let drawn = self.drawn_ship();
+            jobs.push(Job::Ship(ship_light(&drawn, self.ship_light())));
             let model = Uniforms {
-                model_matrix: self.ship.model_matrix(),
+                model_matrix: drawn.model_matrix(),
             };
             let tag = (jobs.len() - 1) as u32;
             stats.add(&scratch.rasterize(
@@ -1121,9 +1128,21 @@ impl SolarScene {
         {
             let level = self.ship_shadow();
             light_surfaces(framebuffer, camera, &self.ship, level);
-            draw_ship_lights(framebuffer, camera, &self.ship, level, self.clock.time);
+            let drawn = self.drawn_ship();
+            draw_ship_lights(framebuffer, camera, &drawn, level, self.clock.time);
         }
         Ok(scratch.batch_len())
+    }
+
+    /// The ship as drawn: rolled about its nose by the visual `bank`. The
+    /// mesh, its exhaust and its navigation lights use it; flight, camera
+    /// and collisions keep `ship`.
+    pub fn drawn_ship(&self) -> ShipState {
+        let mut ship = self.ship;
+        if self.bank.is_finite() && self.bank != 0.0 {
+            ship.rotate(ship.forward, self.bank);
+        }
+        ship
     }
 
     /// How deep the ship is in a planet's shadow (0 in sunlight, 1 inside):
