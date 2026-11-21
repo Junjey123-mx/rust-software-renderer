@@ -14,7 +14,7 @@
 | Nave | `NaveBimotor` del Laboratorio 3 (Blender), con propulsores, luces automáticas y sonido procedural |
 | Render | Rasterizador por CPU propio, con Z-buffer, sombreado por fragmento, LOD y descarte. raylib solo abre la ventana, lee la entrada, presenta el framebuffer y reproduce el audio |
 | Física | Paso fijo de 1/240 s, gravedad ablandada, colisión por barrido, captura orbital con histéresis |
-| Pruebas | 1061 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
+| Pruebas | 1078 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
 
 **Índice:** [Universo](#el-universo-red-black) · [Galería](#galería) · [Sistema solar](#el-sistema-solar) · [Nave](#la-nave) · [Vuelo](#vuelo-gravedad-captura-y-escape) · [Controles](#controles) · [Ambiente](#ambiente-cielo-cometas-agua-luces-y-sonido) · [Bajo el capó](#bajo-el-capó) · [Ejecutar](#instalación-y-ejecución) · [Rúbrica](#rúbrica-oficial-y-puntos-reclamados) · [Estado final](#estado-final-del-proyecto) · [Autoría](#autor-y-contribuciones) · [Video](#video-de-demostración) · [Laboratorio 6](#laboratorio-6--planetas-y-estrellas-con-shaders) · [Camino al Proyecto 3](#camino-al-proyecto-3--sistema-solar-navegable) · [Vista interactiva](#vista-interactiva-de-la-nave-mejora-opcional) · [Tres modos](#demostración-interactiva--tres-modos-de-rasterización) · [Laboratorio 5](#laboratorio-5--filling-triangles) · [Laboratorio 4](#laboratorio-4--carga-de-modelos-obj) · [Arquitectura](#arquitectura-implementada) · [Autor](#autor)
 
@@ -69,6 +69,14 @@ Cómo se generó cada imagen: [docs/results/project3/media_expansion.md](docs/re
 | ![Cascada monumental en cortina](docs/screenshots/project3/18-clover-monumental-curtain.png) **18** Una cascada monumental cae en cortina hasta el mar | ![Ace Crystal](docs/screenshots/project3/19-ace-crystal.png) **19** Ace Crystal, sexto planeta: agujas de cristal |
 | ![Joker arlequín](docs/screenshots/project3/20-joker-harlequin.png) **20** El Joker: máscara, costuras de neón y paneles de arlequín | ![Faro en la sombra](docs/screenshots/project3/21-headlight-night.png) **21** El faro ilumina el suelo en la cara de noche de Crimson Entrance |
 | ![Alabeo](docs/screenshots/project3/22-ship-bank.png) **22** La nave se inclina al desplazarse de lado | |
+
+**Tercera pasada: vuelo atmosférico, atmósferas y vista que se recupera.** Cuadros del mismo framebuffer con el controlador del visor (`viewer::step` a 60 FPS, escala Grand). La captura 26 compara el mismo escape antes (`bec7319`) y después de la corrección.
+
+| | |
+|---|---|
+| ![Atmósferas desde el espacio](docs/screenshots/project3/23-atmosphere-halos.png) **23** Cada planeta con su aire: el halo es más brillante del lado de día | ![Vuelo atmosférico](docs/screenshots/project3/24-atmospheric-flight.png) **24** Vuelo rasante sobre los seis planetas, con su curvatura y la bruma del horizonte |
+| ![Entrada a la atmósfera](docs/screenshots/project3/25-atmospheric-entry.png) **25** Clover Haven: entrada en picada y vuelo rasante de día y de noche | ![Vista antes y después](docs/screenshots/project3/26-pov-recovery-before-after.png) **26** El mismo escape 2.5 s después de pulsar el turbo: antes la vista seguía girada 90° con el planeta (el Joker de fondo, de lado); ahora vuelve a la vertical del espacio |
+| ![Vuelo atmosférico y salida en Clover Haven](docs/videos/project3/12-atmospheric-flight-clover.gif) Clover Haven: entrada, vuelo rasante, turbo y vista recuperada | ![Salida desde el hemisferio sur de Neon Hearts](docs/videos/project3/13-escape-pov-recovery-hearts.gif) Neon Hearts: salida desde el hemisferio sur, con la vista girada unos 115°, hasta el Follow estable |
 
 ### El sistema solar
 
@@ -130,7 +138,15 @@ Las órbitas son circulares y en forma cerrada: la posición depende solo del ti
 - **Histéresis:** el planeta que soltó la nave no puede recapturarla hasta que salga de una cáscara de suelta más amplia.
 - **House of Cards:** su órbita asistida queda por encima del anillo de cartas, incluso con `Q`.
 - **Vuelo local (`L`):** desde el espacio, rodea el planeta más cercano siguiendo el terreno exacto. Desde una captura, cambia a exploración local sin deriva.
-- **Nivelación con el planeta:** en el visor, el «arriba» de la nave se alinea con la vertical del planeta por rotaciones mínimas y suavizadas: del todo en la captura (donde además la nariz se acuesta sobre la tangente) y en el vuelo local, en parte al acercarse, y cada vez menos con la distancia en vuelo libre con gravedad. No hay saltos ni vuelcos, y la cámara la acompaña.
+- **Vuelo atmosférico:** en el visor, con la gravedad encendida, la nave que entra en la atmósfera de un planeta (0.3 R sobre su relieve más alto) a cualquier velocidad pasa a volar pegada a él:
+  - avanza sobre el plano tangente, con el «arriba» en la vertical del planeta y la nariz en la tangente;
+  - un controlador de altura (constante de 0.45 s) la lleva a 1.5 veces el piso rasante (2.5 radios de nave sobre el suelo), sube y baja con el relieve y nunca la empuja hacia afuera;
+  - `E`/`Q` cambian esa altura entre el piso y el techo de la atmósfera;
+  - `SPACE` sale por la tangente y hacia arriba con el impulso del escape tangencial, y el planeta no la vuelve a tomar hasta que se aleje.
+- **Cámara atmosférica:** en 0.6 s pasa a un encuadre alto detrás de la nave y se inclina hacia el horizonte del planeta, que queda un poco por encima del centro. El suelo, la curvatura y la bruma llenan la vista a cualquier altura.
+- **La vista se recupera al salir:** al volver al vuelo espacial (turbo, `L`, `G`, viaje rápido o escape de una captura), la nave rueda sobre su nariz hasta la vertical del espacio y la cámara vuelve al encuadre Follow. Dura 0.9 s, con un perfil suave que termina exacto a cualquier FPS, y no cambia la posición, la velocidad ni el rumbo. Desde ahí el planeta ya no orienta la vista.
+- **Nivelación con el planeta:** el «arriba» se alinea con la vertical por rotaciones mínimas y suavizadas: del todo en la captura (donde la nariz se acuesta sobre la tangente) y en el vuelo atmosférico, y en parte durante la aproximación a la captura.
+- **Anillo de House of Cards:** el vuelo atmosférico no tiene colisiones, así que el anillo es decorativo ahí y la nave lo cruza sin perder el control.
 - **Viaje rápido (`F1`–`F6`):** lleva la nave junto a cada planeta y termina cualquier captura. `F6` es Ace Crystal, que solo existe en la escala Grand.
 
 Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escape-tangencial-srcsolarcapturers).
@@ -140,8 +156,8 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | Entrada | Acción |
 |---|---|
 | Ratón, `W` `A` `S` `D` | Orientar la nave; avanzar, retroceder y desplazarse de lado (aceleración y frenado progresivos) |
-| `SPACE` (mantener) | Velocidad de la luz en vuelo espacial; **escape tangencial** desde una captura orbital |
-| `E` / `Q` | Subir / bajar. En vuelo local cambian la distancia al suelo, y en captura, la altura de la órbita |
+| `SPACE` (mantener) | Velocidad de la luz en vuelo espacial; **escape tangencial** desde una captura orbital o el vuelo atmosférico |
+| `E` / `Q` | Subir / bajar. En vuelo atmosférico cambian la altura sobre el suelo, y en captura, la altura de la órbita |
 | `L` | Entrar o salir del vuelo local. Desde una captura, pasar a exploración local |
 | `F1` `F2` `F3` `F4` `F5` `F6` | Viaje rápido a Crimson Entrance, Clover Haven, Neon Hearts, House of Cards, Joker y Ace Crystal (solo escala Grand) |
 | `G` | Gravedad (y con ella la captura orbital) encendida / apagada |
@@ -162,6 +178,15 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
   - **Cascadas monumentales:** tres, seis veces más anchas que una clásica, que nacen más arriba en otra ladera, salen del borde y caen en parábola sobre la ladera hasta el mar, abriéndose 1.5 veces, con una cúpula de espuma al pie (captura 18).
   - **Distancia:** las siete se dibujan desde que el planeta mide 16 px de radio en pantalla, antes que los árboles y las rocas.
   - **Recuento:** 4 + 3 = 7 cascadas, todas con agua que fluye.
+- **Atmósferas (escala Grand):** cada planeta tiene un aire de su color:
+  - Crimson Entrance, rojo anaranjado;
+  - Clover Haven, azul y cian húmedo;
+  - Neon Hearts, rojo y rosa neón;
+  - House of Cards, morado y magenta;
+  - Joker, esmeralda abajo y morado arriba;
+  - Ace Crystal, cian y celeste brillante.
+
+  Una pasada en pantalla, repartida entre los núcleos, sigue el rayo de cada píxel por la cáscara de aire. La densidad cae con la altura y la estrella la ilumina, así que la misma suma da el halo alrededor del disco (más brillante de día), un borde que crece hacia el limbo y, desde dentro, bruma en el suelo lejano y el horizonte (capturas 23–25). El Z-buffer termina cada rayo en la primera superficie.
 - **Iluminación:** la estrella ilumina cada planeta desde su posición real (día y noche), y la corona y el plasma brillan solos. La nave enciende sus luces en la sombra.
 - **Audio procedural:** no hay archivos de sonido. Al iniciar, el programa sintetiza tres sonidos:
   - el rumor de los propulsores, que sube con el empuje;
@@ -192,7 +217,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 
 ### Pruebas automatizadas
 
-`cargo test --release` corre **1061 pruebas** y todas pasan. Cada mejora de la expansión tiene su suite:
+`cargo test --release` corre **1078 pruebas** y todas pasan. Cada mejora de la expansión tiene su suite:
 
 | Suite | Qué cubre |
 |---|---|
@@ -208,6 +233,8 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | `p3_ship_attitude_tests` | Alabeo y nivelación con el planeta, sin saltos |
 | `p3_ace_crystal_tests` | Ace Crystal: paleta, agujas, límites y dibujo |
 | `p3_clover_water_identity_tests` | Mar luminoso, corrientes y cascadas en cortina |
+| `p3_atmospheric_flight_tests` | Vuelo atmosférico: entrada a cualquier velocidad, altura estable sobre el relieve, `E`/`Q`, salida con turbo, recuperación de la vista a 10–144 FPS en cualquier giro, nariz vertical y horizonte en cuadro |
+| `p3_atmospheres_tests` | Atmósferas: aire de cada planeta, halo de día y de noche, borde, bruma desde dentro, oclusión y solo en la escala Grand |
 
 Los oráculos de cuadro (FNV-1a) fijan la salida exacta de cada escenario. Los de los laboratorios no cambiaron. La lista completa de suites y los comandos de validación están en [project3_final_validation.md](docs/project3_final_validation.md).
 
@@ -263,14 +290,17 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 
 ### Limitaciones
 
-- **Colisión con el anillo de cartas:** las cartas de House of Cards no tienen colisión propia. La nave choca con el planeta y su relieve, no con cada carta. La órbita asistida sí queda por encima del anillo.
+- **Colisión con el anillo de cartas:** las cartas de House of Cards no tienen colisión propia. La nave choca con el planeta y su relieve, no con cada carta. La órbita asistida sí queda por encima del anillo, y en el vuelo atmosférico el anillo es decorativo.
 - **Forma de colisión en vuelo espacial:** es la esfera del relieve más alto; el vuelo local sigue el terreno exacto.
 - **Escenas pesadas:** el escenario medido más lento tarda 92.9 ms por cuadro con todos los núcleos a 800×600 (relieve rasante con el nivel 5 forzado, solo para comparar). Con el nivel elegido por distancia, la misma vista tarda 82.8 ms.
 - **FPS del HUD en la captura 06:** es 1 / tiempo de `render_frame`, sin la presentación de la ventana.
 - **Dos escalas:** el visor interactivo usa la escala Grand con seis planetas. Las pruebas, los oráculos, el benchmark, el recorrido grabado y las capturas 01–15 usan la escala de proyecto con cinco, así que esa evidencia no muestra Ace Crystal ni el tamaño nuevo.
-- **Solo en el visor:** el alabeo y la nivelación con el planeta los aplica el controlador del visor. Las grabaciones y las pruebas históricas no los usan.
-- **Cristales de Ace:** como las cartas de House of Cards, no tienen colisión propia; la nave choca con la esfera del relieve más alto.
+- **Solo en el visor:** el alabeo, la nivelación, el vuelo atmosférico, la cámara atmosférica, la recuperación de la vista y las atmósferas los aplica el visor. Las grabaciones, los oráculos y las pruebas históricas no los usan.
+- **Sin reescalado adicional en la tercera pasada:** los radios y las órbitas de la escala Grand no cambiaron. Lo que alejaba el suelo era el piso de 0.15 R y una cámara que miraba la tangente, y se corrigió con el piso rasante y la inclinación hacia el horizonte. Duplicar los planetas solo bajaría la caída del horizonte desde la nave de unos 31° a unos 22° en Clover Haven, porque crece como √(2h/R), y arrastraría órbitas, estrella, cometas, gravedad y LOD ([razones](docs/project3_atmospheric_flight.md#6-recalibración-piso-rasante-y-horizonte-en-cuadro)).
+- **Planetas pequeños de cerca:** a la altura de exploración (1.2 u) el horizonte cae unos 31° desde la nave en Clover Haven y la curvatura se nota mucho. Es un mundo pequeño que se recorre, no una llanura.
+- **Cristales de Ace:** como las cartas de House of Cards, no tienen colisión propia. La nave choca con la esfera del relieve más alto en el espacio y los atraviesa en el vuelo atmosférico.
 - **Costo a escala Grand:** con todos los núcleos a 800×600 (mediana de 5 cuadros, sin otra carga en el equipo), el cuadro inicial tarda 13 ms, una vista cercana de un planeta de 53 a 60 ms, una vista rasante sobre una cascada monumental 87 ms y un vuelo rasante de noche sobre Crimson Entrance 114 ms (los encuadres de las capturas 16–22).
+- **Costo de las atmósferas:** a 800×600 con todos los núcleos (20 hilos), la mediana de 24 cuadros de vuelo rasante sube de 50 a 70 ms en Clover Haven y de 49 a 64 ms en Ace Crystal con las atmósferas encendidas. Desde lejos, la pasada solo recorre el recuadro de cada planeta.
 - **Audio:** se comprobó que el dispositivo se abre y que los tres sonidos se cargan en el visor. Lo que se oye depende del equipo, y las pruebas automáticas cubren la síntesis, no la reproducción.
 
 ### Estado final del proyecto
@@ -280,8 +310,10 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 | Cinco planetas, estrella, nave, propulsores, gravedad, colisión, vuelo local, viaje rápido, LOD y descarte | Implementado y probado |
 | Expansión: Joker, corrección de colisión a bajo FPS, cielo animado, cometas, captura orbital y escape tangencial, cascadas monumentales y oleaje, luces automáticas, audio procedural | Implementado y probado |
 | Segunda pasada: escala Grand, Clover Haven (mar y cascadas en cortina), Joker teatral, Ace Crystal, alabeo, nivelación con el planeta y faro que ilumina el terreno | Implementado y probado ([auditoría y resultados](docs/project3_visual_correction.md)) |
+| Tercera pasada: vuelo atmosférico con controlador de altura, cámara que encuadra el horizonte, recuperación de la vista al salir y atmósferas por planeta | Implementado y probado en el visor ([auditoría y resultados](docs/project3_atmospheric_flight.md)) |
 | Ace Crystal (sexto planeta) | **Implementado solo en el visor** (escala Grand, `F6`). La escala de proyecto conserva cinco planetas, y el menú de la rúbrica cuenta como máximo cinco |
 | Reescalado mayor de planetas y estrella | **Aplicado al visor** como escala Grand (planetas ×5, estrella ×7, órbitas de 78.5 a 225 u, crucero y empuje ×2). La escala de proyecto se conserva para pruebas, oráculos y recorrido grabado ([evaluación previa](docs/project3_rescale_evaluation.md)) |
+| Reescalado adicional pedido en la tercera pasada | **No aplicado.** Se recalibraron el vuelo cercano y la cámara en su lugar ([razones](docs/project3_atmospheric_flight.md#6-recalibración-piso-rasante-y-horizonte-en-cuadro)) |
 | Video final de la entrega | Lo grabará el autor ([Video de demostración](#video-de-demostración)) |
 
 ### Autor y contribuciones

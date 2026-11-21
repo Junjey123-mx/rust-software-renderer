@@ -54,3 +54,28 @@ Se generaron el 2026-11-20 con el código final de la segunda pasada (commit `03
 | `22-ship-bank.png` | A 2.4 R de House of Cards con un alabeo fijado en 0.5 rad | 24.9 ms |
 
 En la captura 22 el alabeo se fijó a mano para la foto. En el visor lo produce el controlador al pulsar `A`/`D` o girar con el ratón.
+
+## Tercera pasada: capturas 23–26 y animaciones 12–13 (vuelo atmosférico)
+
+Se generaron el 2026-11-21 con el código del commit `64a6fec`, copiado con `git archive` fuera del repositorio. El commit siguiente, `784a29e`, solo cambia el texto del HUD y de la ayuda, que `render_frame` no dibuja.
+
+**Herramientas temporales** (fuera del repositorio):
+
+- `gshot`, la de la segunda pasada, para las vistas fijas desde lejos;
+- `fly`, que conduce el controlador real del visor (`viewer::step` a 60 FPS, con `capture.enabled`, como `--scene solar`) y dibuja con `render_frame` en el rasterizador por CPU con todos los núcleos:
+  - **escenario de picada:** la nave empieza 0.5 u sobre la atmósfera, a 8 u/s hacia el planeta, con la nariz en la tangente;
+  - después avanza con `W` y sale con `SPACE` + `W`.
+
+| Archivo | Qué muestra |
+|---|---|
+| `23-atmosphere-halos.png` | Los seis planetas a 3.2 R, del lado iluminado (`gshot`, 800×600 cada uno, reducido al 40 %): el halo de cada aire, más brillante de día |
+| `24-atmospheric-flight.png` | Los seis planetas 2 s después de empezar a avanzar en vuelo atmosférico (`fly`, escenario de picada, 800×600 cada uno, reducido al 40 %) |
+| `25-atmospheric-entry.png` | Clover Haven en el mismo vuelo a los 1.0, 3.5 y 7.5 s: la entrada, el vuelo rasante de día y la cara de noche |
+| `26-pov-recovery-before-after.png` | El mismo escape desde la captura ecuatorial de House of Cards, 2.5 s después de pulsar el turbo, con el código de `bec7319` (izquierda) y el de `64a6fec` (derecha). A la izquierda el Joker del fondo aparece de lado porque la vista sigue girada 90° con el planeta. A la derecha está derecho y tiene además el halo nuevo |
+| `12-atmospheric-flight-clover.gif` | Clover Haven a 480×360 y 12 cuadros/s: picada, vuelo rasante (3 s), turbo y recuperación de la vista hasta el Follow estable |
+| `13-escape-pov-recovery-hearts.gif` | Neon Hearts en el hemisferio sur, igual que la anterior. Al pulsar el turbo, el «arriba» de la nave está girado unos 115° respecto del espacio (`up·space_up` = −0.41) y llega a 1.000 a los 0.83 s; la recuperación termina a los 0.9 s |
+
+**Registros de las herramientas** (no se versionan):
+
+- **Altura en el vuelo rasante:** de 1.20 a 1.22 u sobre el mar de Clover Haven, y de 1.12 a 1.21 u sobre la ciudad de Neon Hearts. La altura objetivo es 1.20 u.
+- **El escape de la captura 26:** la distancia al planeta y la velocidad son iguales cuadro a cuadro en las dos versiones.
