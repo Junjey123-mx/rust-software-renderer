@@ -5,6 +5,7 @@ pub mod attach;
 pub mod camera;
 pub mod card_ring;
 pub mod clock;
+pub mod comets;
 pub mod effects;
 pub mod flight;
 pub mod hud;

@@ -13,7 +13,8 @@
 //! planet; C, D, H and I recaptured on 2026-11-20 with the Joker, the
 //! fifth planet (they see the whole system), and every Project 3 frame
 //! with a sky (all but I) recaptured the same day with the purple-blue sky
-//! cycle (`nebula::blue_share`, t = 6). `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49) and
+//! cycle (`nebula::blue_share`, t = 6); A, C, D, E, H, I and J once more
+//! with the comets (`solar::comets`), which cross those views at t = 6. `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49) and
 //! K3 (C52); `P3_HEARTS_M` the hearts planet scenarios M and M2 (C61).
 
 use rust_software_renderer::benchmark::SolarBenchConfig;
@@ -140,16 +141,16 @@ fn scaled_hash(id: &str) -> u64 {
 /// C and J change (ships in view), the rest do not. Recaptured on C68,
 /// which adds the trails: C and J change again.
 const P3_SCALED_A_J: [(&str, u64); 10] = [
-    ("A", 0x26467b9e5dda2b29),
+    ("A", 0x8a73f9d1b1215430),
     ("B", 0xd1a777942fd18077),
-    ("C", 0x6632238bf40524f0),
-    ("D", 0xbcfe44694f032edf),
-    ("E", 0x709b4c29901a71d5),
+    ("C", 0x563ce30f0c01581),
+    ("D", 0x4cfe1f7db38213e),
+    ("E", 0xc12abe131a31ff3f),
     ("F", 0xe1a437e48dd1ea99),
     ("G", 0x43325ccd345dcfdf),
-    ("H", 0xbcfe44694f032edf),
-    ("I", 0xee50de94bda0fb7c),
-    ("J", 0xdb38e3ee9ef77b1c),
+    ("H", 0x4cfe1f7db38213e),
+    ("I", 0xdc6e9cf26dee134d),
+    ("J", 0x3eb104ff2a893dc8),
 ];
 
 /// Clover planet scenarios of the scaled benchmark, captured on C49. C52

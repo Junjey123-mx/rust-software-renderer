@@ -21,6 +21,7 @@ use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
 use crate::solar::card_ring::CardRing;
+use crate::solar::comets::{CometField, draw_comets};
 use crate::solar::effects::EffectShader;
 use crate::solar::flight::{
     FlightInput, FlightMode, FlightScale, LocalTarget, local_step_over, local_step_scaled,
@@ -138,6 +139,8 @@ pub struct SolarScene {
     pub stars: StarField,
     /// Colored backdrop behind the stars.
     pub nebula: Nebula,
+    /// Comets travelling through the Project 3 sky (none elsewhere).
+    pub comets: Option<CometField>,
     /// Magnetic arcs that rise out of The King's Crown, drawn with its
     /// transform (no arcs: nothing drawn).
     pub plasma: PlasmaLoops,
@@ -232,6 +235,7 @@ impl SolarScene {
             flight: FlightMode::Space,
             stars: StarField::generate_with(DEFAULT_SEED, DEFAULT_STARS, StarDensity::default()),
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
+            comets: None,
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
@@ -535,8 +539,10 @@ impl SolarScene {
         scene.ship.move_speed = profile.cruise_speed;
         scene.ship.inertia = true;
         scene.gravity = true;
-        // The Project 3 sky cycles from purple to blue and back.
+        // The Project 3 sky cycles from purple to blue and back, and its
+        // comets travel around the star.
         scene.nebula.drift = 1.0;
+        scene.comets = Some(CometField::project3(scene.center));
         scene.scale = Some(profile);
         scene.layout = Some(layout);
         scene.check_spawn()?;
@@ -1091,6 +1097,12 @@ impl SolarScene {
             Job::Ship(light) => ship_color(light, s),
         });
         scratch.resolve(framebuffer);
+        // The comets last, behind whatever the depth buffer holds.
+        if let (Some(comets), ViewProjection::Perspective(camera)) =
+            (&self.comets, &shared.projection)
+        {
+            draw_comets(framebuffer, comets, camera, self.center, self.clock.time);
+        }
         Ok(scratch.batch_len())
     }
 
