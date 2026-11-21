@@ -166,7 +166,7 @@ Solo el sistema del Proyecto 3 activa estas mejoras. Las escenas de los laborato
 
 ## 5. Recorrido grabado (histórico)
 
-Es el recorrido de la versión de cuatro planetas, conservado como evidencia. El video definitivo de la entrega lo graba el autor (README, sección «Video de demostración»).
+Es el recorrido de la versión de cuatro planetas, conservado como evidencia. El video definitivo de la entrega lo grabó el autor y está enlazado en el README (sección «Video de demostración»).
 
 - **Guion:** `--timeline final-tour` (`src/solar/record.rs`), un solo plano de 56 s:
   - vuelo espacial y acercamiento a Crimson Entrance;

@@ -37,7 +37,7 @@ Cada cuadro se guardó como PPM y se convirtió con Pillow (PNG) o con ffmpeg: p
 
 Las animaciones 05–11 se generaron durante el trabajo de los cometas, antes de las cascadas monumentales, el oleaje y las luces automáticas, y no muestran Clover Haven de cerca. La nave puede verse en ellas sin las luces, que se encienden solo a la sombra de un planeta.
 
-Los recorridos `00-provisional-tour.mp4` y `01-final-tour.mp4`/`.gif` son evidencia histórica de la versión de cuatro planetas. **No son el video final de esta expansión**, que grabará el autor (sección «Video de demostración» del README).
+Los recorridos `00-provisional-tour.mp4` y `01-final-tour.mp4`/`.gif` son evidencia histórica de la versión de cuatro planetas. **No son el video final de la entrega**, que grabó el autor y está enlazado en la sección «Video de demostración» del README.
 
 ## Segunda pasada: capturas 16–22 (escala Grand)
 

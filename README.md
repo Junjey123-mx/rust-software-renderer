@@ -14,6 +14,7 @@
 | Nave | `NaveBimotor` del Laboratorio 3 (Blender), con propulsores, luces automáticas y sonido procedural |
 | Render | Rasterizador por CPU propio, con Z-buffer, sombreado por fragmento, LOD y descarte. raylib solo abre la ventana, lee la entrada, presenta el framebuffer y reproduce el audio |
 | Física | Paso fijo de 1/240 s, gravedad ablandada, colisión por barrido, captura orbital con histéresis |
+| Video | [Video final de la entrega](https://canva.link/yj3yolgozimfrs6), grabado por el autor |
 | Pruebas | 1087 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
 
 **Índice:** [Universo](#el-universo-red-black) · [Galería](#galería) · [Sistema solar](#el-sistema-solar) · [Nave](#la-nave) · [Vuelo](#vuelo-gravedad-captura-y-escape) · [Controles](#controles) · [Ambiente](#ambiente-cielo-cometas-agua-luces-y-sonido) · [Bajo el capó](#bajo-el-capó) · [Ejecutar](#instalación-y-ejecución) · [Rúbrica](#rúbrica-oficial-y-puntos-reclamados) · [Estado final](#estado-final-del-proyecto) · [Autoría](#autor-y-contribuciones) · [Video](#video-de-demostración) · [Laboratorio 6](#laboratorio-6--planetas-y-estrellas-con-shaders) · [Camino al Proyecto 3](#camino-al-proyecto-3--sistema-solar-navegable) · [Vista interactiva](#vista-interactiva-de-la-nave-mejora-opcional) · [Tres modos](#demostración-interactiva--tres-modos-de-rasterización) · [Laboratorio 5](#laboratorio-5--filling-triangles) · [Laboratorio 4](#laboratorio-4--carga-de-modelos-obj) · [Arquitectura](#arquitectura-implementada) · [Autor](#autor)
@@ -293,7 +294,7 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 - **Rendimiento:** [benchmark_final.md](docs/results/project3/benchmark_final.md) (C75) y [benchmark_expansion.md](docs/results/project3/benchmark_expansion.md), con el antes y después de la expansión y el costo de cada función.
 - **Reescalado:** la evaluación del reescalado propuesto está en [project3_rescale_evaluation.md](docs/project3_rescale_evaluation.md).
 - **Validación:** el registro de validación y las suites están en [project3_final_validation.md](docs/project3_final_validation.md).
-- **Recorridos históricos:** conservados como evidencia; ninguno es el video final de esta expansión.
+- **Recorridos históricos:** conservados como evidencia; ninguno es el video final de la entrega, que está en [Video de demostración](#video-de-demostración).
   - [Recorrido final de la versión de cuatro planetas](docs/videos/project3/01-final-tour.mp4): 56 s, 800×600 y 30 fps, en un solo plano sin viaje rápido ni cortes ([GIF](docs/videos/project3/01-final-tour.gif)).
   - [Recorrido provisional](docs/videos/project3/00-provisional-tour.mp4).
 
@@ -325,7 +326,7 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 | Ace Crystal (sexto planeta) | **Implementado solo en el visor** (escala Grand, `F6`). La escala de proyecto conserva cinco planetas, y el menú de la rúbrica cuenta como máximo cinco |
 | Reescalado mayor de planetas y estrella | **Aplicado al visor** como escala Grand (planetas ×5, estrella ×7, órbitas de 78.5 a 225 u, crucero y empuje ×2). La escala de proyecto se conserva para pruebas, oráculos y recorrido grabado ([evaluación previa](docs/project3_rescale_evaluation.md)) |
 | Reescalado adicional pedido en la tercera pasada | **No aplicado.** Se recalibraron el vuelo cercano y la cámara en su lugar ([razones](docs/project3_atmospheric_flight.md#6-recalibración-piso-rasante-y-horizonte-en-cuadro)) |
-| Video final de la entrega | Lo grabará el autor ([Video de demostración](#video-de-demostración)) |
+| Video final de la entrega | Grabado por el autor y enlazado ([Video de demostración](#video-de-demostración)) |
 
 ### Autor y contribuciones
 
@@ -372,20 +373,9 @@ No todo el código se escribió a mano: buena parte del código, las pruebas y l
 
 ## Video de demostración
 
-El video definitivo lo graba el autor: un recorrido por el universo Red-Black que muestra los cinco planetas, la captura orbital con el escape tangencial, las cascadas, el cielo animado, los cometas, las luces y el sonido de la nave.
+**[▶ Ver el video final de la entrega](https://canva.link/yj3yolgozimfrs6)** (grabado por el autor, alojado en Canva).
 
-> **VIDEO FINAL — PENDIENTE DE INCORPORACIÓN POR EL AUTOR.**
-
-<!--
-Instrucciones para el autor, al tener el video:
-1. Sustituir el marcador de arriba por la miniatura del video enlazada a su dirección pública:
-   - URL del video: la dirección pública definitiva (YouTube, Drive, etc.).
-   - Miniatura: una captura real del video guardada en docs/screenshots/project3/, usada como imagen del enlace.
-2. Añadir debajo una descripción breve del recorrido (duración, resolución, orden de los planetas y mecánicas mostradas).
-3. No borrar los recorridos históricos de la sección Evidencias.
--->
-
-Hasta entonces, los recorridos de la sección [Evidencias](#evidencias) son material histórico de versiones anteriores y no sustituyen a este video.
+Es el video que pide el requisito 5 del proyecto. Los recorridos de la sección [Evidencias](#evidencias) son material histórico de versiones anteriores y no lo sustituyen.
 
 ---
 

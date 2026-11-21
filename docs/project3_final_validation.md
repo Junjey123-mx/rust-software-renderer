@@ -211,7 +211,7 @@ Los puntos pendientes de C80 quedan así:
 
 - **Ace Crystal:** un sexto cuerpo movería las órbitas, el punto de aparición y todos los oráculos a horas de la entrega, y no suma puntos porque el menú cuenta hasta cinco planetas.
 - **Reescalado mayor:** se evaluó y no se aplicó ([evaluación](project3_rescale_evaluation.md)).
-- **Video final:** lo graba el autor. El README deja el marcador «VIDEO FINAL — PENDIENTE DE INCORPORACIÓN POR EL AUTOR».
+- **Video final:** no lo generó el asistente; lo grabó el autor y el README lo enlaza en la sección «Video de demostración».
 - **Push:** no se hizo; lo decide el usuario.
 
 ## Suites del Proyecto 3
