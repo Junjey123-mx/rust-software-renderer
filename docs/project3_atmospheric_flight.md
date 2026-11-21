@@ -202,6 +202,7 @@ Cuadros reales del framebuffer de CPU, con el controlador del visor conducido po
 | Cámara | Capturas 24 y 25 | El suelo llena algo más de la mitad baja y el horizonte queda 0.12 rad sobre el centro, de día y de noche |
 | Salida con turbo | GIF 12 y 13 | Sale por la tangente y hacia arriba. La velocidad relativa sube de 2.7 a 28 u/s sin saltos de posición |
 | Atmósferas | Capturas 23 y 24 | Halo de cada color, más brillante de día; bruma en el horizonte desde dentro |
+| Luces automáticas | Cuadros de noche de Clover Haven y Crimson Entrance (no versionados) | En vuelo atmosférico de noche se encienden las luces de navegación roja y verde. El cono del faro sobre el suelo no se distingue en esos encuadres |
 | Recuperación de la vista | Captura 26, GIF 13 y la tabla de la sección 3 | `up·space_up` llega a 1.000 antes de 0.9 s desde el ecuador (0.000) y desde el hemisferio sur (−0.41) |
 
 **Planetas verificados en cuadro:**
