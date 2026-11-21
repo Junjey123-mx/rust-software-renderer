@@ -37,6 +37,8 @@ pub enum SolarAction {
     Warp(usize),
     /// Shows or hides the render counters of the viewer (`H`).
     ToggleHud,
+    /// Turns the procedural ship sounds on or off (`M`).
+    ToggleAudio,
     /// Turns the view test (frustum culling) of the scene on or off (`C`).
     ToggleCulling,
     /// Turns the inertial dampers on or off (`X`).
@@ -57,7 +59,7 @@ pub const HELD: [(KeyboardKey, SolarAction); 7] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 12] = [
+pub const PRESSED: [(KeyboardKey, SolarAction); 13] = [
     (KeyboardKey::KEY_P, SolarAction::TogglePause),
     (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
     (KeyboardKey::KEY_L, SolarAction::ToggleLocal),
@@ -68,6 +70,7 @@ pub const PRESSED: [(KeyboardKey, SolarAction); 12] = [
     (KeyboardKey::KEY_F4, SolarAction::Warp(4)),
     (KeyboardKey::KEY_F5, SolarAction::Warp(5)),
     (KeyboardKey::KEY_H, SolarAction::ToggleHud),
+    (KeyboardKey::KEY_M, SolarAction::ToggleAudio),
     (KeyboardKey::KEY_C, SolarAction::ToggleCulling),
     (KeyboardKey::KEY_X, SolarAction::ToggleDampers),
     (KeyboardKey::KEY_G, SolarAction::ToggleGravity),

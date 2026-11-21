@@ -9,6 +9,7 @@ use crate::pipeline::{OrbitCamera, OrbitView, ShadedOptions, Viewport};
 use crate::rasterization::TriangleMode;
 use crate::rendering::{Framebuffer, Presenter};
 use crate::shading::math::hex;
+use crate::solar::audio::{boost_loop, escape_chirp, loop_volumes, thruster_loop, wav_bytes};
 use crate::solar::camera::CameraRig;
 use crate::solar::flight::{FlightInput, FlightMode, ease_thrust, ramp_boost, space_step_in};
 use crate::solar::hud::{draw_hud, hud_lines, planet_lines};
@@ -16,10 +17,12 @@ use crate::solar::input::{
     CAPTURE_KEY, Look, MouseCapture, MouseLook, RELEASE_KEY, SolarAction, poll_solar,
 };
 use crate::solar::nebula::Nebula;
+use crate::solar::ship::ShipState;
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarField};
 use crate::solar::system::SystemSpec;
 use crate::solar::travel::warp_to;
 use crate::solar::{SolarMeshes, SolarScene};
+use raylib::core::audio::{RaylibAudio, Sound};
 use raylib::math::Vector3;
 use std::error::Error;
 
@@ -262,6 +265,40 @@ pub fn step(
     messages
 }
 
+/// The ship's procedural sounds loaded into raylib's audio device.
+struct ShipSounds<'a> {
+    thrust: Sound<'a>,
+    boost: Sound<'a>,
+    escape: Sound<'a>,
+}
+
+impl<'a> ShipSounds<'a> {
+    fn load(audio: &'a RaylibAudio) -> Result<Self, String> {
+        let sound = |pcm: Vec<i16>| -> Result<Sound<'a>, String> {
+            let wave = audio
+                .new_wave_from_memory(".wav", &wav_bytes(&pcm))
+                .map_err(|e| e.to_string())?;
+            audio.new_sound_from_wave(&wave).map_err(|e| e.to_string())
+        };
+        Ok(Self {
+            thrust: sound(thruster_loop())?,
+            boost: sound(boost_loop())?,
+            escape: sound(escape_chirp())?,
+        })
+    }
+
+    /// Loops follow the ship's thrust and boost; silent when muted.
+    fn update(&self, ship: &ShipState, on: bool) {
+        let (thrust, boost) = loop_volumes(ship.thrust, ship.boost, on);
+        for (sound, volume) in [(&self.thrust, thrust), (&self.boost, boost)] {
+            sound.set_volume(volume);
+            if volume > 0.0 && !sound.is_playing() {
+                sound.play();
+            }
+        }
+    }
+}
+
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
     let mut scene = build_project3_scene(cli, lab6)?;
     scene.lod_live = true;
@@ -272,7 +309,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight) or tangential escape (orbital capture), L local flight (from a capture: local exploration), E/Q altitude (local), F1-F5 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight) or tangential escape (orbital capture), L local flight (from a capture: local exploration), E/Q altitude (local), F1-F5 warp, V camera rig, H render counters, M sound, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
@@ -294,6 +331,13 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
     let mut reported = false;
     let mut title_timer = 0.0f32;
     let mut hud = false;
+    // Procedural sounds when an audio device is there; silent otherwise.
+    let audio = RaylibAudio::init_audio_device().ok();
+    let sounds = audio.as_ref().and_then(|a| ShipSounds::load(a).ok());
+    let mut sound_on = sounds.is_some();
+    if sounds.is_none() {
+        println!("Sound unavailable: no audio device");
+    }
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -330,10 +374,22 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
             hud = !hud;
             println!("Render counters: {}", if hud { "shown" } else { "hidden" });
         }
+        if actions.contains(&SolarAction::ToggleAudio) && sounds.is_some() {
+            sound_on = !sound_on;
+            println!("Sound {}", on_off(sound_on));
+        }
         let before = scene.ship.position;
         let mode_before = scene.flight;
+        let orbit_before = scene.capture.label();
         for message in step(&mut scene, &actions, &camera_actions, look, dt) {
             println!("{message}");
+        }
+        if let Some(sounds) = &sounds {
+            sounds.update(&scene.ship, sound_on);
+            let escape = scene.capture.label();
+            if sound_on && escape == Some("TANGENTIAL ESCAPE") && orbit_before != escape {
+                sounds.escape.play();
+            }
         }
         title_timer += dt;
         if title_timer >= 0.5 || scene.flight != mode_before {
