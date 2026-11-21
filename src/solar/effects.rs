@@ -410,7 +410,7 @@ impl SolarScene {
                         model_matrix: t.matrix(),
                     };
                     let light = t.to_object_dir(self.light_at(t.position)).normalized();
-                    for placed in &set.falls {
+                    for placed in set.falls.iter().chain(&set.monumental) {
                         let center = t.position + t.to_world_dir(placed.bound_center) * t.scale;
                         if self.patch_hidden(
                             host,

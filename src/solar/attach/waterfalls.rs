@@ -58,6 +58,18 @@ fn gradient(field: &CloverField, n: Vector3) -> Vector3 {
 /// a third of the way back towards the center; the one standing highest
 /// over the sea (seeded jitter breaks ties) wins.
 fn start(field: &CloverField, center: usize, seed: u32) -> Option<Vector3> {
+    start_where(field, center, seed, 2.0 / 3.0, |_| true)
+}
+
+/// `start` at `back` of the way from the center to the coast, among the
+/// azimuths whose start `keep` accepts.
+fn start_where(
+    field: &CloverField,
+    center: usize,
+    seed: u32,
+    back: f32,
+    keep: impl Fn(Vector3) -> bool,
+) -> Option<Vector3> {
     let c = field.centers[center];
     let (t1, t2) = (tangent(c), c.cross(tangent(c)));
     let mut best: Option<(f32, Vector3)> = None;
@@ -70,10 +82,10 @@ fn start(field: &CloverField, center: usize, seed: u32) -> Option<Vector3> {
         else {
             continue;
         };
-        let p = walk(c, dir, coast * 2.0 / 3.0);
+        let p = walk(c, dir, coast * back);
         let drop = field.height(p) - field.sea;
         let score = drop * (1.0 + 0.1 * unit_hash(seed, center as i32, k as i32));
-        if drop > 0.0 && best.is_none_or(|(s, _)| score > s) {
+        if drop > 0.0 && keep(p) && best.is_none_or(|(s, _)| score > s) {
             best = Some((score, p));
         }
     }
@@ -127,6 +139,55 @@ pub fn waterfall_from(field: &CloverField, center: usize, seed: u32) -> Result<W
         return Err(format!("no clover {center}"));
     }
     let top = start(field, center, seed).ok_or("no lobe edge above the sea")?;
+    ribbon(
+        field,
+        center,
+        seed,
+        top,
+        WATERFALL_WIDTH,
+        WATERFALL_SEGMENTS,
+    )
+}
+
+/// Width of a monumental fall, radii (three classic ribbons).
+pub const MONUMENTAL_WIDTH: f32 = 0.06;
+/// Mountains that carry a monumental fall besides their classic one.
+pub const MONUMENTAL_FALLS: usize = 3;
+/// Segments of a monumental ribbon.
+pub const MONUMENTAL_SEGMENTS: usize = 24;
+/// Smallest angle between a monumental fall's start and the classic one of
+/// the same mountain, radians.
+pub const MONUMENTAL_APART: f32 = 0.12;
+
+/// The monumental fall of clover `center`: it starts further up the
+/// mountain (40 % of the way from its center to the coast, the classic
+/// fall two thirds), on another flank than the classic fall, and is three
+/// times as wide; the same descent to the sea.
+pub fn monumental_from(field: &CloverField, center: usize, seed: u32) -> Result<Waterfall, String> {
+    let classic = waterfall_from(field, center, seed)?.top.normalized();
+    let top = start_where(field, center, seed ^ 0x5eed, 0.4, |p| {
+        p.dot(classic).clamp(-1.0, 1.0).acos() > MONUMENTAL_APART
+    })
+    .ok_or("no second flank above the sea")?;
+    ribbon(
+        field,
+        center,
+        seed ^ 0x5eed,
+        top,
+        MONUMENTAL_WIDTH,
+        MONUMENTAL_SEGMENTS,
+    )
+}
+
+/// A ribbon of `width` and `segments` from `top` down the gradient.
+fn ribbon(
+    field: &CloverField,
+    center: usize,
+    seed: u32,
+    top: Vector3,
+    width: f32,
+    segments: usize,
+) -> Result<Waterfall, String> {
     let (t1, t2) = (tangent(top), top.cross(tangent(top)));
     let path = (0..=RESTARTS)
         .find_map(|r| {
@@ -139,28 +200,28 @@ pub fn waterfall_from(field: &CloverField, center: usize, seed: u32) -> Result<W
             descend(field, from)
         })
         .ok_or("the descent never reaches the sea")?;
-    let points = resample(&path, WATERFALL_SEGMENTS);
+    let points = resample(&path, segments);
     let lift = |n: Vector3| n * (1.0 + field.height(n).max(field.sea) + WATERFALL_GAP);
     let mut vertices = Vec::with_capacity(2 * points.len());
     for (i, &n) in points.iter().enumerate() {
         let next = points[(i + 1).min(points.len() - 1)];
         let prev = points[i.saturating_sub(1)];
         let along = next - prev;
-        let side = along.cross(n).normalized() * (WATERFALL_WIDTH / 2.0);
+        let side = along.cross(n).normalized() * (width / 2.0);
         let p = lift(n);
         vertices.push(lift((p - side).normalized()));
         vertices.push(lift((p + side).normalized()));
     }
-    let mut indices = Vec::with_capacity(6 * WATERFALL_SEGMENTS);
-    for i in 0..WATERFALL_SEGMENTS {
+    let mut indices = Vec::with_capacity(6 * segments);
+    for i in 0..segments {
         let (a, b, c, d) = (2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3);
         // Wound to face away from the planet.
         indices.extend([a, b, c, b, d, c]);
     }
     Ok(Waterfall {
         top: lift(points[0]),
-        bottom: lift(points[WATERFALL_SEGMENTS]),
-        width: WATERFALL_WIDTH,
+        bottom: lift(points[segments]),
+        width,
         mesh: Arc::new(Mesh { vertices, indices }),
     })
 }
@@ -251,57 +312,66 @@ pub struct PlacedWaterfall {
     pub normal: Vector3,
 }
 
-/// The waterfalls of a clover planet.
+/// The waterfalls of a clover planet: one classic fall per mountain and
+/// the monumental falls of the first `MONUMENTAL_FALLS` mountains, drawn
+/// with the same shader.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct WaterfallSet {
     pub falls: Vec<PlacedWaterfall>,
+    pub monumental: Vec<PlacedWaterfall>,
+}
+
+/// `w` scaled to a host mesh of `radius`, ready to draw.
+fn place(m: usize, w: Waterfall, radius: f32) -> PlacedWaterfall {
+    let mesh = Mesh {
+        vertices: w.mesh.vertices.iter().map(|&v| v * radius).collect(),
+        indices: w.mesh.indices.clone(),
+    };
+    let soup = mesh.expand_vertices(Vector3::one());
+    let bound_center = (w.top + w.bottom) * (0.5 * radius);
+    let bound_radius = mesh
+        .vertices
+        .iter()
+        .map(|&v| (v - bound_center).length())
+        .fold(0.0, f32::max);
+    PlacedWaterfall {
+        mountain: m,
+        fall: Waterfall {
+            top: w.top * radius,
+            bottom: w.bottom * radius,
+            width: w.width * radius,
+            mesh: Arc::new(mesh),
+        },
+        soup,
+        bound_center,
+        bound_radius,
+        normal: bound_center.normalized(),
+    }
 }
 
 impl WaterfallSet {
     /// One fall per mountain of `field` (`per_mountain` above 1 counts as
     /// 1: a single steepest edge per mountain; 0 gives none), scaled to a
-    /// host mesh of radius `radius`. A mountain whose descent finds no sea
-    /// gets no fall.
+    /// host mesh of radius `radius`, and the monumental falls. A mountain
+    /// whose descent finds no sea gets no fall.
     pub fn for_clover(field: &CloverField, per_mountain: u8, seed: u32, radius: f32) -> Self {
         if per_mountain == 0 {
             return Self::default();
         }
         let falls = (0..field.centers.len())
-            .filter_map(|m| {
-                let w = waterfall_from(field, m, seed).ok()?;
-                let mesh = Mesh {
-                    vertices: w.mesh.vertices.iter().map(|&v| v * radius).collect(),
-                    indices: w.mesh.indices.clone(),
-                };
-                let soup = mesh.expand_vertices(Vector3::one());
-                let bound_center = (w.top + w.bottom) * (0.5 * radius);
-                let bound_radius = mesh
-                    .vertices
-                    .iter()
-                    .map(|&v| (v - bound_center).length())
-                    .fold(0.0, f32::max);
-                Some(PlacedWaterfall {
-                    mountain: m,
-                    fall: Waterfall {
-                        top: w.top * radius,
-                        bottom: w.bottom * radius,
-                        width: w.width * radius,
-                        mesh: Arc::new(mesh),
-                    },
-                    soup,
-                    bound_center,
-                    bound_radius,
-                    normal: bound_center.normalized(),
-                })
-            })
+            .filter_map(|m| Some(place(m, waterfall_from(field, m, seed).ok()?, radius)))
             .collect();
-        Self { falls }
+        let monumental = (0..field.centers.len().min(MONUMENTAL_FALLS))
+            .filter_map(|m| Some(place(m, monumental_from(field, m, seed).ok()?, radius)))
+            .collect();
+        Self { falls, monumental }
     }
 
     /// Farthest vertex from the host center, mesh units (0 without falls).
     pub fn reach(&self) -> f32 {
         self.falls
             .iter()
+            .chain(&self.monumental)
             .flat_map(|f| f.fall.mesh.vertices.iter())
             .map(|v| v.length())
             .fold(0.0, f32::max)

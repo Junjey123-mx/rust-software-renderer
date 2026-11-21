@@ -213,6 +213,7 @@ G2 se ejecutó el 2026-11-20 con `CARGO_TARGET_DIR` en `/tmp`, porque `/home` es
 - `p3_lod_regression_tests`
 - `p3_lod_stats_tests`
 - `p3_mesh_lod_tests`
+- `p3_monumental_waterfall_tests`
 - `p3_motion_timestep_tests`
 - `p3_neon_building_mesh_tests`
 - `p3_neon_ship_lod_tests`

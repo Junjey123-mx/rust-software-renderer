@@ -112,13 +112,14 @@ fn rotate_with_host() {
 
 #[test]
 fn culled_when_behind() {
-    // From 2.5 radii some falls are on the far side and skipped.
+    // From 2.5 radii some falls are on the far side and skipped. The four
+    // classic falls plus the three monumental ones of the expansion.
     let s = looking_at_clover(2.5);
     let drawn = waterfall_draws(&s);
-    assert!((1..4).contains(&drawn), "{drawn}");
+    assert!((1..7).contains(&drawn), "{drawn}");
     let mut all = s.clone();
     all.culling = false;
-    assert_eq!(waterfall_draws(&all), 4);
+    assert_eq!(waterfall_draws(&all), 4 + 3);
     // Too small on screen: none.
     assert_eq!(waterfall_draws(&looking_at_clover(80.0)), 0);
     // Low over the sea (K3) the culled frame is the frame without culling:

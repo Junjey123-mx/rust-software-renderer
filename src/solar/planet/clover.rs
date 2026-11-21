@@ -309,6 +309,22 @@ const WAVES: [(Vector3, f32, f32, f32); 2] = [
 pub const FOAM_BAND: f32 = 0.02;
 const FOAM_COLOR: Vector3 = hex(0xEAF6FF);
 
+/// Direction the swell travels along and the one that bends its crests.
+const SWELL_DIR: Vector3 = Vector3::new(0.31, -0.62, 0.72);
+const SWELL_BEND: Vector3 = Vector3::new(0.8, 0.5, -0.33);
+/// Strength of the swell's sky glow on the lit sea.
+pub const SWELL_GLOW: f32 = 0.14;
+
+/// Swell crossing the open sea at the unit `n` and time `t`: broad bent
+/// bands of lighter water travelling 4 times per wave period, in [0, 1].
+/// It runs on the waves' clock, so `wave_speed` 0 freezes it too.
+pub fn swell(n: Vector3, t: f32, p: &CloverParams) -> f32 {
+    let t = wave_time(t, p.wave_speed);
+    let a = 22.0 * n.dot(SWELL_DIR) + 1.5 * (7.0 * n.dot(SWELL_BEND)).sin()
+        - TAU * 4.0 * t / WAVE_PERIOD;
+    smoothstep(0.55, 1.0, 0.5 + 0.5 * a.sin())
+}
+
 /// `t` scaled by `speed` and wrapped into the wave period (0 if not finite).
 fn wave_time(t: f32, speed: f32) -> f32 {
     let t = (t * speed).rem_euclid(WAVE_PERIOD);
@@ -416,7 +432,8 @@ impl PreparedClover {
         let h = self.field.height(n);
         if h <= self.field.sea {
             let depth = self.field.sea - h;
-            let water = self.water(wave_normal(n, self.time, &self.params), depth, eye);
+            let water = self.water(wave_normal(n, self.time, &self.params), depth, eye)
+                + SKY * (SWELL_GLOW * swell(n, self.time, &self.params) * lambert(n, self.light));
             // Only the shallow ring pays for the coast distance.
             if depth > 0.01 || self.params.foam <= 0.0 {
                 return water;
