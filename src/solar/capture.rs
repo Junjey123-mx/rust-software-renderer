@@ -14,6 +14,7 @@
 //! is. Off unless `OrbitCapture::enabled` (the live viewer turns it on),
 //! so recordings and earlier tests fly as before.
 
+use crate::shading::math::smoothstep;
 use crate::solar::SolarScene;
 use crate::solar::attach::AttachmentKind;
 use crate::solar::card_ring::CardRing;
@@ -165,10 +166,17 @@ impl SolarScene {
     }
 
     /// The follow-rig controller with capture: runs the frame's flight
-    /// (space, local, assisted orbit or escape burn) and moves the state.
+    /// (space, local, assisted orbit or escape burn), moves the state and
+    /// levels the ship with the planet it is near (`level_attitude`).
     pub fn capture_step(&mut self, input: &FlightInput, dt: f32) {
         // The ship leans into turns and strafes, and back to level.
         self.bank = ease_bank(self.bank, bank_target(input, dt), dt);
+        self.capture_move(input, dt);
+        self.level_attitude(dt);
+    }
+
+    /// The move of `capture_step` and the change of state.
+    fn capture_move(&mut self, input: &FlightInput, dt: f32) {
         // Leaving the release shell lifts the block.
         if let Some(b) = self.capture.blocked
             && self
@@ -320,5 +328,83 @@ impl SolarScene {
         };
         self.local_step(&drive, dt);
         self.capture.state = OrbitState::Captured { planet, orbit };
+    }
+}
+
+/// Time constant of the attitude levelling near a planet, seconds.
+pub const ALIGN_EASE: f32 = 0.6;
+
+impl SolarScene {
+    /// Eases the ship's attitude towards the local vertical of planet
+    /// `planet`, `weight` (0 to 1) of the full rate: the roll about the
+    /// nose that brings `up` closest to the planet's normal and, with
+    /// `pitch`, the nose onto the tangent plane. Rotations are the minimal
+    /// ones about the nose and the right axis, eased with `ALIGN_EASE`, so
+    /// the attitude never jumps or flips; where the nose points straight at
+    /// the planet (or away) the roll is undefined and is skipped.
+    pub fn align_to_planet(&mut self, planet: usize, weight: f32, pitch: bool, dt: f32) {
+        let center = self.bodies[planet].transform.position;
+        let offset = self.ship.position - center;
+        let length = offset.length();
+        if !(length.is_finite() && length > 0.0 && dt > 0.0) || weight.is_nan() || weight <= 0.0 {
+            return;
+        }
+        let n = offset / length;
+        let k = weight.min(1.0) * (1.0 - (-dt / ALIGN_EASE).exp());
+        if pitch {
+            let f = self.ship.forward;
+            let t = f - n * f.dot(n);
+            if t.length() > 1e-3 {
+                let t = t.normalized();
+                let axis = f.cross(t);
+                if axis.length() > 1e-6 {
+                    let angle = axis.length().atan2(f.dot(t));
+                    self.ship.rotate(axis.normalized(), k * angle);
+                }
+            }
+        }
+        let f = self.ship.forward;
+        let target = n - f * n.dot(f);
+        if target.length() <= 0.05 {
+            return;
+        }
+        let target = target.normalized();
+        let up = self.ship.up;
+        let angle = up.cross(target).dot(f).atan2(up.dot(target));
+        self.ship.rotate(f, k * angle);
+    }
+
+    /// The attitude levelling of the live viewer's controller after this
+    /// frame's move: full (roll and pitch) while captured, roll only while
+    /// approaching or in local flight, and in space flight a roll that
+    /// fades in across the release shell of the nearest planet (gravity on,
+    /// not at light speed). Nothing during the escape burn.
+    fn level_attitude(&mut self, dt: f32) {
+        match self.capture.state {
+            OrbitState::Captured { planet, .. } => self.align_to_planet(planet, 1.0, true, dt),
+            OrbitState::Approach { planet, .. } => self.align_to_planet(planet, 0.7, false, dt),
+            OrbitState::Escape { .. } => {}
+            OrbitState::Free => {
+                if let FlightMode::Local { planet, .. } = self.flight {
+                    self.align_to_planet(planet, 1.0, false, dt);
+                    return;
+                }
+                if !self.gravity || self.ship.boost > 0.5 {
+                    return;
+                }
+                let nearest = (0..self.bodies.len())
+                    .filter_map(|i| {
+                        let z = self.capture_zone(i)?;
+                        let d = self.distance_to(i);
+                        let reach = z.release + self.radius_of(i);
+                        let w = 1.0 - smoothstep(z.capture, reach, d);
+                        (w > 0.0).then_some((i, w))
+                    })
+                    .max_by(|a, b| a.1.total_cmp(&b.1));
+                if let Some((planet, weight)) = nearest {
+                    self.align_to_planet(planet, 0.6 * weight, false, dt);
+                }
+            }
+        }
     }
 }

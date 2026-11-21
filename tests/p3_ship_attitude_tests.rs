@@ -126,3 +126,62 @@ fn recordings_and_tests_without_the_live_controller_never_bank() {
     assert_eq!(s.bank, 0.0);
     assert_eq!(s.drawn_ship(), s.ship);
 }
+
+#[test]
+fn captured_ship_levels_with_the_planet_without_jumps() {
+    use rust_software_renderer::solar::capture::OrbitState;
+    use rust_software_renderer::solar::flight::FlightMode;
+    let mut s = scene();
+    let i = 2;
+    let z = s.capture_zone(i).unwrap();
+    let p = s.bodies[i].transform.position;
+    let n = (p - s.center).normalized();
+    s.flight = FlightMode::Space;
+    s.ship.position = p + n * (z.capture + 0.1 * s.radius_of(i));
+    // Rolled a quarter turn off the planet's vertical: "up" along the
+    // world's up, square to the planet's normal.
+    s.ship.up = Vector3::new(0.0, 1.0, 0.0);
+    s.ship.forward = s.ship.up.cross(n).normalized();
+    s.ship.renormalize();
+    s.ship.velocity = s.body_velocity(i) - n * 0.8;
+    s.ship.dampers = false;
+    let start = s.ship.up;
+    assert!(start.dot(n).abs() < 0.05);
+    let mut previous = s.ship.up;
+    let mut largest_turn = 0.0f32;
+    for _ in 0..(6 * 60) {
+        step(&mut s, &[], &[], Look::default(), 1.0 / 60.0);
+        largest_turn = largest_turn.max(previous.dot(s.ship.up).clamp(-1.0, 1.0).acos());
+        previous = s.ship.up;
+    }
+    assert!(matches!(s.capture.state, OrbitState::Captured { planet, .. } if planet == i));
+    let normal = (s.ship.position - s.bodies[i].transform.position).normalized();
+    assert!(s.ship.up.dot(normal) > 0.97, "{}", s.ship.up.dot(normal));
+    assert!(
+        s.ship.forward.dot(normal).abs() < 0.1,
+        "{}",
+        s.ship.forward.dot(normal)
+    );
+    // At 60 FPS the attitude never turns more than about 3 degrees a frame.
+    assert!(largest_turn < 0.05, "{largest_turn}");
+}
+
+#[test]
+fn without_the_live_controller_the_attitude_is_left_alone() {
+    use rust_software_renderer::solar::flight::FlightMode;
+    let mut s = scene();
+    s.capture.enabled = false;
+    let i = 2;
+    let z = s.capture_zone(i).unwrap();
+    let p = s.bodies[i].transform.position;
+    let n = (p - s.center).normalized();
+    s.flight = FlightMode::Space;
+    s.ship.position = p + n * (z.capture + 0.1 * s.radius_of(i));
+    s.ship.up = Vector3::new(0.0, 1.0, 0.0);
+    s.ship.forward = s.ship.up.cross(n).normalized();
+    s.ship.renormalize();
+    for _ in 0..60 {
+        step(&mut s, &[], &[], Look::default(), 1.0 / 60.0);
+    }
+    assert!((s.ship.up - Vector3::new(0.0, 1.0, 0.0)).length() < 1e-3);
+}
