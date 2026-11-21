@@ -192,7 +192,7 @@ Los puntos pendientes de C80 quedan así:
 - **Quinto planeta:** el Joker está aprobado y activo. Ace Crystal está aprobado pero no implementado ([decisión](project3_fifth_planet_decision.md)).
 - **Colisión (rubro 13):** `VERIFICADO` con la captura 08.
 - **Colisión a FPS bajos:** corregida en `da874ba`. Conserva el margen de 0.05 u a 10, 15, 30, 60 y 144 FPS.
-- **Puntos:** seguro 192 y condicionado 200, sobre el máximo de 200 ([matriz](project3_rubric_claims.md)). No están garantizados.
+- **Puntos:** seguro 196 y condicionado 200, sobre el máximo de 200 ([matriz](project3_rubric_claims.md)). El mapa de normales en textura (`28c6e4c`, `p3_normal_map_tests`, captura 27) completó el rubro 7. No están garantizados.
 - **Oráculos:**
   - `LEGACY_A_J`, los oráculos de los laboratorios y los OBJ no cambiaron (`p3_final_contract_tests`);
   - `P3_SCALED_A_J`, `P3_CLOVER_K` y `P3_HEARTS_M` se recapturaron solo en los commits que cambian lo que se ve: el Joker, el cielo, los cometas, las cascadas con el oleaje y las luces;

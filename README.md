@@ -14,7 +14,7 @@
 | Nave | `NaveBimotor` del Laboratorio 3 (Blender), con propulsores, luces automáticas y sonido procedural |
 | Render | Rasterizador por CPU propio, con Z-buffer, sombreado por fragmento, LOD y descarte. raylib solo abre la ventana, lee la entrada, presenta el framebuffer y reproduce el audio |
 | Física | Paso fijo de 1/240 s, gravedad ablandada, colisión por barrido, captura orbital con histéresis |
-| Pruebas | 1078 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
+| Pruebas | 1087 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
 
 **Índice:** [Universo](#el-universo-red-black) · [Galería](#galería) · [Sistema solar](#el-sistema-solar) · [Nave](#la-nave) · [Vuelo](#vuelo-gravedad-captura-y-escape) · [Controles](#controles) · [Ambiente](#ambiente-cielo-cometas-agua-luces-y-sonido) · [Bajo el capó](#bajo-el-capó) · [Ejecutar](#instalación-y-ejecución) · [Rúbrica](#rúbrica-oficial-y-puntos-reclamados) · [Estado final](#estado-final-del-proyecto) · [Autoría](#autor-y-contribuciones) · [Video](#video-de-demostración) · [Laboratorio 6](#laboratorio-6--planetas-y-estrellas-con-shaders) · [Camino al Proyecto 3](#camino-al-proyecto-3--sistema-solar-navegable) · [Vista interactiva](#vista-interactiva-de-la-nave-mejora-opcional) · [Tres modos](#demostración-interactiva--tres-modos-de-rasterización) · [Laboratorio 5](#laboratorio-5--filling-triangles) · [Laboratorio 4](#laboratorio-4--carga-de-modelos-obj) · [Arquitectura](#arquitectura-implementada) · [Autor](#autor)
 
@@ -77,6 +77,12 @@ Cómo se generó cada imagen: [docs/results/project3/media_expansion.md](docs/re
 | ![Atmósferas desde el espacio](docs/screenshots/project3/23-atmosphere-halos.png) **23** Cada planeta con su aire: el halo es más brillante del lado de día | ![Vuelo atmosférico](docs/screenshots/project3/24-atmospheric-flight.png) **24** Vuelo rasante sobre los seis planetas, con su curvatura y la bruma del horizonte |
 | ![Entrada a la atmósfera](docs/screenshots/project3/25-atmospheric-entry.png) **25** Clover Haven: entrada en picada y vuelo rasante de día y de noche | ![Vista antes y después](docs/screenshots/project3/26-pov-recovery-before-after.png) **26** El mismo escape 2.5 s después de pulsar el turbo: antes la vista seguía girada 90° con el planeta (el Joker de fondo, de lado); ahora vuelve a la vertical del espacio |
 | ![Vuelo atmosférico y salida en Clover Haven](docs/videos/project3/12-atmospheric-flight-clover.gif) Clover Haven: entrada, vuelo rasante, turbo y vista recuperada | ![Salida desde el hemisferio sur de Neon Hearts](docs/videos/project3/13-escape-pov-recovery-hearts.gif) Neon Hearts: salida desde el hemisferio sur, con la vista girada unos 115°, hasta el Follow estable |
+
+**Mapa de normales.** La roca de las montañas de Clover Haven se ilumina con un mapa de normales en textura (escala Grand; `B` lo apaga y enciende en el visor).
+
+| | |
+|---|---|
+| ![Mapa de normales apagado y encendido](docs/screenshots/project3/27-normal-map-off-on.png) **27** La misma montaña con el mapa apagado (izquierda) y encendido (derecha): placas de roca y grietas que la geometría no tiene | ![Textura del mapa de normales](docs/results/project3/geometry/normal_map_rock.png) La textura de 256×256 en un mosaico de 2×2: se repite sin costuras |
 
 ### El sistema solar
 
@@ -164,6 +170,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | `M` | Sonido encendido / apagado |
 | `X` | Amortiguadores inerciales |
 | `C` | Descarte fuera de la vista |
+| `B` | Mapa de normales de la roca de Clover Haven (escala Grand) |
 | `H` | HUD con contadores |
 | `V` | Cámara Follow ↔ cámara Orbit |
 | `P` | Pausa de órbitas y materiales |
@@ -202,6 +209,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | **Arquitectura B** | Lista plana de cuerpos con datos validados (`SystemSpec` → `ScaleProfile` → `OrbitLayout`) y adjuntos por planeta. Sin ECS ni motor externo | [project3.md §1–2](docs/project3.md) |
 | **Pipeline CPU** | Vértices → ensamblaje de triángulos → rasterización *scanline* con Z-buffer → sombreado por fragmento en lotes paralelos → framebuffer | [Arquitectura](#arquitectura-implementada) |
 | **Shaders** | Un material propio por cuerpo: plasma, lava, gas en rombos, trébol con agua, rejilla neón y arlequín. Más cascadas, cartas, llamas, lazos de plasma, neón de naves y cielo | [Laboratorio 6](#laboratorio-6--planetas-y-estrellas-con-shaders) |
+| **Mapa de normales** | Textura RGB de normales de 256×256 (`rgb = n · 0.5 + 0.5`), horneada una vez desde un mapa de alturas de roca que se repite. El shader de Clover Haven la lee con filtro bilineal en coordenadas (u, v) de la esfera y lleva el texel al objeto con el marco TBN: `n = T·x + B·y + N·z`, con T al este, B al norte y N la normal del relieve | Captura 27; [`normal_map.rs`](src/solar/planet/normal_map.rs) |
 | **Geometría procedural** | Icosferas deformadas por campos de altura con semilla. Árboles, rocas, edificios, pirámide, naves y cascadas generados por código y horneados por sectores | [project3.md §3](docs/project3.md) |
 | **LOD** | Niveles 2–5 (320–20 480 triángulos) según el radio proyectado, con histéresis | [benchmark_final.md](docs/results/project3/benchmark_final.md) |
 | **Descarte** | Esfera envolvente contra el frustum antes de rasterizar, y horizonte para lo que queda detrás del planeta | Captura 06 |
@@ -217,7 +225,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 
 ### Pruebas automatizadas
 
-`cargo test --release` corre **1078 pruebas** y todas pasan. Cada mejora de la expansión tiene su suite:
+`cargo test --release` corre **1087 pruebas** y todas pasan. Cada mejora de la expansión tiene su suite:
 
 | Suite | Qué cubre |
 |---|---|
@@ -235,6 +243,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | `p3_clover_water_identity_tests` | Mar luminoso, corrientes y cascadas en cortina |
 | `p3_atmospheric_flight_tests` | Vuelo atmosférico: entrada a cualquier velocidad, altura estable sobre el relieve, `E`/`Q`, salida con turbo, recuperación de la vista a 10–144 FPS en cualquier giro, nariz vertical y horizonte en cuadro |
 | `p3_atmospheres_tests` | Atmósferas: aire de cada planeta, halo de día y de noche, borde, bruma desde dentro, oclusión y solo en la escala Grand |
+| `p3_normal_map_tests` | Mapa de normales: color de cada texel, horneado, filtro bilineal, coordenadas (u, v), marco TBN, textura de roca sin costuras, la roca iluminada sin tocar el mar, solo en la escala Grand y la tecla `B` |
 
 Los oráculos de cuadro (FNV-1a) fijan la salida exacta de cada escenario. Los de los laboratorios no cambiaron. La lista completa de suites y los comandos de validación están en [project3_final_validation.md](docs/project3_final_validation.md).
 
@@ -261,7 +270,7 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 | Posición y orientación sobre la superficie al girar | 5 | [Orientación al girar](docs/results/project3/geometry/orientation_spin.png) |
 | Shaders propios distinguibles (4) | 24 | Capturas 01–04 y 07; Laboratorio 6 |
 | Shader animado | 8 | GIF del océano, de la cascada y del Joker |
-| Mapeo de normales (normal del campo y *bump* procedural) | 4 de 8 | [Bump apagado / encendido](docs/results/project3/geometry/normals_bump_0_1.png) |
+| Mapeo de normales (mapa de normales en textura con marco TBN; normal del campo y *bump* procedural) | 8 | Captura 27; [textura](docs/results/project3/geometry/normal_map_rock.png); [bump apagado / encendido](docs/results/project3/geometry/normals_bump_0_1.png) |
 | Deformación de la geometría con ruido | 10 | [Relieve plano / con campo](docs/results/project3/geometry/relief_flat_vs_field.png) |
 | Subdivisión procedural antes de rasterizar | 10 | [Niveles 2 y 5](docs/results/project3/geometry/subdivision_l2_l5.png) |
 | Vuelo local alrededor de un planeta | 8 | Recorrido histórico; captura 09 |
@@ -273,7 +282,7 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 | Coherencia visual (juicio docente) | 3 de 5 | Galería |
 | Claridad de la experiencia (juicio docente) | 3 de 5 | HUD, controles y este README |
 
-- **Totales:** 192 puntos seguros y 200 condicionados, sobre el máximo de 200 del menú.
+- **Totales:** 196 puntos seguros y 200 condicionados, sobre el máximo de 200 del menú.
 - **Planetas:** el menú cuenta como máximo cinco, y la estrella no cuenta.
 - **Ningún total está garantizado:** cada rubro suma solo si el profesor lo acepta en la demostración, y la nota es min(100, puntos aceptados).
 
@@ -295,12 +304,13 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 - **Escenas pesadas:** el escenario medido más lento tarda 92.9 ms por cuadro con todos los núcleos a 800×600 (relieve rasante con el nivel 5 forzado, solo para comparar). Con el nivel elegido por distancia, la misma vista tarda 82.8 ms.
 - **FPS del HUD en la captura 06:** es 1 / tiempo de `render_frame`, sin la presentación de la ventana.
 - **Dos escalas:** el visor interactivo usa la escala Grand con seis planetas. Las pruebas, los oráculos, el benchmark, el recorrido grabado y las capturas 01–15 usan la escala de proyecto con cinco, así que esa evidencia no muestra Ace Crystal ni el tamaño nuevo.
-- **Solo en el visor:** el alabeo, la nivelación, el vuelo atmosférico, la cámara atmosférica, la recuperación de la vista y las atmósferas los aplica el visor. Las grabaciones, los oráculos y las pruebas históricas no los usan.
+- **Solo en el visor:** el alabeo, la nivelación, el vuelo atmosférico, la cámara atmosférica, la recuperación de la vista, las atmósferas y el mapa de normales los aplica el visor. Las grabaciones, los oráculos y las pruebas históricas no los usan.
 - **Sin reescalado adicional en la tercera pasada:** los radios y las órbitas de la escala Grand no cambiaron. Lo que alejaba el suelo era el piso de 0.15 R y una cámara que miraba la tangente, y se corrigió con el piso rasante y la inclinación hacia el horizonte. Duplicar los planetas solo bajaría la caída del horizonte desde la nave de unos 31° a unos 22° en Clover Haven, porque crece como √(2h/R), y arrastraría órbitas, estrella, cometas, gravedad y LOD ([razones](docs/project3_atmospheric_flight.md#6-recalibración-piso-rasante-y-horizonte-en-cuadro)).
 - **Planetas pequeños de cerca:** a la altura de exploración (1.2 u) el horizonte cae unos 31° desde la nave en Clover Haven y la curvatura se nota mucho. Es un mundo pequeño que se recorre, no una llanura.
 - **Cristales de Ace:** como las cartas de House of Cards, no tienen colisión propia. La nave choca con la esfera del relieve más alto en el espacio y los atraviesa en el vuelo atmosférico.
 - **Costo a escala Grand:** con todos los núcleos a 800×600 (mediana de 5 cuadros, sin otra carga en el equipo), el cuadro inicial tarda 13 ms, una vista cercana de un planeta de 53 a 60 ms, una vista rasante sobre una cascada monumental 87 ms y un vuelo rasante de noche sobre Crimson Entrance 114 ms (los encuadres de las capturas 16–22).
 - **Costo de las atmósferas:** a 800×600 con todos los núcleos (20 hilos), la mediana de 24 cuadros de vuelo rasante sube de 50 a 70 ms en Clover Haven y de 49 a 64 ms en Ace Crystal con las atmósferas encendidas. Desde lejos, la pasada solo recorre el recuadro de cada planeta.
+- **Mapa de normales:** solo cubre la roca y, con un quinto de la intensidad, el pasto de Clover Haven, y solo a escala Grand: las capturas 01–15 y los oráculos no lo muestran. No tiene mipmaps, así que con el planeta pequeño en pantalla cada píxel toma un solo texel de muchos. En una vista cercana de Clover Haven encarece el cuadro un 11 % (mediana de 8 corridas alternadas con `B` apagado y encendido).
 - **Audio:** se comprobó que el dispositivo se abre y que los tres sonidos se cargan en el visor. Lo que se oye depende del equipo, y las pruebas automáticas cubren la síntesis, no la reproducción.
 
 ### Estado final del proyecto
@@ -311,6 +321,7 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 | Expansión: Joker, corrección de colisión a bajo FPS, cielo animado, cometas, captura orbital y escape tangencial, cascadas monumentales y oleaje, luces automáticas, audio procedural | Implementado y probado |
 | Segunda pasada: escala Grand, Clover Haven (mar y cascadas en cortina), Joker teatral, Ace Crystal, alabeo, nivelación con el planeta y faro que ilumina el terreno | Implementado y probado ([auditoría y resultados](docs/project3_visual_correction.md)) |
 | Tercera pasada: vuelo atmosférico con controlador de altura, cámara que encuadra el horizonte, recuperación de la vista al salir y atmósferas por planeta | Implementado y probado en el visor ([auditoría y resultados](docs/project3_atmospheric_flight.md)) |
+| Mapa de normales en textura | Implementado y probado en el visor (escala Grand, `B`). Completa el rubro de mapeo de normales: 8 de 8 |
 | Ace Crystal (sexto planeta) | **Implementado solo en el visor** (escala Grand, `F6`). La escala de proyecto conserva cinco planetas, y el menú de la rúbrica cuenta como máximo cinco |
 | Reescalado mayor de planetas y estrella | **Aplicado al visor** como escala Grand (planetas ×5, estrella ×7, órbitas de 78.5 a 225 u, crucero y empuje ×2). La escala de proyecto se conserva para pruebas, oráculos y recorrido grabado ([evaluación previa](docs/project3_rescale_evaluation.md)) |
 | Reescalado adicional pedido en la tercera pasada | **No aplicado.** Se recalibraron el vuelo cercano y la cámara en su lugar ([razones](docs/project3_atmospheric_flight.md#6-recalibración-piso-rasante-y-horizonte-en-cuadro)) |

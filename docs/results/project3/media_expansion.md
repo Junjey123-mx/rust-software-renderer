@@ -79,3 +79,22 @@ Se generaron el 2026-11-21 con el código del commit `64a6fec`, copiado con `git
 
 - **Altura en el vuelo rasante:** de 1.20 a 1.22 u sobre el mar de Clover Haven, y de 1.12 a 1.21 u sobre la ciudad de Neon Hearts. La altura objetivo es 1.20 u.
 - **El escape de la captura 26:** la distancia al planeta y la velocidad son iguales cuadro a cuadro en las dos versiones.
+
+## Mapa de normales: captura 27 y textura
+
+Se generaron con el código del commit `28c6e4c`, copiado con `git archive` fuera del repositorio.
+
+**Herramientas temporales** (fuera del repositorio):
+
+- `gshot`, con la variable `NM` que fija la intensidad `normal_map` de Clover Haven antes de dibujar;
+- `nmap`, que escribe los texeles de `normal_map::rock()` tal cual, sin filtrar.
+
+| Archivo | Qué muestra |
+|---|---|
+| `27-normal-map-off-on.png` | Clover Haven a escala Grand desde 0.5 R de la cascada monumental 0, en el instante en que la cascada mira más hacia la estrella (t = 35 s). El cuadro es de 800×600 y el recorte de 480×360 tiene la misma posición en los dos lados: `NM=0` a la izquierda y `NM=1` a la derecha. Cambia solo la iluminación de la roca y del pasto; los colores, la geometría y el mar son los mismos |
+| `geometry/normal_map_rock.png` (en `docs/results/project3/`) | La textura de 256×256 de `normal_map::rock()` repetida en un mosaico de 2×2. Los bordes coinciden porque el mapa de alturas se repite con período 1. El azul `(128, 128, 255)` es una normal sin inclinación, y las grietas tiñen de rojo y verde según hacia dónde se inclinan |
+
+**Registros de las herramientas** (no se versionan):
+
+- **Inclinación de los texeles respecto de la normal plana:** percentil 10, 5.9°; mediana, 18.2°; percentil 90, 60.7°; máximo, 70.1°.
+- **Costo:** en esa misma vista, la mediana de 8 corridas alternadas (`NM=0`, `NM=1`, `NM=1`, `NM=0`…) pasa de unos 130 a unos 145 ms por cuadro con todos los núcleos, un 11 %. El ruido entre corridas es grande, así que el porcentaje es aproximado.
