@@ -45,6 +45,12 @@ Esta tabla recoge los 17 rubros del menú oficial: el estado de cada uno, el com
   - en vuelo espacial, la forma es la esfera del relieve más alto; el vuelo local (`L`) sigue el terreno exacto;
   - las cartas del anillo de House of Cards no tienen colisión propia.
 - **16–17:** son juicio docente: la tabla solo reclama una parte como segura.
+- **Expansión del 2026-11-20:** no abre rubros nuevos. Lo que suma lo juzga el profesor en la demostración y no se reclama como puntos seguros:
+  - captura orbital y escape tangencial (`p3_orbital_capture_tests`, capturas 09–10, GIF 02);
+  - cielo animado, cometas, cascadas monumentales y oleaje;
+  - luces automáticas y audio procedural.
+
+  Refuerzan los rubros 6, 10, 16 y 17.
 
 ## Totales
 

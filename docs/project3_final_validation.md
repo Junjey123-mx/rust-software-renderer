@@ -163,6 +163,56 @@ G2 se ejecutó el 2026-11-20 con `CARGO_TARGET_DIR` en `/tmp`, porque `/home` es
 4. **Colisión a FPS bajos:** a 10 FPS la forma de colisión adelanta al planeta hasta un cuadro de su órbita (`docs/results/project3/gravity_evidence.md`).
 5. **Push:** no se hizo; lo hace el usuario tras revisar.
 
+## Expansión del 2026-11-20 (después de C80)
+
+Esta sección se añade sin reescribir lo anterior. Todo lo que hay más arriba es el estado de C80 (`3bc7ad3`) tal como se cerró.
+
+### Commits de la expansión
+
+| Hash | Asunto | G2 al confirmar |
+|---|---|---|
+| `35baf3b` | docs: declare individual authorship and close the R5 contract | verde |
+| `3b4fef0` | feat: add the approved Joker as the fifth Project 3 planet | verde |
+| `da874ba` | fix: start collision shapes where moving planets were at frame start | verde |
+| `e81786c` | docs: add collision evidence capture and verify the collision row | verde |
+| `08501d2` | feat: cycle the Project 3 sky slowly from purple to blue and back | verde |
+| `e36c659` | feat: add comets that travel through the Project 3 sky | verde, 1009 pasadas |
+| `435c2b6` | feat: add orbital capture with hysteresis and tangential escape | verde, 1020 pasadas |
+| `e09d9e3` | feat: add three monumental waterfalls and an ocean swell to the clover planet | verde, 1024 pasadas |
+| `b7ec83e` | feat: switch the Project 3 ship lights on automatically in planet shadows | verde, 1028 pasadas |
+| `cb64845` | feat: add procedural ship audio with an M toggle to the Project 3 viewer | verde, 1033 pasadas |
+
+Los commits de documentación y capturas que cierran la expansión vienen después; sus hashes están en `git log` y en la auditoría externa. «Verde» significa `fmt`, `clippy -D warnings`, `cargo test --no-fail-fast` sin fallos y `git diff --check`.
+
+### Estado actualizado
+
+Los puntos pendientes de C80 quedan así:
+
+- **R5:** `CUMPLE`. El autor confirmó que el proyecto es individual ([contrato](project3_delivery_contract.md)).
+- **Quinto planeta:** el Joker está aprobado y activo. Ace Crystal está aprobado pero no implementado ([decisión](project3_fifth_planet_decision.md)).
+- **Colisión (rubro 13):** `VERIFICADO` con la captura 08.
+- **Colisión a FPS bajos:** corregida en `da874ba`. Conserva el margen de 0.05 u a 10, 15, 30, 60 y 144 FPS.
+- **Puntos:** seguro 192 y condicionado 200, sobre el máximo de 200 ([matriz](project3_rubric_claims.md)). No están garantizados.
+- **Oráculos:**
+  - `LEGACY_A_J`, los oráculos de los laboratorios y los OBJ no cambiaron (`p3_final_contract_tests`);
+  - `P3_SCALED_A_J`, `P3_CLOVER_K` y `P3_HEARTS_M` se recapturaron solo en los commits que cambian lo que se ve: el Joker, el cielo, los cometas, las cascadas con el oleaje y las luces;
+  - la causa de cada recaptura está anotada en `tests/p3_frame_oracle_tests.rs`.
+- **Pruebas previas cambiadas:**
+  - las que contaban cuatro planetas o cuatro fuentes de gravedad, por el Joker (`3b4fef0`);
+  - `boost_into_planet_no_penetration`, que ahora exige el margen (`da874ba`);
+  - `p3_four_waterfalls_tests::culled_when_behind`, que cuenta 4 + 3 cascadas (`e09d9e3`).
+- **Nuevas suites:**
+  - `p3_joker_planet_tests`, `p3_collision_moving_target_tests`, `p3_sky_cycle_tests` y `p3_comet_tests`;
+  - `p3_orbital_capture_tests`, `p3_monumental_waterfall_tests`, `p3_ship_lights_tests` y `p3_audio_tests`.
+- **Capturas y GIF:** las capturas 09–15 y los GIF 02–11 están descritos en [media_expansion.md](results/project3/media_expansion.md).
+
+### No ejecutado en la expansión
+
+- **Ace Crystal:** un sexto cuerpo movería las órbitas, el punto de aparición y todos los oráculos a horas de la entrega, y no suma puntos porque el menú cuenta hasta cinco planetas.
+- **Reescalado mayor:** se evaluó y no se aplicó ([evaluación](project3_rescale_evaluation.md)).
+- **Video final:** lo graba el autor. El README deja el marcador «VIDEO FINAL — PENDIENTE DE INCORPORACIÓN POR EL AUTOR».
+- **Push:** no se hizo; lo decide el usuario.
+
 ## Suites del Proyecto 3
 
 `p3_final_contract_tests::all_p3_suites_registered` comprueba que esta lista coincide con los archivos `tests/p3_*.rs`:

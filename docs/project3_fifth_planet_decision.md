@@ -2,6 +2,12 @@
 
 **Estado (2026-11-20): Joker aprobado y activo.** El autor aprobó por escrito los dos conceptos («Ambos conceptos quedan APROBADOS para implementación»). El Joker ocupa la ranura del quinto planeta (órbita 49) y sube el techo a **200 puntos**. Ver [Aprobación del 2026-11-20](#aprobación-del-2026-11-20).
 
+**Ace Crystal («As de Cristal», concepto 2): aprobado y no implementado.** El 2026-11-20 se decidió no ejecutarlo, por tres razones:
+
+- un sexto cuerpo movería la disposición de las órbitas, el punto de aparición y todos los oráculos de cuadro a horas de la entrega;
+- el menú cuenta como máximo cinco planetas, así que no suma puntos;
+- su diseño, con cristales que sobresalen de la superficie, horneado por sectores y LOD, queda registrado abajo para una versión posterior.
+
 **Estado anterior (C70): `ART_PENDING_APPROVAL`.** Ningún concepto estaba aprobado, el sistema cerraba con cuatro planetas (los cuatro palos de la baraja) y el techo quedaba en **190 puntos**. Se conserva abajo como historial.
 
 ## Contexto

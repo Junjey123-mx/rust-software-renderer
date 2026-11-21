@@ -14,6 +14,7 @@ Cómo está hecho el sistema solar navegable del Proyecto 3: módulos, datos del
 | `src/solar/physics/` | Vuelo inercial a paso fijo (`motion.rs`), gravedad (`gravity.rs`) y colisión por barrido (`collision.rs`). |
 | `src/solar/flight.rs`, `src/solar/ship.rs`, `src/solar/thrusters.rs` | Controladores de vuelo espacial y local, estado de la nave y llamas de los motores. |
 | `src/solar/capture.rs` | Captura orbital con histéresis y escape tangencial, sobre los controladores de vuelo local y espacial. |
+| `src/solar/nebula.rs`, `src/solar/comets.rs`, `src/solar/ship_lights.rs`, `src/solar/audio.rs` | Cielo que cicla de púrpura a azul, cometas, luces automáticas de la nave y audio procedural. |
 | `src/solar/camera.rs`, `src/solar/viewer.rs`, `src/solar/input.rs`, `src/solar/hud.rs` | Cámaras Follow y Orbit, bucle de ventana, teclas y contadores en pantalla. |
 | `src/solar/record.rs` | Grabación sin ventana de los guiones `flight`, `tour` y `final-tour` (cuadros RGB crudos por `stdout`). |
 | `src/benchmark/solar.rs` | Escenarios medibles (A–M) y el benchmark final de C75. |
@@ -29,8 +30,11 @@ La nave es la unidad de medida. Su radio envolvente es `MESH_RADIUS × SHIP_SCAL
 | Clover Haven (trébol) | 1.45 | 4.55 | 21.0 | 0.90 | 146.6 | 1.631 |
 | Neon Hearts | 1.30 | 4.08 | 29.5 | 0.85 | 218.1 | 1.388 |
 | House of Cards | 1.75 | 5.49 | 40.0 | 0.75 | 335.1 | 1.969 |
+| Joker | 1.60 | 5.01 | 49.0 | 0.70 | 439.8 | 1.800 |
 
-El quinto planeta está en `ART_PENDING_APPROVAL` ([decisión](project3_fifth_planet_decision.md)): el sistema activo tiene cuatro planetas más la estrella.
+- **Planetas activos:** cinco y la estrella. El Joker, quinto planeta, quedó aprobado y activo el 2026-11-20 ([decisión](project3_fifth_planet_decision.md)).
+- **Ace Crystal:** su diseño también está aprobado, pero no está implementado (sección 6).
+- **Reescalado:** la evaluación de un reescalado mayor está en [project3_rescale_evaluation.md](project3_rescale_evaluation.md).
 
 ## 3. Fórmulas
 
@@ -127,7 +131,42 @@ Activa en el visor interactivo (`cargo run --release -- --scene project3`). Las 
 - **Contadores:** el HUD (`H`) muestra objetos probados y descartados, triángulos y nivel por planeta ([06-hud-counters.png](screenshots/project3/06-hud-counters.png)).
 - **Benchmark:** las cifras medidas están en [benchmark_final.md](results/project3/benchmark_final.md).
 
-## 4. Video final
+## 4. Ambiente de la expansión (2026-11-20)
+
+Solo el sistema del Proyecto 3 activa estas mejoras. Las escenas de los laboratorios y del camino al Proyecto 3 no cambian.
+
+- **Cielo (`nebula.rs`):**
+  - la nebulosa pintada se recolorea en su rejilla de muestreo con una fracción de azul `drift · ciclo · onda`;
+  - el ciclo es `0.5 − 0.5 cos(2π t / 90)` y la onda es `0.55 + 0.45 sin(2.5 d·eje − 2π t / 37)`;
+  - de púrpura a azul y de vuelta en 90 s, sin que todo el cielo cambie a la vez;
+  - prueba: `p3_sky_cycle_tests`.
+- **Cometas (`comets.rs`):**
+  - tres elipses de forma cerrada alrededor de la estrella;
+  - la cola mide 0.75 desde la estrella más 0.25 hacia atrás;
+  - se dibujan después del Z-buffer, detrás de lo que ya está pintado, y se omiten fuera del cuadro;
+  - prueba: `p3_comet_tests`.
+- **Agua y cascadas (`planet/clover.rs`, `attach/waterfalls.rs`):**
+  - el océano suma al tren de olas y a la espuma un oleaje de bandas curvadas que cruza el mar cuatro veces por periodo de olas;
+  - a las cuatro cascadas clásicas se suman tres monumentales: 0.06 R de ancho y 24 segmentos;
+  - cada monumental nace al 40 % del camino entre el centro de su montaña y la costa, en otra ladera, a al menos 0.12 rad de la clásica, y baja por el gradiente hasta el mar;
+  - prueba: `p3_monumental_waterfall_tests`.
+- **Luces de la nave (`ship_lights.rs`):**
+  - el nivel es la profundidad de la nave en la sombra de algún planeta entre ella y la estrella (penumbra de 1.15 R a 0.85 R del eje);
+  - se dibujan las luces roja y verde de las alas, un estrobo de 0.12 s por segundo y un haz delantero;
+  - al sol no se dibuja nada: el cuadro queda idéntico byte a byte;
+  - prueba: `p3_ship_lights_tests`.
+- **Audio (`audio.rs`):**
+  - al iniciar se sintetizan tres sonidos PCM de 16 bits a 22 050 Hz:
+    - el rumor de los propulsores: un zumbido de 55 Hz sobre parciales graves;
+    - el silbido de la luz: parciales agudos;
+    - un barrido de 180 a 900 Hz en 0.9 s;
+  - los dos bucles duran un segundo exacto con ciclos enteros, así que no hacen clic;
+  - el visor los carga en el dispositivo de audio de raylib, el volumen sigue al empuje y al turbo, y `M` silencia;
+  - prueba: `p3_audio_tests`.
+
+## 5. Recorrido grabado (histórico)
+
+Es el recorrido de la versión de cuatro planetas, conservado como evidencia. El video definitivo de la entrega lo graba el autor (README, sección «Video de demostración»).
 
 - **Guion:** `--timeline final-tour` (`src/solar/record.rs`), un solo plano de 56 s:
   - vuelo espacial y acercamiento a Crimson Entrance;
@@ -144,7 +183,7 @@ Activa en el visor interactivo (`cargo run --release -- --scene project3`). Las 
   docs/videos/project3/encode.sh          # 01-final-tour.mp4 y 01-final-tour.gif
   ```
 
-## 5. Verificación
+## 6. Verificación
 
 ```bash
 cargo fmt --all -- --check

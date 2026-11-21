@@ -1,113 +1,249 @@
-# Rust Software Renderer — Laboratorios 4, 5 y 6
+# RED-BLACK UNIVERSE — SPACE TRAVEL
 
-Proyecto del curso **Gráficas por Computadora** — **Universidad del Valle de Guatemala (UVG)**, segundo ciclo 2026
+**Proyecto 3 de Gráficas por Computadora** — Universidad del Valle de Guatemala (UVG), segundo ciclo 2026
 
-Rasterizador por CPU escrito en Rust. Contiene el **Laboratorio 4: Carga de modelos OBJ** (contornos), sobre él el **Laboratorio 5: Filling triangles** (dos algoritmos de relleno, comparación de posiciones, benchmark y perfilado), una **vista interactiva** de la nave con cámara orbital, Z-buffer y sombreado y, sobre todo ello, el **Laboratorio 6: planetas y estrellas con shaders**: tres cuerpos celestes con fragment shaders procedurales sobre la misma esfera.
+*Un sistema solar de naipes, neón y plasma, dibujado píxel a píxel por un rasterizador por CPU escrito en Rust.* Una estrella con corona, cinco planetas y una nave que se pilota a mano. Este repositorio también contiene los laboratorios que lo hicieron posible: el **Laboratorio 4** (carga de OBJ), el **Laboratorio 5** (relleno de triángulos) y el **Laboratorio 6** (planetas y estrellas con shaders).
 
-- [Proyecto 3 — Space Travel](#proyecto-3--space-travel)
-- [Laboratorio 6 — Planetas y estrellas con shaders](#laboratorio-6--planetas-y-estrellas-con-shaders)
-- [Camino al Proyecto 3 — Sistema solar navegable](#camino-al-proyecto-3--sistema-solar-navegable)
-- [Vista interactiva (opcional)](#vista-interactiva-de-la-nave-mejora-opcional)
-- [Demostración en video: tres modos](#demostración-interactiva--tres-modos-de-rasterización)
-- [Laboratorio 5 — Filling triangles](#laboratorio-5--filling-triangles)
-- [Laboratorio 4 — Carga de modelos OBJ](#laboratorio-4--carga-de-modelos-obj)
-- [Arquitectura](#arquitectura-implementada)
-- [Cómo ejecutar y verificar](#cómo-ejecutar-el-proyecto)
-- [Autor](#autor)
+![Captura orbital alrededor de Clover Haven y escape tangencial](docs/videos/project3/02-orbital-capture.gif)
+
+*Captura real del framebuffer de CPU. La nave cae en la órbita de Clover Haven, la rodea sin tocar una tecla y escapa por la tangente con `SPACE`.*
+
+| Ficha técnica | |
+|---|---|
+| Cuerpos | 1 estrella + 5 planetas (Crimson Entrance, Clover Haven, Neon Hearts, House of Cards y Joker) |
+| Nave | `NaveBimotor` del Laboratorio 3 (Blender), con propulsores, luces automáticas y sonido procedural |
+| Render | Rasterizador por CPU propio, con Z-buffer, sombreado por fragmento, LOD y descarte. raylib solo abre la ventana, lee la entrada, presenta el framebuffer y reproduce el audio |
+| Física | Paso fijo de 1/240 s, gravedad ablandada, colisión por barrido, captura orbital con histéresis |
+| Pruebas | 1033 pruebas automatizadas verdes (`cargo test`), más `fmt`, `clippy -D warnings` y `diff --check` |
+
+**Índice:** [Universo](#el-universo-red-black) · [Galería](#galería) · [Sistema solar](#el-sistema-solar) · [Nave](#la-nave) · [Vuelo](#vuelo-gravedad-captura-y-escape) · [Controles](#controles) · [Ambiente](#ambiente-cielo-cometas-agua-luces-y-sonido) · [Bajo el capó](#bajo-el-capó) · [Ejecutar](#instalación-y-ejecución) · [Rúbrica](#rúbrica-oficial-y-puntos-reclamados) · [Estado final](#estado-final-del-proyecto) · [Autoría](#autor-y-contribuciones) · [Video](#video-de-demostración) · [Laboratorio 6](#laboratorio-6--planetas-y-estrellas-con-shaders) · [Camino al Proyecto 3](#camino-al-proyecto-3--sistema-solar-navegable) · [Vista interactiva](#vista-interactiva-de-la-nave-mejora-opcional) · [Tres modos](#demostración-interactiva--tres-modos-de-rasterización) · [Laboratorio 5](#laboratorio-5--filling-triangles) · [Laboratorio 4](#laboratorio-4--carga-de-modelos-obj) · [Arquitectura](#arquitectura-implementada) · [Autor](#autor)
 
 ---
 
 ## Proyecto 3 — Space Travel
 
-Sistema solar navegable dibujado por completo con el rasterizador por CPU de este repositorio: la estrella The King's Crown, cuatro planetas (Crimson Entrance, Clover Haven, Neon Hearts y House of Cards) y la nave propia del Laboratorio 3. raylib solo abre la ventana, lee teclado y ratón y presenta el framebuffer. La arquitectura y las fórmulas de escala, órbitas y gravedad están en [docs/project3.md](docs/project3.md). El estado de los requisitos habilitantes R1–R5 está en [docs/project3_delivery_contract.md](docs/project3_delivery_contract.md).
+### El universo Red-Black
 
-▶ [Recorrido final](docs/videos/project3/01-final-tour.mp4) · 56 s, 800×600, 30 fps, **un solo plano sin viaje rápido, sin cambio de cámara y sin cortes**, con la gravedad encendida:
+Red-Black es un universo de casino cósmico. Cada cuerpo celeste es una carta o una ficha de la mesa:
 
-1. vuelo espacial desde fuera del sistema, con ráfagas de velocidad de la luz;
-2. acercamiento continuo a Crimson Entrance y una vuelta completa en vuelo local (más de 2π);
-3. pasada junto al planeta trébol (montañas, árboles, rocas y cascada);
-4. pasada junto a Neon Hearts (rejilla neón, pirámide-corazón, ciudad, naves y motos de luz con estelas);
-5. alejamiento a velocidad de la luz.
+- **El rey:** la estrella lleva corona.
+- **Los palos:** un planeta es un trébol que flota en el mar, otro es un corazón de neón y otro es un castillo de naipes con su anillo de cartas.
+- **El comodín:** el Joker cierra el sistema.
 
-![Recorrido final](docs/videos/project3/01-final-tour.gif)
+La paleta nace del rojo y el negro de la baraja, y cada planeta suma su color: verde de trébol, magenta de neón, rombos rojos y el arlequín del Joker.
 
-El clip sale del guion `--timeline final-tour` ([`src/solar/record.rs`](src/solar/record.rs)). La nave se pilota con las mismas acciones que un jugador: teclas de vuelo y giros de ratón. [`tests/p3_final_tour_tests.rs`](tests/p3_final_tour_tests.rs) comprueba:
+**Inspiración artística:** baraja francesa, letreros de neón de casino y paisajes low-poly. Todo es geometría propia generada por código sobre la esfera del docente.
 
-- que no hay cortes;
-- que la vuelta local supera 2π;
-- que el camino es continuo a 30 y 60 FPS sin entrar en ningún cuerpo;
-- que el clip dura a lo sumo 60 s.
+La arquitectura, las fórmulas y los parámetros están en [docs/project3.md](docs/project3.md). Los requisitos habilitantes R1–R5 están en [docs/project3_delivery_contract.md](docs/project3_delivery_contract.md).
 
-### Capturas
+### Galería
 
-Las capturas salen del framebuffer de CPU.
+Todas las imágenes son salidas reales del framebuffer de CPU, sin retoques. La 15 es una captura de la ventana del visor interactivo (`--screenshot`).
 
 | | |
 |---|---|
-| ![Trébol de cerca](docs/screenshots/project3/01-clover-close.png) Trébol de cerca | ![Cascada del trébol](docs/screenshots/project3/02-clover-waterfall.png) Montaña y cascada |
-| ![Ciudad de Hearts](docs/screenshots/project3/03-hearts-city.png) Pirámide y ciudad de Hearts | ![Sistema](docs/screenshots/project3/04-system-orbit.png) El sistema con la nave |
-| ![Gravedad](docs/screenshots/project3/05-gravity-on-off.png) Nave en deriva cada 1 s: sin gravedad (recta) y con gravedad (se curva hacia el planeta) | ![HUD](docs/screenshots/project3/06-hud-counters.png) HUD: descarte, triángulos y nivel de detalle por planeta |
+| ![Trébol de cerca](docs/screenshots/project3/01-clover-close.png) **01** Clover Haven de cerca | ![Cascada del trébol](docs/screenshots/project3/02-clover-waterfall.png) **02** Montaña y cascada |
+| ![Ciudad de Hearts](docs/screenshots/project3/03-hearts-city.png) **03** Pirámide y ciudad de Neon Hearts | ![Sistema](docs/screenshots/project3/04-system-orbit.png) **04** El sistema con la nave |
+| ![Gravedad](docs/screenshots/project3/05-gravity-on-off.png) **05** Deriva sin gravedad (recta) y con gravedad (curva) | ![HUD](docs/screenshots/project3/06-hud-counters.png) **06** HUD: descarte, triángulos y LOD por planeta |
+| ![Joker](docs/screenshots/project3/07-joker-close.png) **07** El Joker, quinto planeta | ![Colisión a 10 FPS](docs/screenshots/project3/08-collision-10fps.png) **08** Colisión a 10 FPS: la nave se detiene a 0.050 u |
+| ![Captura orbital](docs/screenshots/project3/09-orbital-capture.png) **09** Captura orbital en Clover Haven | ![Escape tangencial](docs/screenshots/project3/10-tangential-escape.png) **10** Escape tangencial con velocidad de la luz |
+| ![Cascada monumental](docs/screenshots/project3/11-clover-monumental-fall.png) **11** Una de las tres cascadas monumentales | ![Luces de la nave](docs/screenshots/project3/12-ship-lights.png) **12** Luces automáticas a la sombra de un planeta |
+| ![Cielo púrpura y azul](docs/screenshots/project3/13-sky-purple-blue.png) **13** El cielo a t = 0 s (púrpura) y t = 45 s (azul) | ![Cometa](docs/screenshots/project3/14-comet.png) **14** Un cometa cruza el sistema |
+| ![Ventana del visor](docs/screenshots/project3/15-live-window.png) **15** Ventana del visor interactivo al iniciar | |
 
-### Cómo ejecutar
+**Animaciones** (GIF, framebuffer de CPU):
 
-```bash
-cargo run --release -- --scene solar                       # pilotar la nave (cámara Follow)
-cargo run --release -- --scene solar --camera orbit        # sistema completo desde la cámara orbital
-cargo run --release -- --scene solar --record 56 --fps 30 --timeline final-tour | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - recorrido.mp4
-docs/videos/project3/encode.sh                             # regenera 01-final-tour.mp4 y .gif (tras cargo build --release)
-cargo test --release                                       # todas las pruebas
-```
+| | | |
+|---|---|---|
+| ![Cascada monumental](docs/videos/project3/03-monumental-waterfall.gif) Cascada monumental | ![Océano](docs/videos/project3/04-clover-ocean.gif) Océano y oleaje de Clover Haven | ![Joker](docs/videos/project3/05-joker.gif) Joker |
+| ![Cielo](docs/videos/project3/06-sky-cycle.gif) Cielo púrpura → azul | ![Cometa](docs/videos/project3/07-comet.gif) Cometa | ![House of Cards](docs/videos/project3/08-house-ring.gif) House of Cards y su anillo |
+| ![Neon Hearts](docs/videos/project3/09-hearts.gif) Neon Hearts | ![Estrella](docs/videos/project3/10-star.gif) The King's Crown | ![Propulsores](docs/videos/project3/11-thrusters.gif) Propulsores: crucero, luz y apagado |
+
+Cómo se generó cada imagen: [docs/results/project3/media_expansion.md](docs/results/project3/media_expansion.md).
+
+### El sistema solar
+
+La nave es la unidad de medida: su radio envolvente es 0.319 u. Los planetas miden de 3 a 6 radios de nave y la estrella de 3 a 5 radios del planeta mayor (`ScaleProfile`). Las órbitas mantienen al menos 3 u entre las cáscaras de los vecinos (`OrbitLayout`).
+
+| Cuerpo | Radio (u) | Órbita (u) | Velocidad (u/s) | Qué lo distingue |
+|---|---:|---:|---:|---|
+| **The King's Crown** (estrella) | 5.40 | — | — | Plasma vivo con venas doradas, manchas, eclipse y bucles de plasma; corona regia y lazos de plasma externos |
+| **Crimson Entrance** | 1.10 | 14.0 | 1.00 | Mundo volcánico de basalto y grietas de magma cuya corteza se hunde en cráteres-pica ♠; *bump* procedural |
+| **Clover Haven** | 1.45 | 21.0 | 0.90 | Isla-trébol de cuatro montañas en un océano con olas, espuma y oleaje. Tiene árboles, rocas, 4 cascadas clásicas y 3 monumentales |
+| **Neon Hearts** | 1.30 | 29.5 | 0.85 | Rejilla neón con *glitch*, pirámide-corazón, ciudad, naves neón y motos de luz con estelas |
+| **House of Cards** | 1.75 | 40.0 | 0.75 | Gigante gaseoso de tormentas en rombo con un anillo de 20 cartas que giran y se mecen |
+| **Joker** | 1.60 | 49.0 | 0.70 | Relieve propio de rombos facetados y asimétricos y shader de arlequín: esmeralda y púrpura, ola burdeos-magenta, *glitch* y crestas magenta |
+| **Ace Crystal** | — | — | — | Diseño aprobado por el autor y **no implementado** en esta entrega (ver [Estado final](#estado-final-del-proyecto)) |
+
+Las órbitas son circulares y en forma cerrada: la posición depende solo del tiempo simulado, a cualquier FPS. Cada planeta gira además sobre su eje, y todo lo que lleva encima gira con él: árboles, cascadas, ciudad y cartas.
+
+### La nave
+
+- **Modelo:** `NaveBimotor`, la nave original del Laboratorio 3, modelada en Blender y cargada sin modificar.
+- **Propulsores:** tres toberas con llama naranja en crucero. Con `SPACE` pasan a una llama azul de postcombustión (velocidad de la luz, hasta 8× con rampa) y se apagan con suavidad al soltar.
+- **Luces automáticas:** cuando un planeta tapa la estrella, la nave enciende sus luces con una penumbra suave:
+  - luz roja en la punta izquierda y verde en la derecha;
+  - estrobo blanco en la cola, 0.12 s cada segundo;
+  - un haz cálido delante de la nariz.
+
+  Al sol se apagan solas (captura 12).
+- **Vuelo inercial:** empuje, frenado de los amortiguadores (`X`) y giro suavizado, con la misma física a 10, 30, 60 o 144 FPS.
+
+### Vuelo: gravedad, captura y escape
+
+- **Gravedad (`G`):** cada planeta atrae con una inversa del cuadrado ablandada. La atracción no supera un cuarto del empuje, así que la nave siempre puede escapar.
+- **Captura orbital:** con la gravedad encendida, la nave queda en órbita asistida si cumple tres condiciones durante 0.25 s:
+  - entra lenta en la cáscara de captura de un planeta (hasta 1.25× la velocidad de crucero respecto a él);
+  - no se aleja;
+  - se mantiene así.
+
+  El HUD muestra `GRAVITY APPROACH` y luego `ORBITAL CAPTURE - <planeta>`. La órbita lleva la nave a lo largo de su nariz a una altura fija que `E`/`Q` ajustan dentro de la banda, y acompaña al planeta mientras este se mueve.
+- **Escape tangencial (`SPACE`):** la nave sale por la tangente de su órbita, con la velocidad del planeta más al menos 1.1 veces la velocidad de escape de esa altura. Mientras se mantiene `SPACE`, empuja a velocidad de la luz y la distancia solo crece.
+- **Histéresis:** el planeta que soltó la nave no puede recapturarla hasta que salga de una cáscara de suelta más amplia.
+- **House of Cards:** su órbita asistida queda por encima del anillo de cartas, incluso con `Q`.
+- **Vuelo local (`L`):** desde el espacio, rodea el planeta más cercano siguiendo el terreno exacto. Desde una captura, cambia a exploración local sin deriva.
+- **Viaje rápido (`F1`–`F5`):** lleva la nave junto a cada planeta y termina cualquier captura.
+
+Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escape-tangencial-srcsolarcapturers).
+
+### Controles
 
 | Entrada | Acción |
 |---|---|
 | Ratón, `W` `A` `S` `D` | Orientar la nave; avanzar, retroceder y desplazarse de lado (aceleración y frenado progresivos) |
-| `SPACE` (mantener) | Velocidad de la luz, solo en vuelo espacial |
-| `E` / `Q` | Subir / bajar; en vuelo local, alejarse / acercarse al suelo |
-| `L` | Entrar o salir del vuelo local sobre el planeta más cercano |
-| `F1` `F2` `F3` `F4` | Viaje rápido junto a cada planeta (no se usa en el video) |
-| `G` | Gravedad encendida / apagada |
-| `X` | Amortiguadores inerciales encendidos / apagados |
-| `C` | Descarte fuera de la vista encendido / apagado |
+| `SPACE` (mantener) | Velocidad de la luz en vuelo espacial; **escape tangencial** desde una captura orbital |
+| `E` / `Q` | Subir / bajar. En vuelo local cambian la distancia al suelo, y en captura, la altura de la órbita |
+| `L` | Entrar o salir del vuelo local. Desde una captura, pasar a exploración local |
+| `F1` `F2` `F3` `F4` `F5` | Viaje rápido a Crimson Entrance, Clover Haven, Neon Hearts, House of Cards y Joker |
+| `G` | Gravedad (y con ella la captura orbital) encendida / apagada |
+| `M` | Sonido encendido / apagado |
+| `X` | Amortiguadores inerciales |
+| `C` | Descarte fuera de la vista |
 | `H` | HUD con contadores |
 | `V` | Cámara Follow ↔ cámara Orbit |
 | `P` | Pausa de órbitas y materiales |
 | `TAB`, `ESC` | Capturar o liberar el ratón; `ESC` con el ratón libre sale |
 
-### Puntos reclamados
+### Ambiente: cielo, cometas, agua, luces y sonido
 
-La lista sale solo de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs/project3_rubric_claims.md). Cada fila tiene su suite, su comando y su captura.
+- **Cielo animado:** la nebulosa pintada pasa de púrpura a azul y vuelve en 90 s. El cambio avanza en una onda que barre el cielo, así que nunca cambia todo de golpe (captura 13). Las escenas de los laboratorios conservan su cielo fijo.
+- **Cometas:** tres cometas recorren elipses alrededor de la estrella. Su cola apunta lejos de ella, se dibujan detrás del Z-buffer y se omiten fuera del cuadro (captura 14).
+- **Agua y cascadas:** el océano de Clover Haven combina dos trenes de olas, espuma que rueda hacia la costa y bandas de oleaje que cruzan el mar abierto.
+  - **Cascadas clásicas:** cuatro, una por montaña.
+  - **Cascadas monumentales:** tres, el triple de anchas, que nacen más arriba en otra ladera y bajan por el gradiente hasta el mar.
+  - **Recuento:** 4 + 3 = 7 cascadas, todas con agua que fluye.
+- **Iluminación:** la estrella ilumina cada planeta desde su posición real (día y noche), y la corona y el plasma brillan solos. La nave enciende sus luces en la sombra.
+- **Audio procedural:** no hay archivos de sonido. Al iniciar, el programa sintetiza tres sonidos:
+  - el rumor de los propulsores, que sube con el empuje;
+  - el silbido de la velocidad de la luz;
+  - un barrido ascendente al escapar de una órbita.
+
+  Suenan por el dispositivo de audio de raylib y `M` los silencia. Sin dispositivo de audio, el visor avisa y sigue en silencio.
+
+### Bajo el capó
+
+| Tema | Resumen | Detalle |
+|---|---|---|
+| **Arquitectura B** | Lista plana de cuerpos con datos validados (`SystemSpec` → `ScaleProfile` → `OrbitLayout`) y adjuntos por planeta. Sin ECS ni motor externo | [project3.md §1–2](docs/project3.md) |
+| **Pipeline CPU** | Vértices → ensamblaje de triángulos → rasterización *scanline* con Z-buffer → sombreado por fragmento en lotes paralelos → framebuffer | [Arquitectura](#arquitectura-implementada) |
+| **Shaders** | Un material propio por cuerpo: plasma, lava, gas en rombos, trébol con agua, rejilla neón y arlequín. Más cascadas, cartas, llamas, lazos de plasma, neón de naves y cielo | [Laboratorio 6](#laboratorio-6--planetas-y-estrellas-con-shaders) |
+| **Geometría procedural** | Icosferas deformadas por campos de altura con semilla. Árboles, rocas, edificios, pirámide, naves y cascadas generados por código y horneados por sectores | [project3.md §3](docs/project3.md) |
+| **LOD** | Niveles 2–5 (320–20 480 triángulos) según el radio proyectado, con histéresis | [benchmark_final.md](docs/results/project3/benchmark_final.md) |
+| **Descarte** | Esfera envolvente contra el frustum antes de rasterizar, y horizonte para lo que queda detrás del planeta | Captura 06 |
+| **Colisiones** | Barrido por subpaso contra la esfera del relieve más alto, en el marco móvil de cada planeta. Conserva 0.05 u de margen de 10 a 144 FPS | Captura 08; [gravity_evidence.md](docs/results/project3/gravity_evidence.md) |
+| **Rendimiento** | Medido a 800×600 con todos los núcleos; el peor escenario forzado tarda 92.9 ms por cuadro | [benchmark_final.md](docs/results/project3/benchmark_final.md) |
+
+**Decisiones de arquitectura:**
+
+- **Una sola escena:** las escenas históricas de los laboratorios quedan intactas, y cada mejora nueva se activa solo en el sistema del Proyecto 3. Así ocurre con el cielo animado, los cometas, las luces y la captura.
+- **Captura orbital:** reutiliza los controladores de vuelo local y espacial en lugar de duplicar física.
+- **Efectos ligeros:** los cometas y las luces se dibujan después del Z-buffer, sin tocar el rasterizador.
+- **Audio:** se sintetiza en memoria para no añadir archivos ni *crates*.
+
+### Pruebas automatizadas
+
+`cargo test --release` corre **1033 pruebas** y todas pasan. Cada mejora de la expansión tiene su suite:
+
+| Suite | Qué cubre |
+|---|---|
+| `p3_joker_planet_tests` | Relieve y shader del Joker |
+| `p3_collision_moving_target_tests` | Colisión a 10–144 FPS |
+| `p3_sky_cycle_tests` | Cielo animado |
+| `p3_comet_tests` | Cometas |
+| `p3_orbital_capture_tests` | Los cinco planetas, vuelta completa, anillo, escape, recaptura, FPS, cámara, viaje rápido, `G` y `L` |
+| `p3_monumental_waterfall_tests` | Cascadas monumentales y oleaje |
+| `p3_ship_lights_tests` | Luces automáticas |
+| `p3_audio_tests` | Audio procedural |
+
+Los oráculos de cuadro (FNV-1a) fijan la salida exacta de cada escenario. Los de los laboratorios no cambiaron. La lista completa de suites y los comandos de validación están en [project3_final_validation.md](docs/project3_final_validation.md).
+
+### Instalación y ejecución
+
+Requisitos: Rust estable (probado con 1.97) y Cargo. El crate `raylib = "5.5"` compila sin paquetes adicionales en Fedora 43.
+
+```bash
+cargo run --release -- --scene solar                       # pilotar la nave (cámara Follow)
+cargo run --release -- --scene solar --camera orbit        # el sistema completo desde la cámara orbital
+cargo run --release -- --scene solar --record 56 --fps 30 --timeline final-tour | ffmpeg -f rawvideo -pix_fmt rgb24 -s 800x600 -framerate 30 -i - recorrido.mp4
+cargo test --release                                       # todas las pruebas
+```
+
+### Rúbrica oficial y puntos reclamados
+
+La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs/project3_rubric_claims.md), y cada fila tiene su suite, su comando y su captura.
 
 | Rubro | Seguro | Dónde verlo |
 |---|---:|---|
-| Planetas (4 de 5, sin la estrella) | 40 | Video; capturas 01–04 |
+| Planetas (5 de 5, sin la estrella) | 50 | Capturas 01–04 y 07 |
 | Tipos de modelo sobre la superficie (árboles, rocas, edificios neón, pirámide) | 20 | Capturas 01–03 |
 | Distribución procedural con semilla y ruido | 10 | [Semillas 7 y 8](docs/results/project3/geometry/seed_7_vs_8.png) |
 | Posición y orientación sobre la superficie al girar | 5 | [Orientación al girar](docs/results/project3/geometry/orientation_spin.png) |
-| Shaders propios distinguibles (4) | 24 | Capturas 01–04; Laboratorio 6 |
-| Shader animado | 8 | Video (agua del trébol, glitch de Hearts) |
-| Mapeo de normales (normal del campo y bump procedural) | 4 de 8 | [Bump apagado / encendido](docs/results/project3/geometry/normals_bump_0_1.png) |
+| Shaders propios distinguibles (4) | 24 | Capturas 01–04 y 07; Laboratorio 6 |
+| Shader animado | 8 | GIF del océano, de la cascada y del Joker |
+| Mapeo de normales (normal del campo y *bump* procedural) | 4 de 8 | [Bump apagado / encendido](docs/results/project3/geometry/normals_bump_0_1.png) |
 | Deformación de la geometría con ruido | 10 | [Relieve plano / con campo](docs/results/project3/geometry/relief_flat_vs_field.png) |
 | Subdivisión procedural antes de rasterizar | 10 | [Niveles 2 y 5](docs/results/project3/geometry/subdivision_l2_l5.png) |
-| Vuelo local alrededor de un planeta | 8 | Video (vuelta a Crimson Entrance) |
-| Aceleración, frenado y giro progresivos | 8 | Video |
+| Vuelo local alrededor de un planeta | 8 | Recorrido histórico; captura 09 |
+| Aceleración, frenado y giro progresivos | 8 | Recorrido histórico; GIF de propulsores |
 | Atracción gravitatoria | 10 | Captura 05 |
+| Colisión con los planetas | 4 | Captura 08 |
 | Descarte fuera de la vista | 7 | Captura 06; [benchmark](docs/results/project3/benchmark_final.md) |
 | Niveles de detalle según la distancia | 8 | Captura 06; [benchmark](docs/results/project3/benchmark_final.md) |
-| Coherencia visual (juicio docente) | 3 de 5 | Video y capturas |
+| Coherencia visual (juicio docente) | 3 de 5 | Galería |
 | Claridad de la experiencia (juicio docente) | 3 de 5 | HUD, controles y este README |
 
-- **Colisión con los planetas (4):** implementada y probada, pero sin captura propia; se demuestra en vivo y no se reclama como segura.
-- **Totales:** 178 seguros y 190 condicionados, sobre el máximo de 200 del menú.
-- **Quinto planeta:** sigue en `ART_PENDING_APPROVAL` ([decisión](docs/project3_fifth_planet_decision.md)), así que el techo es 190.
+- **Totales:** 192 puntos seguros y 200 condicionados, sobre el máximo de 200 del menú.
+- **Planetas:** el menú cuenta como máximo cinco, y la estrella no cuenta.
+- **Ningún total está garantizado:** cada rubro suma solo si el profesor lo acepta en la demostración, y la nota es min(100, puntos aceptados).
 
-**Ningún total está garantizado:** cada rubro suma solo si el profesor lo acepta en la demostración, y la nota es min(100, puntos aceptados).
+### Evidencias
+
+- **Capturas y animaciones:** la [galería](#galería) y [media_expansion.md](docs/results/project3/media_expansion.md), que explica cómo se generó cada una.
+- **Colisión y gravedad:** [gravity_evidence.md](docs/results/project3/gravity_evidence.md).
+- **Rendimiento:** [benchmark_final.md](docs/results/project3/benchmark_final.md).
+- **Reescalado:** la evaluación del reescalado propuesto está en [project3_rescale_evaluation.md](docs/project3_rescale_evaluation.md).
+- **Validación:** el registro de validación y las suites están en [project3_final_validation.md](docs/project3_final_validation.md).
+- **Recorridos históricos:** conservados como evidencia; ninguno es el video final de esta expansión.
+  - [Recorrido final de la versión de cuatro planetas](docs/videos/project3/01-final-tour.mp4): 56 s, 800×600 y 30 fps, en un solo plano sin viaje rápido ni cortes ([GIF](docs/videos/project3/01-final-tour.gif)).
+  - [Recorrido provisional](docs/videos/project3/00-provisional-tour.mp4).
 
 ### Limitaciones
 
-- **Colisión con el anillo de cartas:** las cartas de House of Cards no tienen colisión propia. La nave choca con el planeta y su relieve, no con cada carta.
-- **Escenas pesadas:** el escenario medido más lento tarda 92.9 ms por cuadro con todos los núcleos a 800×600. Es el relieve rasante con el nivel 5 forzado, solo para comparar; con el nivel elegido por distancia, la misma vista tarda 82.8 ms ([benchmark_final.md](docs/results/project3/benchmark_final.md)).
+- **Colisión con el anillo de cartas:** las cartas de House of Cards no tienen colisión propia. La nave choca con el planeta y su relieve, no con cada carta. La órbita asistida sí queda por encima del anillo.
+- **Forma de colisión en vuelo espacial:** es la esfera del relieve más alto; el vuelo local sigue el terreno exacto.
+- **Escenas pesadas:** el escenario medido más lento tarda 92.9 ms por cuadro con todos los núcleos a 800×600 (relieve rasante con el nivel 5 forzado, solo para comparar). Con el nivel elegido por distancia, la misma vista tarda 82.8 ms.
 - **FPS del HUD en la captura 06:** es 1 / tiempo de `render_frame`, sin la presentación de la ventana.
-- **Video:** en cada pasada el planeta queda debajo de la cámara Follow por unos segundos.
+- **Audio:** se comprobó que el dispositivo se abre y que los tres sonidos se cargan en el visor. Lo que se oye depende del equipo, y las pruebas automáticas cubren la síntesis, no la reproducción.
+
+### Estado final del proyecto
+
+| Parte | Estado |
+|---|---|
+| Cinco planetas, estrella, nave, propulsores, gravedad, colisión, vuelo local, viaje rápido, LOD y descarte | Implementado y probado |
+| Expansión: Joker, corrección de colisión a bajo FPS, cielo animado, cometas, captura orbital y escape tangencial, cascadas monumentales y oleaje, luces automáticas, audio procedural | Implementado y probado |
+| Ace Crystal (sexto planeta) | **No ejecutado.** El diseño está aprobado, pero un sexto cuerpo movería la disposición, el punto de aparición y todos los oráculos a horas de la entrega, y el menú ya cuenta como máximo cinco planetas |
+| Reescalado mayor de planetas y estrella | **No aplicado.** Se evaluó con la regla del `OrbitLayout`: las órbitas pasarían de 14–49 u a unas 27–86 u, y cruzar el sistema a crucero tomaría ~1 min. Sería un cambio controlado de `ScaleProfile`, pero rompe todos los oráculos y el recorrido grabado ([evaluación](docs/project3_rescale_evaluation.md)) |
+| Video final de la entrega | Lo grabará el autor ([Video de demostración](#video-de-demostración)) |
 
 ### Autor y contribuciones
 
@@ -121,22 +257,22 @@ La lista sale solo de las filas `VERIFICADO` de [docs/project3_rubric_claims.md]
 - modelado de la nave original (`NaveBimotor`, Laboratorio 3, en Blender);
 - definición de la arquitectura del software (arquitectura B);
 - desarrollo e integración del rasterizador por CPU, los shaders procedurales, la geometría y los efectos visuales;
-- simulación orbital, física de navegación, gravedad y colisiones;
-- diseño de los controles y del vuelo;
+- simulación orbital, física de navegación, gravedad, captura orbital y colisiones;
+- diseño de los controles, del vuelo y del sonido;
 - pruebas, validación, optimización y documentación;
 - preparación de la demostración final.
 
-Los 251 commits del repositorio están hechos con la identidad Git del autor (`Junjey123-mx`) y no tienen coautores. La asistencia de herramientas de IA se declara en la sección siguiente: no convierte a la herramienta en integrante ni en coautora, y la responsabilidad académica del trabajo es del autor.
+Todos los commits del repositorio están hechos con la identidad Git del autor (`Junjey123-mx`) y no tienen coautores. La asistencia de herramientas de IA se declara más abajo: no convierte a la herramienta en integrante ni en coautora, y la responsabilidad académica del trabajo es del autor.
 
-### Recursos externos
+### Recursos y herramientas
 
-- **raylib 5.5** (crate `raylib`): solo ventana, teclado, ratón y presentación del framebuffer como textura. No se usa para dibujo 3D, cámaras, shaders de GPU ni física.
+- **raylib 5.5** (crate `raylib`): solo ventana, teclado, ratón, presentación del framebuffer como textura y dispositivo de audio. No se usa para dibujo 3D, cámaras, shaders de GPU ni física.
 - **`assets/models/sphere.obj`:** esfera del docente, sin modificar, compartida por los cuerpos.
 - **`assets/models/Laboratorio3.obj`:** la nave `NaveBimotor` del Laboratorio 3, exportada desde Blender, sin modificar.
-- **Geometría propia:** árboles, rocas, edificios, pirámide-corazón, naves neón, motos de luz y estelas se generan por código en este repositorio. No se cargan modelos de terceros.
-- **ffmpeg:** codifica los videos y el GIF. El programa no lo usa.
-- **Python con Pillow:** solo compone las imágenes comparativas de la documentación (captura 05 y `docs/results/project3/geometry/`). El programa no lo usa.
-- No se cargan texturas ni imágenes, y no hay otros *crates*.
+- **Geometría y sonido propios:** árboles, rocas, edificios, pirámide-corazón, naves neón, motos de luz, estelas, cascadas y cometas se generan por código, igual que los tres sonidos. No se cargan modelos, texturas ni audios de terceros.
+- **ffmpeg:** codifica los videos y los GIF. El programa no lo usa.
+- **Python con Pillow:** compone y convierte las imágenes de la documentación. El programa no lo usa.
+- No hay otros *crates*.
 
 ### Declaración de asistencia de IA
 
@@ -144,11 +280,30 @@ Este proyecto se desarrolló con asistencia de inteligencia artificial: **Claude
 
 - proponer la arquitectura;
 - escribir e iterar el código y las pruebas;
-- guionizar y grabar el recorrido;
-- generar las capturas y ejecutar mediciones;
+- guionizar y grabar los recorridos;
+- generar las capturas y animaciones y ejecutar mediciones;
 - redactar documentación, incluida esta sección.
 
 No todo el código se escribió a mano: buena parte del código, las pruebas y la documentación la generó el asistente siguiendo instrucciones del autor. El autor dirigió el trabajo, fijó el alcance, el diseño artístico y las decisiones de arquitectura, y revisa el resultado antes de publicarlo. Los commits se hacen con su identidad.
+
+---
+
+## Video de demostración
+
+El video definitivo lo graba el autor: un recorrido por el universo Red-Black que muestra los cinco planetas, la captura orbital con el escape tangencial, las cascadas, el cielo animado, los cometas, las luces y el sonido de la nave.
+
+> **VIDEO FINAL — PENDIENTE DE INCORPORACIÓN POR EL AUTOR.**
+
+<!--
+Instrucciones para el autor, al tener el video:
+1. Sustituir el marcador de arriba por la miniatura del video enlazada a su dirección pública:
+   - URL del video: la dirección pública definitiva (YouTube, Drive, etc.).
+   - Miniatura: una captura real del video guardada en docs/screenshots/project3/, usada como imagen del enlace.
+2. Añadir debajo una descripción breve del recorrido (duración, resolución, orden de los planetas y mecánicas mostradas).
+3. No borrar los recorridos históricos de la sección Evidencias.
+-->
+
+Hasta entonces, los recorridos de la sección [Evidencias](#evidencias) son material histórico de versiones anteriores y no sustituyen a este video.
 
 ---
 
