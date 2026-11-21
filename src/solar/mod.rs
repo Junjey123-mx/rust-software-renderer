@@ -23,6 +23,7 @@ pub mod royal_crown;
 pub mod scene;
 pub mod shapes;
 pub mod ship;
+pub mod ship_lights;
 pub mod skybox;
 pub mod stats;
 pub mod system;

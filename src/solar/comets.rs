@@ -165,8 +165,16 @@ fn add_behind_test(fb: &mut Framebuffer, x: i32, y: i32, depth: f32, color: Vect
     }
 }
 
-/// A soft disc of `radius` pixels around `(x, y)`, light fading to its rim.
-fn glow(fb: &mut Framebuffer, x: f32, y: f32, radius: f32, depth: f32, color: Vector3) -> usize {
+/// A soft disc of `radius` pixels around `(x, y)`, light fading to its rim,
+/// added where `depth` is in front of what is drawn. Returns pixels lit.
+pub fn glow(
+    fb: &mut Framebuffer,
+    x: f32,
+    y: f32,
+    radius: f32,
+    depth: f32,
+    color: Vector3,
+) -> usize {
     let r = radius.ceil() as i32;
     let mut n = 0;
     for dy in -r..=r {

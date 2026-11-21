@@ -42,6 +42,7 @@ use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::MESH_RADIUS;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
+use crate::solar::ship_lights::{draw_ship_lights, shadow};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
 use crate::solar::system::layout::{FIFTH_SLOT_RESERVED_EXTENT, OrbitLayout};
@@ -144,6 +145,8 @@ pub struct SolarScene {
     pub nebula: Nebula,
     /// Comets travelling through the Project 3 sky (none elsewhere).
     pub comets: Option<CometField>,
+    /// Lights of the ship that switch on in a planet's shadow (Project 3).
+    pub ship_lights: bool,
     /// Magnetic arcs that rise out of The King's Crown, drawn with its
     /// transform (no arcs: nothing drawn).
     pub plasma: PlasmaLoops,
@@ -240,6 +243,7 @@ impl SolarScene {
             stars: StarField::generate_with(DEFAULT_SEED, DEFAULT_STARS, StarDensity::default()),
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
             comets: None,
+            ship_lights: false,
             plasma: PlasmaLoops::crown(),
             crown: Some(RoyalCrown::royal()),
             cards: Some(CardRing::diamonds()),
@@ -547,6 +551,7 @@ impl SolarScene {
         // comets travel around the star.
         scene.nebula.drift = 1.0;
         scene.comets = Some(CometField::project3(scene.center));
+        scene.ship_lights = true;
         scene.scale = Some(profile);
         scene.layout = Some(layout);
         scene.check_spawn()?;
@@ -1112,7 +1117,22 @@ impl SolarScene {
         {
             draw_comets(framebuffer, comets, camera, self.center, self.clock.time);
         }
+        if let (true, ViewProjection::Perspective(camera)) = (self.ship_lights, &shared.projection)
+        {
+            let level = self.ship_shadow();
+            draw_ship_lights(framebuffer, camera, &self.ship, level, self.clock.time);
+        }
         Ok(scratch.batch_len())
+    }
+
+    /// How deep the ship is in a planet's shadow (0 in sunlight, 1 inside):
+    /// the level of its automatic lights.
+    pub fn ship_shadow(&self) -> f32 {
+        let bodies: Vec<(Vector3, f32)> = (0..self.bodies.len())
+            .filter(|&i| self.bodies[i].orbit.is_some())
+            .map(|i| (self.bodies[i].transform.position, self.radius_of(i)))
+            .collect();
+        shadow(self.ship.position, self.center, &bodies)
     }
 
     /// Body `index` as drawn this frame: its material adapted to the
