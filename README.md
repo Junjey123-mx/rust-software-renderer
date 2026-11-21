@@ -151,7 +151,7 @@ Fórmulas y estados: [docs/project3.md](docs/project3.md#captura-orbital-y-escap
 | **LOD** | Niveles 2–5 (320–20 480 triángulos) según el radio proyectado, con histéresis | [benchmark_final.md](docs/results/project3/benchmark_final.md) |
 | **Descarte** | Esfera envolvente contra el frustum antes de rasterizar, y horizonte para lo que queda detrás del planeta | Captura 06 |
 | **Colisiones** | Barrido por subpaso contra la esfera del relieve más alto, en el marco móvil de cada planeta. Conserva 0.05 u de margen de 10 a 144 FPS | Captura 08; [gravity_evidence.md](docs/results/project3/gravity_evidence.md) |
-| **Rendimiento** | Medido a 800×600 con todos los núcleos; el peor escenario forzado tarda 92.9 ms por cuadro | [benchmark_final.md](docs/results/project3/benchmark_final.md) |
+| **Rendimiento** | Medido a 800×600 con todos los núcleos; el peor escenario forzado tarda 92.9 ms por cuadro. La expansión no lo encarece fuera del ruido | [benchmark_final.md](docs/results/project3/benchmark_final.md); [expansión](docs/results/project3/benchmark_expansion.md) |
 
 **Decisiones de arquitectura:**
 
@@ -220,7 +220,7 @@ La tabla sale de las filas `VERIFICADO` de [docs/project3_rubric_claims.md](docs
 
 - **Capturas y animaciones:** la [galería](#galería) y [media_expansion.md](docs/results/project3/media_expansion.md), que explica cómo se generó cada una.
 - **Colisión y gravedad:** [gravity_evidence.md](docs/results/project3/gravity_evidence.md).
-- **Rendimiento:** [benchmark_final.md](docs/results/project3/benchmark_final.md).
+- **Rendimiento:** [benchmark_final.md](docs/results/project3/benchmark_final.md) (C75) y [benchmark_expansion.md](docs/results/project3/benchmark_expansion.md), con el antes y después de la expansión y el costo de cada función.
 - **Reescalado:** la evaluación del reescalado propuesto está en [project3_rescale_evaluation.md](docs/project3_rescale_evaluation.md).
 - **Validación:** el registro de validación y las suites están en [project3_final_validation.md](docs/project3_final_validation.md).
 - **Recorridos históricos:** conservados como evidencia; ninguno es el video final de esta expansión.

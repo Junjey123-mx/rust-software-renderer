@@ -205,6 +205,7 @@ Los puntos pendientes de C80 quedan así:
   - `p3_joker_planet_tests`, `p3_collision_moving_target_tests`, `p3_sky_cycle_tests` y `p3_comet_tests`;
   - `p3_orbital_capture_tests`, `p3_monumental_waterfall_tests`, `p3_ship_lights_tests` y `p3_audio_tests`.
 - **Capturas y GIF:** las capturas 09–15 y los GIF 02–11 están descritos en [media_expansion.md](results/project3/media_expansion.md).
+- **Rendimiento:** [benchmark_expansion.md](results/project3/benchmark_expansion.md) mide `3bc7ad3` frente a `4f3b3af` y el costo de cada función. No hay regresión fuera del ruido.
 
 ### No ejecutado en la expansión
 
