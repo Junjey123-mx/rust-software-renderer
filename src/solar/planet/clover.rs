@@ -8,6 +8,7 @@ use crate::shading::math::{hex, mix3, smoothstep};
 use crate::shading::noise::{fbm, gradient3, hash3};
 use crate::shading::sdf::{P2, circle, smooth_min, triangle};
 use crate::solar::planet::field::{HeightField, NORMAL_EPS, tangent};
+use crate::solar::planet::normal_map::{self, perturb, sphere_uv};
 use raylib::math::Vector3;
 use std::f32::consts::TAU;
 
@@ -293,6 +294,7 @@ planet_params! {
         wave_strength: 0.06, 0.0, 0.3, "tilt of the water normal by the waves";
         foam: 0.8, 0.0, 1.0, "opacity of the foam lines along the coast";
         waterfalls: 1.0, 0.0, 1.0, "waterfalls per mountain (0 = none, rounded)";
+        normal_map: 0.0, 0.0, 2.0, "strength of the rock normal map on the land (0 = off; the Grand scale uses 1)";
     }
 }
 
@@ -430,6 +432,9 @@ const STREAK: Vector3 = hex(0xB8F4FF);
 const NIGHT_SEA: Vector3 = hex(0x0E4A6E);
 /// Light that reaches the night side (a dim sky glow).
 const AMBIENT: f32 = 0.035;
+/// Repetitions of the rock normal map around the equator (24: about 1.9 u
+/// each at the Grand radius of 7.25 u).
+pub const ROCK_TILES: f32 = 24.0;
 
 /// Clover material with its per-frame values: the field, the parameters
 /// and the light and time of this frame, in the planet's object space.
@@ -512,6 +517,28 @@ impl PreparedClover {
         let bumped = HeightField::Clover(self.field).normal(n, NORMAL_EPS);
         let normal = (n + (bumped - n) * self.params.bump.clamp(0.0, 1.0)).normalized();
         let albedo = self.land_albedo(n, normal, h);
-        albedo * (AMBIENT + (1.0 - AMBIENT) * lambert(normal, self.light))
+        let lit = self.mapped_normal(n, normal, h);
+        albedo * (AMBIENT + (1.0 - AMBIENT) * lambert(lit, self.light))
+    }
+
+    /// The land's relief `normal` at the unit `n` and height `h` with the
+    /// rock normal map (`normal_map::rock`) applied: `normal_map` of it on
+    /// rock (steep or high ground, as in `land_albedo`), 20 % of that on
+    /// grass, fading out near the poles where the texture coordinates
+    /// pinch. With `normal_map` 0 it is `normal`, bit for bit.
+    pub fn mapped_normal(&self, n: Vector3, normal: Vector3, h: f32) -> Vector3 {
+        let p = &self.params;
+        if p.normal_map.is_nan() || p.normal_map <= 0.0 {
+            return normal;
+        }
+        let f = &self.field;
+        let t = ((h - f.sea) / (f.max_height() - f.sea).max(1e-3)).clamp(0.0, 1.0);
+        let slope = 1.0 - normal.dot(n);
+        let rock =
+            smoothstep(0.7, 0.92, t).max(smoothstep(p.slope_rock * 0.6, p.slope_rock, slope));
+        let polar = 1.0 - smoothstep(0.92, 0.985, n.y.abs());
+        let strength = p.normal_map * (0.2 + 0.8 * rock) * polar;
+        let (u, v) = sphere_uv(n, ROCK_TILES);
+        perturb(n, normal, normal_map::rock().sample(u, v), strength)
     }
 }

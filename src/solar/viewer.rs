@@ -193,6 +193,10 @@ pub fn apply_toggles(scene: &mut SolarScene, actions: &[SolarAction]) -> Vec<Str
                 scene.gravity = !scene.gravity;
                 messages.push(format!("Gravity {}", on_off(scene.gravity)));
             }
+            SolarAction::ToggleNormalMap => {
+                let on = scene.toggle_normal_map();
+                messages.push(format!("Clover Haven rock normal map {}", on_off(on)));
+            }
             SolarAction::ToggleDampers => {
                 scene.ship.dampers = !scene.ship.dampers;
                 messages.push(format!(
@@ -330,7 +334,7 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight) or tangential escape (orbital capture, atmospheric flight), L local flight (from a capture: local exploration; inside an atmosphere: leave it), E/Q altitude (atmospheric flight, capture), F1-F6 warp, V camera rig, H render counters, M sound, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight) or tangential escape (orbital capture, atmospheric flight), L local flight (from a capture: local exploration; inside an atmosphere: leave it), E/Q altitude (atmospheric flight, capture), F1-F6 warp, V camera rig, H render counters, M sound, C frustum culling, X inertial dampers, G gravity, B rock normal map, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()

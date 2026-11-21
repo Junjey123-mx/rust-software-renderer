@@ -45,6 +45,8 @@ pub enum SolarAction {
     ToggleDampers,
     /// Turns the planets' gravity on the ship on or off (`G`).
     ToggleGravity,
+    /// Turns Clover Haven's rock normal map on or off (`B`).
+    ToggleNormalMap,
 }
 
 /// Held keys and the action they produce.
@@ -59,7 +61,7 @@ pub const HELD: [(KeyboardKey, SolarAction); 7] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 14] = [
+pub const PRESSED: [(KeyboardKey, SolarAction); 15] = [
     (KeyboardKey::KEY_P, SolarAction::TogglePause),
     (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
     (KeyboardKey::KEY_L, SolarAction::ToggleLocal),
@@ -76,6 +78,7 @@ pub const PRESSED: [(KeyboardKey, SolarAction); 14] = [
     (KeyboardKey::KEY_C, SolarAction::ToggleCulling),
     (KeyboardKey::KEY_X, SolarAction::ToggleDampers),
     (KeyboardKey::KEY_G, SolarAction::ToggleGravity),
+    (KeyboardKey::KEY_B, SolarAction::ToggleNormalMap),
 ];
 
 /// Frees the captured mouse or captures a free one.

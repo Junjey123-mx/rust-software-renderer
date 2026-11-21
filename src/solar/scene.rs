@@ -51,6 +51,7 @@ use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, 
 use crate::solar::stats::FrameStats;
 use crate::solar::system::layout::{FIFTH_SLOT_RESERVED_EXTENT, OrbitLayout, WORLD_MARGIN};
 use crate::solar::system::spec::AttachmentSpec as PlanetAttachment;
+use crate::solar::system::spec::GRAND_NORMAL_MAP;
 use crate::solar::system::{PlanetId, ScaleProfile, SpecError, SystemSpec};
 use crate::solar::thrusters::Thrusters;
 use crate::solar::{
@@ -908,6 +909,24 @@ impl SolarScene {
                 &scale,
             ),
         }
+    }
+
+    /// `B`: turns Clover Haven's rock normal map off, or back on at the
+    /// Grand strength (`GRAND_NORMAL_MAP`). Returns whether it is on now
+    /// (false without a clover planet).
+    pub fn toggle_normal_map(&mut self) -> bool {
+        let mut on = false;
+        for body in &mut self.bodies {
+            if let Some(PlanetMaterial::Clover(p)) = &mut body.surface {
+                p.normal_map = if p.normal_map > 0.0 {
+                    0.0
+                } else {
+                    GRAND_NORMAL_MAP
+                };
+                on = p.normal_map > 0.0;
+            }
+        }
+        on
     }
 
     /// `L`: toggles local flight; the ship is never moved by the toggle.

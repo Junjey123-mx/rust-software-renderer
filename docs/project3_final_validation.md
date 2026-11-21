@@ -275,6 +275,7 @@ Los puntos pendientes de C80 quedan así:
 - `p3_neon_building_mesh_tests`
 - `p3_neon_ship_lod_tests`
 - `p3_neon_traffic_tests`
+- `p3_normal_map_tests`
 - `p3_orbit_layout_tests`
 - `p3_orbital_capture_tests`
 - `p3_orbit_speed_tests`

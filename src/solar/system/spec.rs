@@ -103,6 +103,9 @@ pub const MAX_ORBIT_LINEAR_SPEED: f32 = 1.0;
 /// Radius of The King's Crown at the Grand scale, world units.
 pub const GRAND_STAR_RADIUS: f32 = 37.8;
 
+/// Strength of Clover Haven's rock normal map at the Grand scale.
+pub const GRAND_NORMAL_MAP: f32 = 1.0;
+
 /// Radius, orbit and orbital speed of each Grand planet, in the order of
 /// `project3` (Crimson Entrance, Clover Haven, Neon Hearts, House of
 /// Cards, Joker) followed by Ace Crystal, which only the Grand system has.
@@ -468,6 +471,13 @@ impl SystemSpec {
     pub fn grand() -> Self {
         let mut spec = Self::project3();
         spec.planets.push(ace_planet());
+        // Only the Grand scale maps rock normals on Clover Haven: the
+        // project scale keeps its validated frames.
+        for p in &mut spec.planets {
+            if let PlanetMaterial::Clover(params) = &mut p.material {
+                params.normal_map = GRAND_NORMAL_MAP;
+            }
+        }
         let profile = super::ScaleProfile::grand();
         spec.star.scale = GRAND_STAR_RADIUS / SPHERE_RADIUS;
         for (p, &(radius, orbit, speed)) in spec.planets.iter_mut().zip(&GRAND_PLANETS) {
