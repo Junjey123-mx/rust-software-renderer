@@ -104,7 +104,7 @@ La lista sale solo de las filas `VERIFICADO` de [docs/project3_rubric_claims.md]
 
 ### Limitaciones
 
-- **Colisión a FPS muy bajos:** la forma de colisión adelanta al planeta hasta un cuadro de su órbita (0.035 u a 10 FPS; [gravity_evidence.md](docs/results/project3/gravity_evidence.md)).
+- **Colisión con el anillo de cartas:** las cartas de House of Cards no tienen colisión propia. La nave choca con el planeta y su relieve, no con cada carta.
 - **Escenas pesadas:** el escenario medido más lento tarda 92.9 ms por cuadro con todos los núcleos a 800×600. Es el relieve rasante con el nivel 5 forzado, solo para comparar; con el nivel elegido por distancia, la misma vista tarda 82.8 ms ([benchmark_final.md](docs/results/project3/benchmark_final.md)).
 - **FPS del HUD en la captura 06:** es 1 / tiempo de `render_frame`, sin la presentación de la ventana.
 - **Video:** en cada pasada el planeta queda debajo de la cámara Follow por unos segundos.

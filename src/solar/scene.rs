@@ -620,18 +620,25 @@ impl SolarScene {
         }
     }
 
-    /// Every body (the star too) as a collision sphere for the ship.
+    /// Every body (the star too) as a collision sphere for the ship, for
+    /// the frame the clock just advanced. The clock already placed the
+    /// bodies at the frame's end and `physics::collide` moves each shape by
+    /// its velocity over the frame's substeps, so a shape starts where its
+    /// body was at the frame's start (`real_delta` earlier): starting at the
+    /// end position would lead the body by one frame of its orbit (0.035 u
+    /// inside a planet at 10 FPS before this fix).
     pub fn collision_shapes(&self) -> Vec<CollisionShape> {
         (0..self.bodies.len())
             .map(|i| {
                 // A relief body collides at its highest ground in space
                 // flight (local flight follows the ground itself).
                 let relief = self.relief_of(i).map_or(0.0, |r| r.field.max_height());
+                let velocity = self.body_velocity(i);
                 CollisionShape::new(
-                    self.bodies[i].transform.position,
+                    self.bodies[i].transform.position - velocity * self.clock.real_delta,
                     self.radius_of(i) * (1.0 + relief),
                     self.ship.radius(),
-                    self.body_velocity(i),
+                    velocity,
                 )
             })
             .collect()

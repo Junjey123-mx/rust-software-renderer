@@ -183,12 +183,12 @@ fn boost_into_planet_no_penetration() {
                 closest = closest.min(gap(&s, i));
                 assert!(s.ship.position.x.is_finite());
             }
-            // The collision shape leads the moving planet by up to one
-            // frame of its orbit (as in `p3_collision_sweep_tests`): a
-            // sliding ship can sit that much inside where the planet is.
-            let lead = s.body_velocity(i).length() * dt;
-            println!("body {i} dt {dt:.3}: closest gap {closest:.4}, lead {lead:.4}");
-            assert!(closest > -(lead + 1e-3), "body {i} dt {dt}: {closest}");
+            // Until 2026-11-20 the collision shape led the moving planet by
+            // one frame of its orbit and a sliding ship could sit up to
+            // |v|·dt inside it; the shapes now start where the planets were
+            // (`p3_collision_moving_target_tests`), so the margin holds.
+            println!("body {i} dt {dt:.3}: closest gap {closest:.4}");
+            assert!(closest > 0.045, "body {i} dt {dt}: {closest}");
             assert!(closest < 0.5, "body {i} dt {dt}: never reached ({closest})");
         }
     }

@@ -177,6 +177,7 @@ G2 se ejecutó el 2026-11-20 con `CARGO_TARGET_DIR` en `/tmp`, porque `/home` es
 - `p3_clover_sea_tests`
 - `p3_clover_surface_contract_tests`
 - `p3_clover_water_animation_tests`
+- `p3_collision_moving_target_tests`
 - `p3_collision_sweep_tests`
 - `p3_culling_toggle_tests`
 - `p3_culling_work_tests`

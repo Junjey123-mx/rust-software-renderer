@@ -82,3 +82,29 @@ Es la menor distancia entre la esfera de la nave y el punto más alto del reliev
   - La causa es que la forma de colisión adelanta al planeta hasta un cuadro de su órbita. La prueba admite como cota ese avance, |v_planeta|·dt, igual que `p3_collision_sweep_tests`.
   - Nunca atraviesa el planeta, ni siquiera a 10 FPS.
   - **Limitación conocida:** para eliminar ese solape habría que construir las formas de colisión con la posición del planeta al inicio del cuadro (`src/solar/viewer.rs`). Queda fuera de este commit, que es solo de pruebas.
+
+## Corrección de la colisión a FPS bajos (2026-11-20)
+
+La limitación de arriba ya está corregida. La tabla anterior se conserva como historial.
+
+- **Causa:** `SolarScene::collision_shapes` construía cada forma con la posición del planeta al **final** del cuadro (el reloj ya lo había avanzado), y `physics::collide` la movía además por su velocidad durante los subpasos. La forma iba un cuadro de órbita por delante del planeta.
+- **Corrección:** la forma arranca en `posición − v_planeta·real_delta`, donde estaba el planeta al inicio del cuadro. En cada subpaso, nave y planeta se comparan en el mismo instante, con la velocidad relativa.
+- **Pruebas:** `tests/p3_collision_moving_target_tests.rs`:
+  - turbo radial contra los cinco planetas;
+  - un planeta que alcanza a la nave detenida en su órbita (blanco móvil);
+  - la regresión de Clover, Hearts y House;
+  - todo a 10, 15, 30, 60 y 144 FPS.
+
+  `boost_into_planet_no_penetration` exige ahora el margen, en vez de admitir el avance de un cuadro.
+
+Distancia mínima medida después de la corrección: la esfera de la nave contra el punto más alto del relieve, con el planeta al final de cada cuadro, durante 5 s de turbo directo hacia él.
+
+| Planeta | 60 FPS | 10 FPS |
+|---|---:|---:|
+| Crimson Entrance | +0.050 | +0.050 |
+| Clover Haven | +0.050 | +0.050 |
+| Neon Hearts | +0.050 | +0.050 |
+| House of Cards | +0.050 | +0.050 |
+| Joker | +0.050 | +0.050 |
+
+House of Cards queda en +0.0496 y el Joker a 60 FPS en +0.0497; los demás, en +0.0500. Ningún planeta, a ningún FPS, deja a la nave dentro de su forma.

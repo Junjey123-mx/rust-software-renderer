@@ -83,7 +83,8 @@ a(p) = Σ_i  mu_i (c_i − p) / (|c_i − p|² + ε_i²)^(3/2),     ε_i = 0.25 
   - cada subpaso barre el segmento de la nave contra la esfera `R·(1 + altura_máx) + R_nave + 0.05`, en el marco móvil del cuerpo;
   - al tocar, la nave queda sobre esa esfera y conserva solo la velocidad tangencial;
   - en vuelo local, el suelo es el campo de altura del planeta.
-- **Límite conocido de la colisión:** a FPS muy bajos, la forma de colisión adelanta al planeta hasta un cuadro de su órbita (`|v_planeta|·dt`; 0.035 u a 10 FPS).
+- **Planetas en movimiento:** el reloj coloca los planetas al final del cuadro antes del vuelo. Por eso cada forma de colisión arranca donde estaba su planeta al **inicio** del cuadro (`posición − v_planeta·dt`) y avanza con él en cada subpaso. La nave se compara así siempre con el planeta en el mismo instante, con su velocidad relativa.
+- **Corrección del 2026-11-20:** hasta entonces la forma arrancaba en la posición final y adelantaba al planeta un cuadro de su órbita (0.035 u dentro del trébol a 10 FPS). Con la corrección, la nave conserva el margen de 0.05 con los cinco planetas a 10, 15, 30, 60 y 144 FPS (`tests/p3_collision_moving_target_tests.rs`).
 
 ### Nivel de detalle y descarte
 
