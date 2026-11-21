@@ -143,3 +143,20 @@ fn every_grand_planet_captures_a_slow_ship() {
         assert!(captured, "planet {i}");
     }
 }
+
+#[test]
+fn ace_crystal_is_the_sixth_grand_planet_and_f6_reaches_it() {
+    use raylib::consts::KeyboardKey;
+    use rust_software_renderer::solar::input::{PRESSED, SolarAction};
+    use rust_software_renderer::solar::viewer::apply_toggles;
+    let spec = SystemSpec::grand();
+    assert_eq!(spec.planets.len(), 6);
+    assert_eq!(spec.planets[5].id.0, "ace");
+    assert_eq!(SystemSpec::project3().planets.len(), 5);
+    assert!(PRESSED.contains(&(KeyboardKey::KEY_F6, SolarAction::Warp(6))));
+    let mut s = grand();
+    let messages = apply_toggles(&mut s, &[SolarAction::Warp(6)]);
+    assert_eq!(messages, ["Warped to Ace Crystal"]);
+    let d = (s.ship.position - s.bodies[6].transform.position).length();
+    assert!(d > s.shell_of(6), "{d}");
+}

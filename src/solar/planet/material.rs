@@ -10,6 +10,7 @@ use crate::solar::instance::{
     BodyInstance, FrameContext, Quality, adapted_material, eye_towards, instance_uniforms,
     prepare_instance, shade_instance,
 };
+use crate::solar::planet::ace::{AceParams, PreparedAce};
 use crate::solar::planet::clover::{CloverParams, PreparedClover};
 use crate::solar::planet::field::{HeightField, NORMAL_EPS};
 use crate::solar::planet::hearts::{NeonGridParams, PreparedHearts, grid_fade};
@@ -31,6 +32,9 @@ pub enum PlanetMaterial {
     /// The Joker planet: a harlequin of emerald and purple diamonds with
     /// black ridges, magenta pulses, color waves and a diamond glitch.
     Joker(JokerParams),
+    /// Ace Crystal: faceted cyan, celeste, turquoise, white and lilac
+    /// shards with glints, inner glow and twinkles (its crystals are props).
+    Ace(AceParams),
 }
 
 /// A material with its per-frame values computed, ready for the fragments.
@@ -47,6 +51,7 @@ pub enum PreparedPlanet {
     Clover(PreparedClover),
     Hearts(PreparedHearts),
     Joker(PreparedJoker),
+    Ace(PreparedAce),
 }
 
 /// Object-space shading normal of a relief at `object_position`: the
@@ -114,6 +119,17 @@ impl PlanetMaterial {
                     time: frame.time,
                 })
             }
+            Self::Ace(params) => {
+                let transform = instance.transform;
+                let eye = eye_towards(&frame.projection, transform.position);
+                let u = instance_uniforms(&transform, frame.time, frame.light_world, eye);
+                PreparedPlanet::Ace(PreparedAce {
+                    field: params.field(),
+                    params: *params,
+                    light: u.light_direction,
+                    time: frame.time,
+                })
+            }
         }
     }
 
@@ -122,7 +138,7 @@ impl PlanetMaterial {
     pub fn adapted(&self, quality: Quality, radius_px: f32) -> Self {
         match self {
             Self::Lab6(material) => Self::Lab6(adapted_material(material, quality, radius_px)),
-            Self::Clover(_) | Self::Joker(_) => *self,
+            Self::Clover(_) | Self::Joker(_) | Self::Ace(_) => *self,
             // The grid fades out while the planet is small on screen.
             Self::Hearts(p) => Self::Hearts(NeonGridParams {
                 detail: p.detail * grid_fade(radius_px),
@@ -155,6 +171,10 @@ impl PreparedPlanet {
             Self::Joker(joker) => {
                 let eye = transform.to_object_dir(v.view_direction).normalized();
                 joker.shade(s.object_position, eye)
+            }
+            Self::Ace(ace) => {
+                let eye = transform.to_object_dir(v.view_direction).normalized();
+                ace.shade(s.object_position, s.face_normal, eye)
             }
         }
     }

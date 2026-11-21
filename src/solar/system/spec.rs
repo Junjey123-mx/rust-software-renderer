@@ -6,6 +6,7 @@ use crate::solar::SPHERE_RADIUS;
 use crate::solar::flight::THRUST_ACCEL;
 use crate::solar::physics::design_mu;
 use crate::solar::planet::PlanetMaterial;
+use crate::solar::planet::ace::AceParams;
 use crate::solar::planet::clover::CloverParams;
 use crate::solar::planet::hearts::NeonGridParams;
 use crate::solar::planet::joker::JokerParams;
@@ -27,6 +28,9 @@ pub enum GeometrySpec {
     Hearts,
     /// The faceted harlequin diamonds of the Joker (`planet::joker`).
     Joker,
+    /// The crystal shards and crystal clusters of Ace Crystal
+    /// (`planet::ace`).
+    Ace,
 }
 
 /// Data of what moves over a planet besides its surface.
@@ -101,14 +105,16 @@ pub const GRAND_STAR_RADIUS: f32 = 37.8;
 
 /// Radius, orbit and orbital speed of each Grand planet, in the order of
 /// `project3` (Crimson Entrance, Clover Haven, Neon Hearts, House of
-/// Cards, Joker). The orbits are the smallest that keep 6 u between the
-/// shells, rounded up to 0.5 (`OrbitLayout::solve` checks them).
-pub const GRAND_PLANETS: [(f32, f32, f32); 5] = [
+/// Cards, Joker) followed by Ace Crystal, which only the Grand system has.
+/// The orbits are the smallest that keep 6 u between the shells, rounded
+/// up to 0.5 (`OrbitLayout::solve` checks them).
+pub const GRAND_PLANETS: [(f32, f32, f32); 6] = [
     (5.5, 78.5, 2.0),
     (7.25, 100.5, 1.8),
     (6.5, 129.0, 1.7),
     (8.75, 165.5, 1.5),
     (8.0, 198.5, 1.4),
+    (7.0, 225.0, 1.3),
 ];
 
 /// `orbit_radius` that lets `OrbitLayout::solve` choose the radius (the
@@ -255,6 +261,16 @@ impl SystemSpec {
                     .iter()
                     .find(|s| s.name == param)
                     .ok_or(SpecError::Unsupported("joker material parameter"))?;
+                params
+                    .set(param, value)
+                    .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
+                params.seed
+            }
+            PlanetMaterial::Ace(params) => {
+                let spec = AceParams::SPECS
+                    .iter()
+                    .find(|s| s.name == param)
+                    .ok_or(SpecError::Unsupported("ace material parameter"))?;
                 params
                     .set(param, value)
                     .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
@@ -451,6 +467,7 @@ impl SystemSpec {
     /// `design_mu` for the Grand thrust and cruise.
     pub fn grand() -> Self {
         let mut spec = Self::project3();
+        spec.planets.push(ace_planet());
         let profile = super::ScaleProfile::grand();
         spec.star.scale = GRAND_STAR_RADIUS / SPHERE_RADIUS;
         for (p, &(radius, orbit, speed)) in spec.planets.iter_mut().zip(&GRAND_PLANETS) {
@@ -507,5 +524,28 @@ impl SystemSpec {
                 ),
             ],
         }
+    }
+}
+
+/// Ace Crystal, ready to join a system: id `ace`, its crystal ground and
+/// crystal clusters, phase 5.2 and spin 0.13. Size, orbit, speed and pull
+/// are the caller's (`scale` 1, `AUTO_ORBIT`, speed 0, `mu` 0 here), and
+/// `SystemSpec::project3` does not include it.
+pub fn ace_planet() -> PlanetSpec {
+    let ace = AceParams::default();
+    PlanetSpec {
+        id: PlanetId("ace"),
+        name: "Ace Crystal",
+        scale: 1.0,
+        orbit_radius: AUTO_ORBIT,
+        orbit_speed: 0.0,
+        phase: 5.2,
+        spin: 0.13,
+        seed: ace.seed as u32,
+        mu: 0.0,
+        material: PlanetMaterial::Ace(ace),
+        geometry: GeometrySpec::Ace,
+        attachments: Vec::new(),
+        host: None,
     }
 }

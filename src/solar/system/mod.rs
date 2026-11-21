@@ -8,5 +8,5 @@ pub mod spec;
 pub use scale::ScaleProfile;
 pub use spec::{
     AttachmentSpec, GeometrySpec, PlanetId, PlanetSpec, SPEC_PARAMS, SpecError, StarSpec,
-    SystemSpec,
+    SystemSpec, ace_planet,
 };

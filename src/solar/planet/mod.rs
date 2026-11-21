@@ -2,6 +2,7 @@
 //! the laboratory 6 `celestial::Body` enum (which keeps its own CLI and
 //! viewer).
 
+pub mod ace;
 pub mod clover;
 pub mod field;
 pub mod geometry;
@@ -10,6 +11,7 @@ pub mod icosphere;
 pub mod joker;
 pub mod material;
 
+pub use ace::AceField;
 pub use clover::CloverField;
 pub use field::{HeightField, TestField};
 pub use hearts::HeartsField;

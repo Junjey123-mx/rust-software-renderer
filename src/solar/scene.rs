@@ -33,6 +33,7 @@ use crate::solar::instance::{
 };
 use crate::solar::nebula::{Nebula, draw_nebula};
 use crate::solar::physics::{CollisionShape, GravitySource};
+use crate::solar::planet::ace::AceParams;
 use crate::solar::planet::clover::CloverParams;
 use crate::solar::planet::geometry::{LodState, Relief, lod_for, lod_step};
 use crate::solar::planet::hearts::NeonGridParams;
@@ -171,6 +172,9 @@ pub struct SolarScene {
     /// The Hearts city baked into sectors (`None`: none), drawn on the host
     /// an `AttachmentKind::City` names.
     pub city: Option<PropLayers>,
+    /// Ace Crystal's crystals baked into sectors (`None`: none), drawn on
+    /// the host an `AttachmentKind::Crystals` names.
+    pub crystals: Option<PropLayers>,
     /// Neon ships of the planet an `AttachmentKind::Traffic` names
     /// (`None`: none).
     pub traffic: Option<Traffic>,
@@ -257,6 +261,7 @@ impl SolarScene {
             waterfalls: None,
             landmark: None,
             city: None,
+            crystals: None,
             traffic: None,
             attachments: vec![
                 AttachmentSpec {
@@ -369,6 +374,10 @@ impl SolarScene {
                     seed: p.seed as f32,
                     ..params
                 }),
+                PlanetMaterial::Ace(params) => PlanetMaterial::Ace(AceParams {
+                    seed: p.seed as f32,
+                    ..params
+                }),
                 other => other,
             };
             bodies.push(
@@ -390,6 +399,7 @@ impl SolarScene {
                 Some(PlanetMaterial::Joker(params)) => scene
                     .set_relief(i, HeightField::Joker(params.field()))
                     .map_err(|_| SpecError::Unsupported("joker relief"))?,
+                Some(PlanetMaterial::Ace(params)) => scene.add_ace_surface(i, &params)?,
                 _ => {}
             }
         }
@@ -444,6 +454,46 @@ impl SolarScene {
                 host: self.bodies[index].id,
             });
         }
+        Ok(())
+    }
+
+    /// Crystal ground and crystal clusters of Ace Crystal at body `index`,
+    /// built once here (never while drawing): clusters scattered by the
+    /// seed and `HERO_SPIRES` spires at seeded spots, 2.2-3.4 times taller.
+    fn add_ace_surface(&mut self, index: usize, params: &AceParams) -> Result<(), SpecError> {
+        use crate::solar::planet::ace::{CRYSTAL_MAX_SCALE, CRYSTAL_SIZE, HERO_SPIRES};
+        let field = HeightField::Ace(params.field());
+        self.set_relief(index, field)
+            .map_err(|_| SpecError::Unsupported("ace relief"))?;
+        let seed = params.field().seed;
+        let mut poses = scatter(&field, &ScatterRule::CRYSTALS, seed);
+        let heroes = scatter(
+            &field,
+            &ScatterRule {
+                candidates: 4 * HERO_SPIRES,
+                density_threshold: -1.0,
+                min_spacing: 0.5,
+                ..ScatterRule::CRYSTALS
+            },
+            seed ^ 0x51e,
+        );
+        for (k, mut hero) in heroes.into_iter().take(HERO_SPIRES as usize).enumerate() {
+            hero.scale = CRYSTAL_MAX_SCALE - 1.2 * (k as f32 / HERO_SPIRES as f32);
+            // Room around a spire: drop the clusters at its foot.
+            poses.retain(|p| p.dir.dot(hero.dir) < 0.12f32.cos());
+            poses.push(hero);
+        }
+        self.crystals = Some(bake(
+            &poses,
+            &field,
+            SPHERE_RADIUS,
+            CRYSTAL_SIZE * SPHERE_RADIUS,
+            seed,
+        ));
+        self.attachments.push(AttachmentSpec {
+            kind: AttachmentKind::Crystals,
+            host: self.bodies[index].id,
+        });
         Ok(())
     }
 
@@ -641,6 +691,10 @@ impl SolarScene {
                         .as_ref()
                         .map(|p| crate::solar::attach::Attachment::Props(p).extent()),
                     AttachmentKind::Traffic => self.traffic.as_ref().map(|t| t.reach),
+                    AttachmentKind::Crystals => self
+                        .crystals
+                        .as_ref()
+                        .map(|p| crate::solar::attach::Attachment::Props(p).extent()),
                     AttachmentKind::City => self
                         .city
                         .as_ref()

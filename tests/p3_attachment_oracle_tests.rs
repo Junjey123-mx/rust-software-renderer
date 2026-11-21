@@ -50,7 +50,7 @@ fn kinds(s: &SolarScene) -> Vec<&'static str> {
             EffectShader::Crown(_) => "crown",
             EffectShader::Card(_) => "card",
             EffectShader::Flame(_) => "flame",
-            EffectShader::Prop(_) => "prop",
+            EffectShader::Prop(_) | EffectShader::Crystal(_) => "prop",
             EffectShader::Waterfall(_) => "waterfall",
             EffectShader::Neon(_) => "neon",
             EffectShader::Trail(_) | EffectShader::TrailBatch(_) => "trail",

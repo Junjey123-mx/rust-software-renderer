@@ -25,6 +25,8 @@ use crate::solar::attach::traffic::{
 use crate::solar::attach::waterfalls::WaterfallShader;
 use crate::solar::card_ring::CardShader;
 use crate::solar::instance::{eye_towards, projected_radius_px};
+use crate::solar::planet::PlanetMaterial;
+use crate::solar::planet::ace::CrystalShader;
 use crate::solar::royal_crown::{CrownPart, CrownShader};
 use crate::solar::ship::ship_options;
 use crate::solar::thrusters::{FlameShader, NOZZLES, flame_length, flame_matrix};
@@ -45,6 +47,7 @@ pub enum EffectShader {
     Trail(TrailShader),
     /// Boxed: its chord lists outweigh every other shader.
     TrailBatch(Box<TrailBatchShader>),
+    Crystal(CrystalShader),
 }
 
 /// Flat-shaded surface prop: its part's color lit by the star, the light
@@ -79,6 +82,7 @@ impl EffectShader {
             Self::Neon(n) => n.shade(s.face_normal),
             Self::Trail(t) => t.shade(s.object_position),
             Self::TrailBatch(t) => t.shade(s.object_position),
+            Self::Crystal(c) => c.shade(s.object_position, s.face_normal, view.view_direction),
         }
     }
 }
@@ -208,11 +212,21 @@ impl SolarScene {
                     mesh: &sector.mesh,
                     model,
                     options: solid_options(threads),
-                    shader: EffectShader::Prop(PropShader {
-                        color: layer.part.color(),
-                        light,
-                        glow: layer.part.glow(),
-                    }),
+                    shader: match (layer.part, self.bodies[host].surface) {
+                        (PropPart::Crystal, Some(PlanetMaterial::Ace(params))) => {
+                            EffectShader::Crystal(CrystalShader {
+                                light,
+                                transform: t,
+                                time: self.clock.time,
+                                params,
+                            })
+                        }
+                        _ => EffectShader::Prop(PropShader {
+                            color: layer.part.color(),
+                            light,
+                            glow: layer.part.glow(),
+                        }),
+                    },
                 });
             }
         }
@@ -395,6 +409,12 @@ impl SolarScene {
                 AttachmentKind::City => {
                     let Some(city) = &self.city else { continue };
                     self.prop_layer_draws(&mut draws, host, city, width, height, threads);
+                }
+                AttachmentKind::Crystals => {
+                    let Some(crystals) = &self.crystals else {
+                        continue;
+                    };
+                    self.prop_layer_draws(&mut draws, host, crystals, width, height, threads);
                 }
                 AttachmentKind::Waterfalls => {
                     let Some(set) = &self.waterfalls else {

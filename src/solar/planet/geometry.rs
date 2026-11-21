@@ -61,6 +61,10 @@ impl GeometryKey {
                 let d = j.digest();
                 (4, [j.seed, d as u32, (d >> 32) as u32])
             }
+            HeightField::Ace(a) => {
+                let d = a.digest();
+                (5, [a.seed, d as u32, (d >> 32) as u32])
+            }
         };
         Self {
             radius_bits: radius.to_bits(),

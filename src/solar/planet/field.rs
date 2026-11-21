@@ -3,6 +3,7 @@
 //! effective radius. Heights are relative to the planet radius and read on
 //! the unit direction from the center.
 
+use crate::solar::planet::ace::AceField;
 use crate::solar::planet::clover::CloverField;
 use crate::solar::planet::hearts::HeartsField;
 use crate::solar::planet::joker::JokerField;
@@ -33,6 +34,8 @@ pub enum HeightField {
     Hearts(HeartsField),
     /// Faceted diamond pyramids of the Joker planet (`joker.rs`).
     Joker(JokerField),
+    /// Ridged crystal shards of Ace Crystal (`ace.rs`).
+    Ace(AceField),
 }
 
 /// A unit vector perpendicular to `n`, built from the axis along which `n`
@@ -62,6 +65,7 @@ impl HeightField {
             Self::Clover(c) => c.height(n),
             Self::Hearts(h) => h.height(n),
             Self::Joker(j) => j.height(n),
+            Self::Ace(a) => a.height(n),
         };
         if h.is_finite() { h } else { 0.0 }
     }
@@ -73,6 +77,7 @@ impl HeightField {
             Self::Clover(c) => c.validate(),
             Self::Hearts(h) => h.validate(),
             Self::Joker(j) => j.validate(),
+            Self::Ace(a) => a.validate(),
             Self::Flat | Self::Test(_) => Ok(()),
         }
     }
@@ -92,7 +97,7 @@ impl HeightField {
             Self::Flat => None,
             Self::Test(t) => t.sea_level,
             Self::Clover(c) => Some(c.sea),
-            Self::Hearts(_) | Self::Joker(_) => None,
+            Self::Hearts(_) | Self::Joker(_) | Self::Ace(_) => None,
         }
     }
 
@@ -112,6 +117,7 @@ impl HeightField {
             Self::Clover(c) => c.max_height(),
             Self::Hearts(h) => h.max_height(),
             Self::Joker(j) => j.max_height(),
+            Self::Ace(a) => a.max_height(),
         };
         ground.max(self.sea_level().unwrap_or(0.0))
     }

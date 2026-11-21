@@ -9,6 +9,7 @@ use crate::solar::attach::prop_meshes::{
     TOWER_VARIANTS, TREE_VARIANTS, rock_mesh, tower_mesh, tree_parts,
 };
 use crate::solar::planet::HeightField;
+use crate::solar::planet::ace::{CRYSTAL_VARIANTS, crystal_cluster};
 use crate::solar::planet::field::NORMAL_EPS;
 use crate::solar::planet::icosphere::icosphere;
 use raylib::math::Vector3;
@@ -22,6 +23,8 @@ pub enum PropKind {
     Rock,
     /// A neon building of the Hearts city.
     Building,
+    /// A crystal cluster of Ace Crystal.
+    Crystal,
 }
 
 /// Which ground a prop may stand on.
@@ -88,6 +91,17 @@ impl ScatterRule {
         max_slope: 0.05,
         min_spacing: 0.04,
         mask: ScatterMask::Plateau,
+        exclude: None,
+    };
+    /// Ace Crystal: crystal clusters over most of the ground.
+    pub const CRYSTALS: Self = Self {
+        kind: PropKind::Crystal,
+        candidates: 2400,
+        density_freq: 3.5,
+        density_threshold: 0.0,
+        max_slope: 0.6,
+        min_spacing: 0.085,
+        mask: ScatterMask::Anywhere,
         exclude: None,
     };
 }
@@ -208,6 +222,9 @@ pub enum PropPart {
     BuildingBody,
     /// The buildings' neon edges (emissive).
     BuildingEdge,
+    /// Ace Crystal's crystals (their own faceted shader,
+    /// `planet::ace::CrystalShader`).
+    Crystal,
 }
 
 impl PropPart {
@@ -218,6 +235,7 @@ impl PropPart {
             Self::Rock => hex(0x8A8178),
             Self::BuildingBody => hex(0x3A1F5C),
             Self::BuildingEdge => hex(0xFF2E63),
+            Self::Crystal => crate::solar::planet::ace::CYAN,
         }
     }
 
@@ -348,6 +366,10 @@ pub fn bake(
                 let (body, edges) = tower_mesh(variant);
                 add(PropPart::BuildingBody, sector, &body, &map);
                 add(PropPart::BuildingEdge, sector, &edges, &map);
+            }
+            PropKind::Crystal => {
+                let variant = (pose.scale * 97.0) as u8 % CRYSTAL_VARIANTS;
+                add(PropPart::Crystal, sector, &crystal_cluster(variant), &map);
             }
         }
     }

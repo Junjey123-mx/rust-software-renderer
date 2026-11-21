@@ -32,7 +32,7 @@ pub enum SolarAction {
     TogglePause,
     ToggleCamera,
     ToggleLocal,
-    /// Quick travel next to the body with this index (F1-F5: the planets in
+    /// Quick travel next to the body with this index (F1-F6: the planets in
     /// the order of the spec).
     Warp(usize),
     /// Shows or hides the render counters of the viewer (`H`).
@@ -59,16 +59,18 @@ pub const HELD: [(KeyboardKey, SolarAction); 7] = [
 ];
 
 /// Keys that fire once per press.
-pub const PRESSED: [(KeyboardKey, SolarAction); 13] = [
+pub const PRESSED: [(KeyboardKey, SolarAction); 14] = [
     (KeyboardKey::KEY_P, SolarAction::TogglePause),
     (KeyboardKey::KEY_V, SolarAction::ToggleCamera),
     (KeyboardKey::KEY_L, SolarAction::ToggleLocal),
-    // The five planets in the order of the spec (the star is body 0).
+    // The planets in the order of the spec (the star is body 0); F6 is Ace
+    // Crystal, which only the Grand system of the live viewer has.
     (KeyboardKey::KEY_F1, SolarAction::Warp(1)),
     (KeyboardKey::KEY_F2, SolarAction::Warp(2)),
     (KeyboardKey::KEY_F3, SolarAction::Warp(3)),
     (KeyboardKey::KEY_F4, SolarAction::Warp(4)),
     (KeyboardKey::KEY_F5, SolarAction::Warp(5)),
+    (KeyboardKey::KEY_F6, SolarAction::Warp(6)),
     (KeyboardKey::KEY_H, SolarAction::ToggleHud),
     (KeyboardKey::KEY_M, SolarAction::ToggleAudio),
     (KeyboardKey::KEY_C, SolarAction::ToggleCulling),

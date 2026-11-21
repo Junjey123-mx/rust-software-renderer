@@ -27,6 +27,8 @@ enum Kind {
     Rock,
     Building,
     Pyramid,
+    /// Ace Crystal's clusters (not in the Project 3 system).
+    Crystal,
 }
 
 fn kind_of(part: PropPart) -> Kind {
@@ -34,6 +36,7 @@ fn kind_of(part: PropPart) -> Kind {
         PropPart::TreeTrunk | PropPart::TreeCanopy => Kind::Tree,
         PropPart::Rock => Kind::Rock,
         PropPart::BuildingBody | PropPart::BuildingEdge => Kind::Building,
+        PropPart::Crystal => Kind::Crystal,
     }
 }
 
@@ -255,7 +258,10 @@ fn crown_and_cards_not_counted() {
                 assert!(s.relief_of(host).is_none(), "{:?}", a.kind);
             }
             // Surface models: on a planet with its own ground.
-            AttachmentKind::Props | AttachmentKind::City | AttachmentKind::Landmark => {
+            AttachmentKind::Props
+            | AttachmentKind::City
+            | AttachmentKind::Landmark
+            | AttachmentKind::Crystals => {
                 assert!(s.bodies[host].orbit.is_some() && s.relief_of(host).is_some());
             }
             // Water and the ships flying over Hearts (C65) are not

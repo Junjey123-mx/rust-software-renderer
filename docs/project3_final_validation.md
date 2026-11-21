@@ -218,6 +218,7 @@ Los puntos pendientes de C80 quedan así:
 
 `p3_final_contract_tests::all_p3_suites_registered` comprueba que esta lista coincide con los archivos `tests/p3_*.rs`:
 
+- `p3_ace_crystal_tests`
 - `p3_attachment_oracle_tests`
 - `p3_attachment_tests`
 - `p3_benchmark_csv_tests`

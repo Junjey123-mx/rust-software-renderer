@@ -34,6 +34,8 @@ fn max_relief(geometry: GeometrySpec) -> f32 {
         }
         // The tallest diamond (the relief is static: nothing else rises).
         GeometrySpec::Joker => crate::solar::planet::joker::JOKER_HEIGHT,
+        // The tallest shard and the tallest crystal spire on it.
+        GeometrySpec::Ace => crate::solar::planet::ace::ACE_RELIEF_BOUND,
     }
 }
 

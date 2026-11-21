@@ -33,6 +33,9 @@ pub enum AttachmentKind {
     /// Neon ships over the host (`traffic::Traffic`, at most one per
     /// host).
     Traffic,
+    /// Ace Crystal's crystal clusters, baked into sectors like the props
+    /// (at most one per host).
+    Crystals,
 }
 
 /// One attachment and the id of the body it rides on.
