@@ -31,7 +31,30 @@ impl Default for FollowRig {
     }
 }
 
+/// Follow framing of atmospheric flight: farther back, higher and looking
+/// farther ahead, so the ground ahead and the horizon fill the view.
+pub const ATMOSPHERE_RIG: FollowRig = FollowRig {
+    distance: 1.5,
+    height: 0.45,
+    look_ahead: 2.0,
+};
+
 impl FollowRig {
+    /// This rig moved `t` (0 to 1) of the way to `other`; `t` 0 (or not a
+    /// number) returns it unchanged.
+    pub fn blended(&self, other: &FollowRig, t: f32) -> FollowRig {
+        if t.is_nan() || t <= 0.0 {
+            return *self;
+        }
+        let t = t.min(1.0);
+        let mix = |a: f32, b: f32| a + (b - a) * t;
+        FollowRig {
+            distance: mix(self.distance, other.distance),
+            height: mix(self.height, other.height),
+            look_ahead: mix(self.look_ahead, other.look_ahead),
+        }
+    }
+
     /// Perspective camera behind and above the ship, with the ship's `up`.
     pub fn camera(&self, ship: &ShipState) -> PerspectiveCamera {
         let eye = ship.position - ship.forward * self.distance + ship.up * self.height;
