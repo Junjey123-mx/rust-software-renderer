@@ -414,8 +414,12 @@ impl SolarScene {
 /// Height of a planet's atmosphere above its highest relief, radii: space
 /// flight below it enters atmospheric flight.
 pub const ATMOSPHERE_MARGIN: f32 = 0.3;
+/// Lowest height of atmospheric flight above the ground, ship radii (never
+/// above the clearance of local flight): low enough that the ground and
+/// the horizon fill the view.
+pub const SKIM: f32 = 2.5;
 /// Exploration height above the ground of atmospheric flight entered from
-/// space, in clearances (`FlightScale::clearance`).
+/// space, in atmospheric floors (`atmosphere_floor`).
 pub const EXPLORE_HEIGHT: f32 = 1.5;
 /// Time constant of the height controller, seconds.
 pub const ALTITUDE_EASE: f32 = 0.45;
@@ -446,6 +450,12 @@ impl SolarScene {
         })
     }
 
+    /// Lowest height above the ground of atmospheric flight around
+    /// `planet`: `SKIM` ship radii, or the local flight clearance if lower.
+    pub fn atmosphere_floor(&self, planet: usize) -> f32 {
+        (SKIM * self.ship.radius()).min(self.flight_scale(planet).clearance)
+    }
+
     /// Distance from the center of `planet` where its atmosphere begins:
     /// `ATMOSPHERE_MARGIN` radii above its highest relief, so a ship enters
     /// it before reaching the collision sphere of space flight.
@@ -467,13 +477,14 @@ impl SolarScene {
             return;
         }
         let scale = self.flight_scale(planet);
-        let ceiling = (self.atmosphere_top(planet) - self.radius_of(planet)).max(scale.clearance);
+        let floor = self.atmosphere_floor(planet);
+        let ceiling = (self.atmosphere_top(planet) - self.radius_of(planet)).max(floor);
         let current = self.distance_to(planet) - self.ground_below(planet);
         let target = self.surface_altitude.unwrap_or(current);
         // Entered above the atmosphere (from an orbit with `L`): the ship
         // keeps its height, and `E` cannot climb higher than either.
-        let target = (target + input.radial * scale.radial_speed * dt)
-            .clamp(scale.clearance, ceiling.max(target));
+        let target =
+            (target + input.radial * scale.radial_speed * dt).clamp(floor, ceiling.max(target));
         self.surface_altitude = Some(target);
         let drive = FlightInput {
             radial: 0.0,
@@ -489,7 +500,7 @@ impl SolarScene {
         }
         let ground = self.ground_below(planet);
         let k = 1.0 - (-dt / ALTITUDE_EASE).exp();
-        let eased = (distance + (ground + target - distance) * k).max(ground + scale.clearance);
+        let eased = (distance + (ground + target - distance) * k).max(ground + floor);
         let up = offset / distance;
         self.ship.position = center + up * eased;
         self.ship.velocity += up * ((eased - distance) / dt);
@@ -498,15 +509,15 @@ impl SolarScene {
     /// Enters atmospheric flight around `planet`; `descend` aims for the
     /// exploration height (from space), otherwise the current height.
     pub fn enter_atmosphere(&mut self, planet: usize, descend: bool) {
-        let scale = self.flight_scale(planet);
-        let current = (self.distance_to(planet) - self.ground_below(planet)).max(scale.clearance);
+        let floor = self.atmosphere_floor(planet);
+        let current = (self.distance_to(planet) - self.ground_below(planet)).max(floor);
         self.flight = FlightMode::Local {
             planet,
             previous_planet_position: self.bodies[planet].transform.position,
         };
         self.capture.state = OrbitState::Free;
         self.surface_altitude = Some(if descend {
-            current.min(EXPLORE_HEIGHT * scale.clearance)
+            current.min(EXPLORE_HEIGHT * floor)
         } else {
             current
         });

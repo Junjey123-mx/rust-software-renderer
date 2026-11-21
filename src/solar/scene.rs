@@ -19,7 +19,9 @@ use crate::solar::attach::props::{PROP_SIZE, PropLayers, ScatterRule, bake, scat
 use crate::solar::attach::traffic::{NEON_SIZE, Traffic};
 use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
-use crate::solar::camera::{ATMOSPHERE_RIG, CameraRig, FollowRig, orbit_perspective};
+use crate::solar::camera::{
+    ATMOSPHERE_RIG, CameraRig, FollowRig, orbit_perspective, tilt_to_horizon,
+};
 use crate::solar::capture::OrbitCapture;
 use crate::solar::card_ring::CardRing;
 use crate::solar::comets::{CometField, draw_comets};
@@ -868,7 +870,11 @@ impl SolarScene {
             self.bodies[planet].transform.position,
             self.radius_of(planet),
         );
-        let scale = self.flight_scale(planet);
+        let mut scale = self.flight_scale(planet);
+        // Atmospheric flight (live viewer) skims lower than local flight.
+        if self.surface_altitude.is_some() {
+            scale.clearance = self.atmosphere_floor(planet);
+        }
         let transform = self.bodies[planet].transform;
         match self.relief_of(planet).map(|r| r.field) {
             // Over relief the clearance is kept above the ground below the
@@ -902,9 +908,18 @@ impl SolarScene {
         if self.leave_capture_for_local() {
             return Ok(self.flight);
         }
+        let before = self.flight;
         self.flight = toggle_local_scaled(self.flight, &self.ship, &self.local_targets(), |t| {
             self.flight_scale(t.index)
         })?;
+        // Atmospheric flight left by hand: like the turbo, the planet waits
+        // for the ship to leave its release shell before taking it back.
+        if let (FlightMode::Local { planet, .. }, FlightMode::Space, Some(_)) =
+            (before, self.flight, self.surface_altitude)
+        {
+            self.capture.blocked = Some(planet);
+            self.surface_altitude = None;
+        }
         Ok(self.flight)
     }
 
@@ -976,12 +991,38 @@ impl SolarScene {
             (CameraMode::Perspective, CameraRig::Orbit) => {
                 ViewProjection::Perspective(self.perspective_camera())
             }
-            (CameraMode::Perspective, CameraRig::Follow) => ViewProjection::Perspective(
-                self.follow
-                    .blended(&ATMOSPHERE_RIG, self.atmosphere_blend)
-                    .camera(&self.ship),
-            ),
+            (CameraMode::Perspective, CameraRig::Follow) => {
+                ViewProjection::Perspective(self.follow_camera())
+            }
         }
+    }
+
+    /// The follow camera: the follow rig moved `atmosphere_blend` of the way
+    /// to the atmospheric framing and tilted by the same share towards the
+    /// horizon of the planet nearest to the eye (`tilt_to_horizon`).
+    pub fn follow_camera(&self) -> PerspectiveCamera {
+        let blend = self.atmosphere_blend;
+        let camera = self
+            .follow
+            .blended(&ATMOSPHERE_RIG, blend)
+            .camera(&self.ship);
+        if blend.is_nan() || blend <= 0.0 {
+            return camera;
+        }
+        let nearest = (1..self.bodies.len()).min_by(|&a, &b| {
+            let gap = |i: usize| {
+                (self.bodies[i].transform.position - camera.eye).length() - self.radius_of(i)
+            };
+            gap(a).total_cmp(&gap(b))
+        });
+        nearest.map_or(camera, |i| {
+            tilt_to_horizon(
+                camera,
+                self.bodies[i].transform.position,
+                self.radius_of(i),
+                blend,
+            )
+        })
     }
 
     /// Direction from the spacecraft towards the star (scene light when the

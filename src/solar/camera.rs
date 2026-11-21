@@ -31,13 +31,50 @@ impl Default for FollowRig {
     }
 }
 
-/// Follow framing of atmospheric flight: farther back, higher and looking
-/// farther ahead, so the ground ahead and the horizon fill the view.
+/// Follow framing of atmospheric flight: as high above the ship as behind
+/// it, so the ship is seen against the ground it skims; `tilt_to_horizon`
+/// then aims the view down to the planet's horizon.
 pub const ATMOSPHERE_RIG: FollowRig = FollowRig {
-    distance: 1.5,
-    height: 0.45,
-    look_ahead: 2.0,
+    distance: 0.9,
+    height: 0.9,
+    look_ahead: 1.5,
 };
+
+/// Where `tilt_to_horizon` puts the horizon: this many radians above the
+/// center of the view, so the ground fills a little more than half of it.
+pub const HORIZON_ABOVE: f32 = 0.12;
+/// The steepest look down of `tilt_to_horizon`, radians below the local
+/// horizontal.
+const MAX_LOOK_DOWN: f32 = 1.2;
+
+/// `camera` turned about its right axis by `share` (0 to 1) of the way to
+/// a view whose center is `HORIZON_ABOVE` below the horizon of the sphere
+/// at `center` with `radius`: the curvature of a planet stays in the view
+/// at any height. Only ever tilts down; unchanged with `share` 0 (or not a
+/// number) or the eye inside the sphere.
+pub fn tilt_to_horizon(
+    camera: PerspectiveCamera,
+    center: Vector3,
+    radius: f32,
+    share: f32,
+) -> PerspectiveCamera {
+    let out = camera.eye - center;
+    let height = out.length();
+    if share.is_nan() || share <= 0.0 || !(height > radius && radius > 0.0) {
+        return camera;
+    }
+    let normal = out / height;
+    let b = camera.basis();
+    let dip = (radius / height).acos();
+    let elevation = b.forward.dot(normal).clamp(-1.0, 1.0).asin();
+    let want = -(dip + HORIZON_ABOVE).min(MAX_LOOK_DOWN);
+    let tilt = (want - elevation).min(0.0) * share.min(1.0);
+    let forward = b.forward * tilt.cos() + b.up * tilt.sin();
+    PerspectiveCamera {
+        target: camera.eye + forward * (camera.target - camera.eye).length(),
+        ..camera
+    }
+}
 
 impl FollowRig {
     /// This rig moved `t` (0 to 1) of the way to `other`; `t` 0 (or not a
