@@ -152,3 +152,72 @@ La distancia al planeta y la velocidad relativa coinciden cuadro a cuadro entre 
 - **Lo que de verdad alejaba el suelo** era el piso de 0.15 R y una cámara que miraba la tangente. Eso se corrigió.
 
 Queda como límite: los mundos se sienten como planetas pequeños que se recorren de cerca, con la curvatura muy marcada, no como llanuras.
+
+## 7. Resultados
+
+### Commits
+
+| Pedido | Commit | Contenido | Validación |
+|---|---|---|---|
+| Auditoría | `f0c8ba7` | Secciones 1 y 2: las cinco causas y el plan | Documento |
+| Cámara atmosférica (1) | `41bdad5` | `ATMOSPHERE_RIG` y `FollowRig::blended` | G2 |
+| Controlador gravitacional, controlador de altura y recuperación de la vista | `393bdc0` | Vuelo atmosférico con altura objetivo, entrada a cualquier velocidad, salida con turbo, nivelación sin el tirón del vuelo libre y `CameraRecovery` | G2, 1068 pruebas |
+| Recalibración y cámara atmosférica (2) | `a44c997` | Piso rasante de 2.5 radios de nave, `tilt_to_horizon`, salida con `L` que bloquea el planeta | G2 del árbol completo (1078) y, sobre el árbol intermedio exportado del índice, `clippy -D warnings`, `fmt` y seis suites |
+| Atmósferas | `64a6fec` | `solar::atmosphere`, solo en la escala Grand | G2, 1078 pruebas |
+| Compatibilidad | `784a29e` | Etiqueta `ATMOSPHERIC FLIGHT` en el HUD y ayuda del visor | G2, 1078 pruebas |
+| README y capturas | `cd86f7b` | README, capturas 23–26, GIF 12–13, secciones 3–6 de este documento y procedencia | Las 8 suites que leen la documentación |
+| Auditoría final | este commit | Esta sección | Documento |
+
+El controlador gravitacional y el de altura quedaron en un solo commit (`393bdc0`): se validaron juntos y ninguno funciona sin el otro en el visor.
+
+### Validación
+
+- **G2 en cada commit de código:** `cargo fmt --check`, `cargo check --all-targets`, `cargo clippy --all-targets -- -D warnings`, `cargo test --no-fail-fast` y `git diff --check`. Último resultado: **1078 pruebas, 0 fallos**.
+- **`cargo build --release`:** sin avisos.
+- **Visor real** (`--scene solar --screenshot`): abrió la ventana con 7 cuerpos y la nave, y guardó la captura.
+- **Pruebas nuevas:**
+  - `p3_atmospheric_flight_tests`, 11 pruebas. Cubren:
+    - la picada que entra y se asienta bajo;
+    - 20 s sobre el relieve sin subir de más;
+    - `E`/`Q`;
+    - el turbo;
+    - la recuperación a 10, 30, 60 y 144 FPS con cuatro giros;
+    - la nariz vertical;
+    - el rig sin cambios fuera de la atmósfera;
+    - el horizonte en cuadro y los límites de la inclinación;
+    - cada salida (`L`, `G`, `F1`), sin saltos ni reentrada;
+    - el turbo desde la captura orbital.
+  - `p3_atmospheres_tests`, 6 pruebas.
+- **Pruebas que ya existían:** ninguna se eliminó. Los oráculos de cuadro no cambiaron, porque las atmósferas solo se encienden a escala Grand.
+
+### Verificación visual
+
+Cuadros reales del framebuffer de CPU, con el controlador del visor conducido por entradas grabadas a 60 FPS. Procedencia en [media_expansion.md](results/project3/media_expansion.md).
+
+| Qué | Dónde | Lo que se vio o se midió |
+|---|---|---|
+| Acople y entrada | GIF 12, captura 25 | En la picada a 8 u/s la nave entra sola en vuelo atmosférico y baja a 1.20 u en unos 2 s |
+| Exploración cercana y curvatura | Capturas 24 y 25 | La nave pasa sobre el mar, las islas, la ciudad, las dunas y los cristales, con el horizonte curvo en cuadro |
+| Altura estable | Registros de `fly` | De 1.20 a 1.22 u sobre el mar de Clover Haven y de 1.12 a 1.21 u sobre la ciudad de Neon Hearts (objetivo 1.20) |
+| Cámara | Capturas 24 y 25 | El suelo llena algo más de la mitad baja y el horizonte queda 0.12 rad sobre el centro, de día y de noche |
+| Salida con turbo | GIF 12 y 13 | Sale por la tangente y hacia arriba. La velocidad relativa sube de 2.7 a 28 u/s sin saltos de posición |
+| Atmósferas | Capturas 23 y 24 | Halo de cada color, más brillante de día; bruma en el horizonte desde dentro |
+| Recuperación de la vista | Captura 26, GIF 13 y la tabla de la sección 3 | `up·space_up` llega a 1.000 antes de 0.9 s desde el ecuador (0.000) y desde el hemisferio sur (−0.41) |
+
+**Planetas verificados en cuadro:**
+
+- los seis, desde lejos (captura 23) y en vuelo rasante (captura 24);
+- la secuencia completa de entrada y salida en Clover Haven y en Neon Hearts;
+- el escape desde la captura orbital en House of Cards.
+
+Las pruebas automáticas de vuelo usan Clover Haven, y las de las atmósferas, una cáscara sintética y la escena Grand completa.
+
+### Límites
+
+- **Sin reescalado adicional:** los radios y las órbitas de la escala Grand no cambiaron (sección 6).
+- **Solo en el visor:** el vuelo atmosférico, la cámara atmosférica, la recuperación de la vista y las atmósferas funcionan en el visor (escala Grand). Las grabaciones, el recorrido histórico y los oráculos no los usan.
+- **Sin colisión de adornos en vuelo atmosférico:** la nave atraviesa las cartas del anillo de House of Cards y los cristales de Ace. El controlador de altura sigue el campo de relieve, no los adornos.
+- **Costo:** las atmósferas suman de 15 a 20 ms por cuadro en vuelo rasante a 800×600 con 20 hilos (sección 5).
+- **Ratón:** la recuperación solo gira sobre la nariz y se recalcula en cada cuadro desde la actitud del momento, así que no acumula entradas del ratón. Las pruebas la ejercitan sin entrada de ratón.
+- **Juego a mano:** el entorno no permite manejar el visor con teclado y ratón reales. La evidencia visual sale del controlador real conducido por entradas grabadas, y de una apertura de la ventana con `--screenshot`.
+- **Video final:** queda a cargo del autor.
