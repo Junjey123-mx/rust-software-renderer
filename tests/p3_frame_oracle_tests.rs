@@ -11,7 +11,9 @@
 //! captured in C23, the rest in C24 once the scenarios follow the layout,
 //! all recaptured in C49 with the clover planet and in C61 with the hearts
 //! planet; C, D, H and I recaptured on 2026-11-20 with the Joker, the
-//! fifth planet (they see the whole system). `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49) and
+//! fifth planet (they see the whole system), and every Project 3 frame
+//! with a sky (all but I) recaptured the same day with the purple-blue sky
+//! cycle (`nebula::blue_share`, t = 6). `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49) and
 //! K3 (C52); `P3_HEARTS_M` the hearts planet scenarios M and M2 (C61).
 
 use rust_software_renderer::benchmark::SolarBenchConfig;
@@ -138,25 +140,25 @@ fn scaled_hash(id: &str) -> u64 {
 /// C and J change (ships in view), the rest do not. Recaptured on C68,
 /// which adds the trails: C and J change again.
 const P3_SCALED_A_J: [(&str, u64); 10] = [
-    ("A", 0x1dbb86321bfc4240),
-    ("B", 0xe59e2a67ca2766b7),
-    ("C", 0xffadaf58ad71ac8f),
-    ("D", 0x2bdf6ae00090e1c2),
-    ("E", 0xcf231405f64870a6),
-    ("F", 0xbad58159c18ffe26),
-    ("G", 0x833fb13d759a35d5),
-    ("H", 0x2bdf6ae00090e1c2),
+    ("A", 0x26467b9e5dda2b29),
+    ("B", 0xd1a777942fd18077),
+    ("C", 0x6632238bf40524f0),
+    ("D", 0xbcfe44694f032edf),
+    ("E", 0x709b4c29901a71d5),
+    ("F", 0xe1a437e48dd1ea99),
+    ("G", 0x43325ccd345dcfdf),
+    ("H", 0xbcfe44694f032edf),
     ("I", 0xee50de94bda0fb7c),
-    ("J", 0x7f402430390f26c9),
+    ("J", 0xdb38e3ee9ef77b1c),
 ];
 
 /// Clover planet scenarios of the scaled benchmark, captured on C49. C52
 /// adds the waterfalls (K changes, K2 is too far to show them) and K3, a
 /// mountain and its waterfall up close.
 const P3_CLOVER_K: [(&str, u64); 3] = [
-    ("K", 0xd0c2be192736fcd5),
-    ("K2", 0x679e53072378afad),
-    ("K3", 0xebb053bfd9cb501c),
+    ("K", 0xd7979c26db1c14e8),
+    ("K2", 0xc30d6353c1421276),
+    ("K3", 0xa9dcbef19eec66e2),
 ];
 
 /// Hearts planet scenarios of the scaled benchmark, captured on C61: the
@@ -164,7 +166,7 @@ const P3_CLOVER_K: [(&str, u64); 3] = [
 /// Recaptured on C65: both show the neon ships now. C67 adds the
 /// lightcycles: M changes, M2 (planet under 60 px) does not. C68 adds the
 /// trails: both change (the ships' ribbons show from afar too).
-const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0xdca0c052459b2ddc), ("M2", 0x0c41bd2372884a03)];
+const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0xb912607e99d028d6), ("M2", 0x720ddd197330d370)];
 
 #[test]
 fn p3_scaled_a_j_match() {

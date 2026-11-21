@@ -4,6 +4,12 @@
 //! samples that map on a coarse screen grid with the camera rotation only
 //! and interpolates between grid points, so the cost does not grow with
 //! the noise and translating the camera never moves the background.
+//!
+//! With `drift` on (the Project 3 scene) the sampled colors cycle slowly
+//! from purple to blue and back (`SKY_CYCLE`), in a wave that sweeps the
+//! sky, so the whole backdrop never turns one color at once. Only the grid
+//! samples are recolored (about 8000 per frame at 800x600): the painted map
+//! is never repainted.
 
 use crate::pipeline::PerspectiveCamera;
 use crate::rendering::Framebuffer;
@@ -30,12 +36,24 @@ const BAND_NORMAL: Vector3 = Vector3::new(0.42, 0.85, 0.32);
 /// Angular half-width of the band (sine of the angle to its circle).
 const BAND_WIDTH: f32 = 0.32;
 
+/// Seconds of one purple -> blue -> purple cycle of the sky.
+pub const SKY_CYCLE: f32 = 90.0;
+/// Seconds of the wave that sweeps the color change across the sky.
+const SKY_SWEEP: f32 = 37.0;
+/// Direction along which the wave sweeps.
+const SWEEP_AXIS: Vector3 = Vector3::new(0.3, 0.2, 0.93);
+
 #[derive(Debug, Clone)]
 pub struct Nebula {
     pub seed: u32,
     /// Scale of the painted color: 0 leaves the plain black sky, 1 is the
     /// designed look.
     pub intensity: f32,
+    /// Share of the purple-blue cycle applied: 0 (the default, every
+    /// laboratory and pre-project scene) keeps the painted colors.
+    pub drift: f32,
+    /// Simulated time of the cycle, seconds (frozen while paused).
+    pub time: f32,
     /// Painted on first use, so scenes that never draw the sky never pay.
     map: OnceLock<Vec<Vector3>>,
 }
@@ -45,6 +63,8 @@ impl Nebula {
         Self {
             seed,
             intensity: intensity.clamp(0.0, 1.0),
+            drift: 0.0,
+            time: 0.0,
             map: OnceLock::new(),
         }
     }
@@ -106,6 +126,28 @@ impl Nebula {
     }
 }
 
+/// The blue twin of a painted color: wine and magenta turn into dark and
+/// cosmic blue, deep purple into blue violet, the black violet into navy.
+pub fn blue_of(c: Vector3) -> Vector3 {
+    Vector3::new(0.30 * c.x, 0.45 * c.y + 0.30 * c.x, c.z + 0.60 * c.x)
+}
+
+/// Share of blue, in `[0, 1]`, along the unit `d` at time `t`: the cycle
+/// (0 at t = 0, 1 half a `SKY_CYCLE` later) times a wave that sweeps the
+/// sky, so some regions turn blue before others. 0 when `drift` is 0 or
+/// a value is not finite.
+pub fn blue_share(d: Vector3, t: f32, drift: f32) -> f32 {
+    if !(drift.is_finite() && t.is_finite()) || drift <= 0.0 {
+        return 0.0;
+    }
+    let tau = std::f32::consts::TAU;
+    let cycle = 0.5 - 0.5 * (tau * (t / SKY_CYCLE).rem_euclid(1.0)).cos();
+    let wave = 0.55
+        + 0.45
+            * (2.5 * d.dot(SWEEP_AXIS.normalized()) - tau * (t / SKY_SWEEP).rem_euclid(1.0)).sin();
+    (drift.min(1.0) * cycle * wave).clamp(0.0, 1.0)
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -130,8 +172,15 @@ pub fn draw_nebula(framebuffer: &mut Framebuffer, nebula: &Nebula, camera: &Pers
         let y = (gy * GRID_STEP) as f32 + 0.5;
         for gx in 0..cols {
             let x = (gx * GRID_STEP) as f32 + 0.5;
-            let d = basis.forward * focal + basis.right * (x - cx) - basis.up * (y - cy);
-            grid.push(nebula.sample(d.normalized()));
+            let d =
+                (basis.forward * focal + basis.right * (x - cx) - basis.up * (y - cy)).normalized();
+            let c = nebula.sample(d);
+            let blue = blue_share(d, nebula.time, nebula.drift);
+            grid.push(if blue > 0.0 {
+                c + (blue_of(c) - c) * blue
+            } else {
+                c
+            });
         }
     }
     // Bilinear in two passes: each pixel row first blends its two grid

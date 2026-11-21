@@ -535,6 +535,8 @@ impl SolarScene {
         scene.ship.move_speed = profile.cruise_speed;
         scene.ship.inertia = true;
         scene.gravity = true;
+        // The Project 3 sky cycles from purple to blue and back.
+        scene.nebula.drift = 1.0;
         scene.scale = Some(profile);
         scene.layout = Some(layout);
         scene.check_spawn()?;
@@ -800,6 +802,7 @@ impl SolarScene {
     /// Places every body at the current simulated time.
     pub fn update(&mut self) {
         let (time, center) = (self.clock.time, self.center);
+        self.nebula.time = time;
         for body in &mut self.bodies {
             body.update(time, center);
         }
