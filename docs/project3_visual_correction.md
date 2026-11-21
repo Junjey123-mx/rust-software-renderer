@@ -140,3 +140,66 @@ Este documento empieza el 2026-11-20 con la auditoría y el plan, antes de tocar
 10. Cierre de este documento.
 
 Cada commit pasa `fmt`, `check`, `clippy -D warnings` y `cargo test` antes de confirmarse.
+
+## 3. Resultados (cierre, 2026-11-20)
+
+### 3.1 Commits
+
+| # | Commit | Qué hizo |
+|---|---|---|
+| 1 | `fb859cb` | Auditoría y plan (secciones 1 y 2) |
+| 2 | `114ec84` | El faro ilumina el terreno en la sombra (`ship_lights::light_surfaces`) |
+| 3 | `cf5b363` | Alabeo visual de la nave en el visor (`flight::bank_target`, `ease_bank`) |
+| 4 | `5e99480` | Nivelación con la vertical del planeta en la captura, el vuelo local y cerca de los planetas (`SolarScene::align_to_planet`) |
+| 5 | `d91b0c1` | Escala Grand del visor (`ScaleProfile::grand`, `SystemSpec::grand`, `viewer::build_grand_scene`) |
+| 6 | `b8be8dd` | Joker teatral: máscaras, paneles de arlequín, costuras de neón, picos de bufón y *glitch* |
+| 7 | `b6ed74b` | Ace Crystal, sexto planeta de la escala Grand, y `F6` |
+| 8 | `03596af` | Clover Haven: mar luminoso y cascadas monumentales en cortina |
+| 9 | `9b1aebb` | README y capturas 16–22 |
+| 10 | este commit | Cierre de este documento |
+
+El orden real difiere del plan (2.6): Joker y Ace se confirmaron antes que Clover Haven, porque sus cambios estuvieron listos antes. Cada commit pasó `fmt --check`, `check --all-targets`, `clippy --all-targets -D warnings`, `cargo test --no-fail-fast` y `git diff --check` antes de confirmarse.
+
+### 3.2 Qué estaba mal y qué se corrigió
+
+| Problema (sección 1) | Corrección | Evidencia |
+|---|---|---|
+| 1.1 Mar oscuro y quieto | Bajíos turquesa, laguna cian y azul luminoso; línea de rompiente, corrientes que derivan, destellos de sol y brillo tenue de noche | `p3_clover_water_identity_tests` (luminancia del mar iluminado, deriva de las corrientes); capturas 17 y 18 |
+| 1.2 Cascadas invisibles | Las tres monumentales salen del borde y caen en parábola hasta el mar, seis veces más anchas que una clásica y abriéndose 1.5 veces, con una cúpula de espuma al pie; las siete son de doble cara y se dibujan desde 16 px de radio del planeta | `p3_clover_water_identity_tests` (cortina sobre la ladera, doble cara, distancia de dibujo); captura 18 |
+| 1.3 Ace Crystal no existía | Módulo `planet/ace.rs`: esquirlas facetadas y agujas de cristal 3D en cian, celeste, turquesa, blanco y lila, con su propio shader especular y emisivo; sexto planeta solo en la escala Grand | `p3_ace_crystal_tests` (7), `p3_grand_scale_tests`; captura 19 |
+| 1.4 Reescalado no aplicado | Escala Grand para el visor: planetas ×5 (17–27 radios de nave), estrella ×7 (4.3 veces el planeta mayor), órbitas de 78.5 a 225 u, crucero y empuje ×2, cometas ×4, aparición fuera de la última cáscara | `p3_grand_scale_tests` (7); captura 16 |
+| 1.5 Nave recta en la captura, sin alabeo | Alabeo de hasta 32° hacia el desplazamiento o el giro, con vuelta suave a nivel; nivelación con la vertical del planeta por rotaciones mínimas y suavizadas | `p3_ship_attitude_tests` (6): nivelada en menos de 6 s, sin saltos por cuadro; captura 22 |
+| 1.6 Las luces no iluminaban | Pasada de luz en pantalla desde la profundidad: cono y aura con alcance de 16 u y atenuación, solo en sombra | `p3_ship_lights_tests` (suelo más claro en la sombra, nada fuera del alcance); captura 21 |
+| 1.7 Joker genérico | Máscaras de comedia y tragedia, paneles en negro, morado, esmeralda, magenta y burdeos, costuras de neón en zigzag, picos de bufón y banda de *glitch*; relieve de 0.08 a 0.12 | `p3_joker_planet_tests::theatrical_palette_and_neon_seams_show` (el Joker anterior no la pasa); captura 20 |
+
+### 3.3 Validación final
+
+- **Calidad:** `fmt --check`, `check --all-targets`, `clippy --all-targets -D warnings` y `git diff --check` limpios; `cargo test --no-fail-fast`: **1061 pruebas, 0 fallos** (antes de la pasada eran 1033).
+- **Compilación:** `cargo build --release` terminó sin errores en 33 s.
+- **Visor:** `--scene solar --screenshot` abre la ventana con 7 cuerpos (la estrella y seis planetas) a escala Grand y la ayuda de controles con `F1-F6`.
+- **Revisión visual:** la escala, el faro, el alabeo, el Joker, Ace Crystal y Clover Haven se revisaron en cuadros del framebuffer antes de confirmarse, y las capturas 16–22 del README son los cuadros finales. La nivelación con el planeta se verificó con pruebas numéricas (`p3_ship_attitude_tests`), sin captura propia.
+
+### 3.4 Oráculos recapturados
+
+Los oráculos de los laboratorios y `LEGACY_A_J` no cambiaron. En `tests/p3_frame_oracle_tests.rs` se recapturaron, con el motivo en la cabecera:
+
+- E, F y J con la luz del faro sobre el terreno;
+- C, D, H e I con el Joker nuevo;
+- C, D, H, I, K, K2, K3 y M2 con el mar y las cascadas de Clover Haven.
+
+### 3.5 Incidencias durante la pasada
+
+El equipo se reinició dos veces durante compilaciones pesadas, y en ambas se perdió `/tmp` (tmpfs), donde estaban los parches de Ace Crystal y Clover Haven, los directorios de compilación y las herramientas de captura. El repositorio no se vio afectado. Los dos cambios se reconstruyeron repitiendo, sobre el árbol del repositorio, las mismas ediciones registradas en las transcripciones de su trabajo:
+
+- **Ace Crystal:** pasó sus siete pruebas sin cambios.
+- **Clover Haven:** se aflojó un umbral de su prueba de corrientes, porque el último ajuste visual las había adelgazado, y se corrigieron dos avisos de `clippy`.
+
+Después del segundo reinicio, las compilaciones se limitaron a una a la vez con 12 trabajos. Las capturas 16–22 se generaron con el código final.
+
+### 3.6 Límites que quedan
+
+- La escala Grand y Ace Crystal existen solo en el visor interactivo; las pruebas, los oráculos, el benchmark y el recorrido grabado siguen en la escala de proyecto con cinco planetas.
+- El alabeo y la nivelación los aplica el controlador del visor; las grabaciones no los usan.
+- Los cristales de Ace no tienen colisión propia.
+- El costo por cuadro sube a escala Grand: de 13 ms en el inicio a 114 ms en un vuelo rasante de noche, con todos los núcleos a 800×600 (tabla en `docs/results/project3/media_expansion.md`).
+- El video final sigue pendiente del autor.
