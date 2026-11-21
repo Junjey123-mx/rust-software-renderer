@@ -27,6 +27,13 @@ pub struct ScaleProfile {
     /// Fastest linear orbital speed, world units per second (so the ship
     /// can always catch a planet without quick travel).
     pub max_orbit_speed: f32,
+    /// Acceleration of full thrust, world units per second squared.
+    pub thrust_accel: f32,
+    /// Where the ship starts: `false` just beyond the fifth planet's slot
+    /// (Project 3), `true` one gap beyond the outermost shell.
+    pub spawn_beyond_layout: bool,
+    /// Size of the comets' ellipses and tails against `CometField::project3`.
+    pub comet_scale: f32,
 }
 
 impl ScaleProfile {
@@ -41,6 +48,30 @@ impl ScaleProfile {
             min_gap: 3.0,
             cruise_speed: 3.0,
             max_orbit_speed: 1.0,
+            thrust_accel: crate::solar::flight::THRUST_ACCEL,
+            spawn_beyond_layout: false,
+            comet_scale: 1.0,
+        }
+    }
+
+    /// The Grand proportions of the live viewer (second pass,
+    /// 2026-11-20): planets 15-30 times the spacecraft (five times the
+    /// project scale, so the ship is small against them), the star 4-6
+    /// times the largest planet, shells 6 units apart, twice the cruise
+    /// and thrust so the larger system stays quick to cross, orbits up to
+    /// 2 u/s, the ship starting beyond the outermost shell and the comets
+    /// four times wider.
+    pub fn grand() -> Self {
+        Self {
+            ship_radius: MESH_RADIUS * SHIP_SCALE,
+            planet_to_ship: (15.0, 30.0),
+            star_to_planet: (4.0, 6.0),
+            min_gap: 6.0,
+            cruise_speed: 6.0,
+            max_orbit_speed: 2.0,
+            thrust_accel: 2.0 * crate::solar::flight::THRUST_ACCEL,
+            spawn_beyond_layout: true,
+            comet_scale: 4.0,
         }
     }
 

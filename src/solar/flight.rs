@@ -149,7 +149,7 @@ pub const BRAKE_RATE: f32 = 1.5;
 /// World acceleration of this frame's thrust along the nose and sideways;
 /// a diagonal is no stronger than one key (`travel`).
 pub fn thrust_accel(input: &FlightInput, ship: &ShipState) -> Vector3 {
-    travel(input, ship.forward, ship.right()) * THRUST_ACCEL
+    travel(input, ship.forward, ship.right()) * ship.accel
 }
 
 /// Rate of the mouse turn easing, per second: about 63 % of a mouse

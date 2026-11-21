@@ -148,6 +148,23 @@ impl CometField {
     }
 }
 
+impl CometField {
+    /// The same comets around `star` with their ellipses and tails `k`
+    /// times larger (same periods); `k` = 1 returns them unchanged.
+    pub fn scaled(mut self, star: Vector3, k: f32) -> Self {
+        if k == 1.0 || !k.is_finite() || k <= 0.0 {
+            return self;
+        }
+        for c in &mut self.comets {
+            c.center = star + (c.center - star) * k;
+            c.a *= k;
+            c.b *= k;
+            c.tail *= k;
+        }
+        self
+    }
+}
+
 /// Adds `color` to the pixel when `depth` is in front of what is drawn
 /// there; returns whether it did.
 fn add_behind_test(fb: &mut Framebuffer, x: i32, y: i32, depth: f32, color: Vector3) -> bool {

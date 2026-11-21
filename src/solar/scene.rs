@@ -45,7 +45,7 @@ use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_optio
 use crate::solar::ship_lights::{draw_ship_lights, light_surfaces, shadow};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
-use crate::solar::system::layout::{FIFTH_SLOT_RESERVED_EXTENT, OrbitLayout};
+use crate::solar::system::layout::{FIFTH_SLOT_RESERVED_EXTENT, OrbitLayout, WORLD_MARGIN};
 use crate::solar::system::spec::AttachmentSpec as PlanetAttachment;
 use crate::solar::system::{PlanetId, ScaleProfile, SpecError, SystemSpec};
 use crate::solar::thrusters::Thrusters;
@@ -541,26 +541,72 @@ impl SolarScene {
         light_world: Vector3,
         spec: &SystemSpec,
     ) -> Result<Self, SpecError> {
-        let profile = ScaleProfile::project3();
+        Self::scaled_from_spec_with(meshes, view, light_world, spec, ScaleProfile::project3())
+    }
+
+    /// `scaled_from_spec` at the proportions and speeds of `profile`.
+    pub fn scaled_from_spec_with(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+        spec: &SystemSpec,
+        profile: ScaleProfile,
+    ) -> Result<Self, SpecError> {
         profile.check(spec)?;
         let mut scene = Self::from_spec_unchecked(meshes, view, light_world, spec)?;
         let eff: Vec<f32> = (1..scene.bodies.len()).map(|i| scene.shell_of(i)).collect();
         let layout = OrbitLayout::solve(spec, &eff, scene.shell_of(0), profile.min_gap)?;
-        scene.ship = ShipState::new(
-            spawn_beyond(layout.fifth_slot + FIFTH_SLOT_RESERVED_EXTENT),
-            SHIP_SCALE,
-        );
+        let outer = if profile.spawn_beyond_layout {
+            layout.world_radius - WORLD_MARGIN + profile.min_gap
+        } else {
+            layout.fifth_slot + FIFTH_SLOT_RESERVED_EXTENT
+        };
+        scene.ship = ShipState::new(spawn_beyond(outer), SHIP_SCALE);
         scene.ship.move_speed = profile.cruise_speed;
+        scene.ship.accel = profile.thrust_accel;
         scene.ship.inertia = true;
         scene.gravity = true;
         // The Project 3 sky cycles from purple to blue and back, and its
         // comets travel around the star.
         scene.nebula.drift = 1.0;
-        scene.comets = Some(CometField::project3(scene.center));
+        scene.comets =
+            Some(CometField::project3(scene.center).scaled(scene.center, profile.comet_scale));
         scene.ship_lights = true;
         scene.scale = Some(profile);
         scene.layout = Some(layout);
         scene.check_spawn()?;
+        Ok(scene)
+    }
+
+    /// The Project 3 system at the Grand scale of the live viewer
+    /// (`SystemSpec::grand`, `ScaleProfile::grand`).
+    pub fn grand_system(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+    ) -> Result<Self, SpecError> {
+        Self::scaled_from_spec_with(
+            meshes,
+            view,
+            light_world,
+            &SystemSpec::grand(),
+            ScaleProfile::grand(),
+        )
+    }
+
+    /// `project3_with_sets` at the Grand scale.
+    pub fn grand_with_sets(
+        meshes: SolarMeshes,
+        view: OrbitView,
+        light_world: Vector3,
+        sets: &[(String, f32)],
+    ) -> Result<Self, String> {
+        let mut spec = SystemSpec::grand();
+        let shader_sets = split_sets(&mut spec, sets)?;
+        let mut scene =
+            Self::scaled_from_spec_with(meshes, view, light_world, &spec, ScaleProfile::grand())
+                .map_err(|e| format!("--set: {e}"))?;
+        scene.apply_overrides(&shader_sets)?;
         Ok(scene)
     }
 

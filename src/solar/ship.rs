@@ -56,6 +56,9 @@ pub struct ShipState {
     /// Inertial dampers (`X`, on by default): without thrust they brake the
     /// ship progressively; off, it coasts (to show gravity at work).
     pub dampers: bool,
+    /// Acceleration of full thrust in inertial flight, world units per
+    /// second squared (`flight::THRUST_ACCEL` unless a scale sets it).
+    pub accel: f32,
 }
 
 /// Mouse turn the ship has not applied yet: the mouse adds to it and the
@@ -82,6 +85,7 @@ impl ShipState {
             inertia: false,
             turn: TurnState::default(),
             dampers: true,
+            accel: crate::solar::flight::THRUST_ACCEL,
         }
     }
 

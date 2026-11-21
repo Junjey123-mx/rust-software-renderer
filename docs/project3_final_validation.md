@@ -242,6 +242,7 @@ Los puntos pendientes de C80 quedan así:
 - `p3_frame_oracle_tests`
 - `p3_frame_stats_tests`
 - `p3_geometry_cache_tests`
+- `p3_grand_scale_tests`
 - `p3_gravity_collision_integration_tests`
 - `p3_gravity_force_tests`
 - `p3_gravity_toggle_tests`

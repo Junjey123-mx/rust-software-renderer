@@ -36,9 +36,26 @@ pub const TITLE: &str = "Rust Software Renderer - Camino al Proyecto 3: Solar";
 /// Builds the scene described by the command line with the pre-project
 /// system (`SystemSpec::preproject3`) at `--time`, with `--set
 /// body.param=value` overrides applied per instance. The historical suites
-/// keep it; the window shows `build_project3_scene`.
+/// keep it; the window shows `build_grand_scene`.
 pub fn build_scene(cli: &CliArgs, lab6: &CelestialArgs) -> Result<SolarScene, Box<dyn Error>> {
-    build_system(cli, lab6, false)
+    build_system(cli, lab6, System::Preproject)
+}
+
+/// The live window's system: the Project 3 system at the Grand scale
+/// (`SolarScene::grand_with_sets`), framed by its layout. Recordings keep
+/// `build_project3_scene`.
+pub fn build_grand_scene(
+    cli: &CliArgs,
+    lab6: &CelestialArgs,
+) -> Result<SolarScene, Box<dyn Error>> {
+    build_system(cli, lab6, System::Grand)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum System {
+    Preproject,
+    Project3,
+    Grand,
 }
 
 /// `build_scene` with the Project 3 system at the project scale
@@ -48,13 +65,13 @@ pub fn build_project3_scene(
     cli: &CliArgs,
     lab6: &CelestialArgs,
 ) -> Result<SolarScene, Box<dyn Error>> {
-    build_system(cli, lab6, true)
+    build_system(cli, lab6, System::Project3)
 }
 
 fn build_system(
     cli: &CliArgs,
     lab6: &CelestialArgs,
-    project3: bool,
+    system: System,
 ) -> Result<SolarScene, Box<dyn Error>> {
     let camera = OrbitCamera::new(Vector3::zero(), cli.view.unwrap_or_default());
     let viewport = Viewport::new(WIDTH, HEIGHT, 0.1);
@@ -63,8 +80,12 @@ fn build_system(
         .uniforms()
         .light_direction;
     let meshes = SolarMeshes::load()?;
-    let mut scene = if project3 {
-        let mut scene = SolarScene::project3_with_sets(meshes, view, light, &lab6.sets)?;
+    let mut scene = if system != System::Preproject {
+        let mut scene = if system == System::Grand {
+            SolarScene::grand_with_sets(meshes, view, light, &lab6.sets)?
+        } else {
+            SolarScene::project3_with_sets(meshes, view, light, &lab6.sets)?
+        };
         if let Some(layout) = &scene.layout {
             scene.view = OrbitView::for_world(camera, layout.world_radius, viewport)?;
         }
@@ -300,7 +321,7 @@ impl<'a> ShipSounds<'a> {
 }
 
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
-    let mut scene = build_project3_scene(cli, lab6)?;
+    let mut scene = build_grand_scene(cli, lab6)?;
     scene.lod_live = true;
     scene.capture.enabled = true;
     let mut mode = solar_mode(cli, lab6);

@@ -96,6 +96,21 @@ impl PlanetSpec {
 /// caught without quick travel (`ScaleProfile::max_orbit_speed`).
 pub const MAX_ORBIT_LINEAR_SPEED: f32 = 1.0;
 
+/// Radius of The King's Crown at the Grand scale, world units.
+pub const GRAND_STAR_RADIUS: f32 = 37.8;
+
+/// Radius, orbit and orbital speed of each Grand planet, in the order of
+/// `project3` (Crimson Entrance, Clover Haven, Neon Hearts, House of
+/// Cards, Joker). The orbits are the smallest that keep 6 u between the
+/// shells, rounded up to 0.5 (`OrbitLayout::solve` checks them).
+pub const GRAND_PLANETS: [(f32, f32, f32); 5] = [
+    (5.5, 78.5, 2.0),
+    (7.25, 100.5, 1.8),
+    (6.5, 129.0, 1.7),
+    (8.75, 165.5, 1.5),
+    (8.0, 198.5, 1.4),
+];
+
 /// `orbit_radius` that lets `OrbitLayout::solve` choose the radius (the
 /// smallest that keeps the gap, rounded up to 0.5). A scene cannot be
 /// built from it directly: `validate` asks for a positive radius.
@@ -424,6 +439,25 @@ impl SystemSpec {
             p.orbit_radius = orbit;
             p.orbit_speed = speed;
             p.mu = design_mu(radius, THRUST_ACCEL, 3.0);
+        }
+        spec
+    }
+
+    /// The Project 3 system at the Grand scale of the live viewer
+    /// (`ScaleProfile::grand`): every planet five times its project radius
+    /// (5.5 to 8.75 u, 17-27 ship radii), The King's Crown seven times
+    /// (37.8 u, 4.3 times House of Cards), orbits that keep the Grand gap
+    /// between shells, orbital speeds twice the project ones and `mu` from
+    /// `design_mu` for the Grand thrust and cruise.
+    pub fn grand() -> Self {
+        let mut spec = Self::project3();
+        let profile = super::ScaleProfile::grand();
+        spec.star.scale = GRAND_STAR_RADIUS / SPHERE_RADIUS;
+        for (p, &(radius, orbit, speed)) in spec.planets.iter_mut().zip(&GRAND_PLANETS) {
+            p.scale = radius / SPHERE_RADIUS;
+            p.orbit_radius = orbit;
+            p.orbit_speed = speed;
+            p.mu = design_mu(radius, profile.thrust_accel, profile.cruise_speed);
         }
         spec
     }
