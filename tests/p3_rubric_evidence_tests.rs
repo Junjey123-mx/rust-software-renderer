@@ -152,8 +152,14 @@ fn no_claim_without_proof() {
     for row in rows.iter().filter(|r| r.state != "VERIFICADO") {
         assert_eq!(row.safe, 0, "row {}", row.id);
     }
-    // A claim on an unproven row, or a suite that does not exist, is refused.
-    let mut row = rows.iter().find(|r| r.state == "PARCIAL").unwrap().clone();
+    // A claim on an unproven row, or a suite that does not exist, is refused
+    // (the PARCIAL row is built here: since 2026-11-20 the table has none).
+    let mut row = rows
+        .iter()
+        .find(|r| r.state == "VERIFICADO")
+        .unwrap()
+        .clone();
+    row.state = "PARCIAL".into();
     row.safe = 1;
     assert!(check(&row).is_err());
     let mut row = rows
