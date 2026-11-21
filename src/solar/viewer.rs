@@ -121,8 +121,11 @@ pub fn status_line(scene: &SolarScene, speed: f32, fps: f32) -> String {
         None => "no planet".to_string(),
     };
     format!(
-        "Solar | {} flight | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS | tris {}{} | grav {}",
+        "Solar | {} flight{} | {place} | speed {speed:.2} u/s | {} rig | {fps:.0} FPS | tris {}{} | grav {}",
         scene.flight.name(),
+        scene
+            .capture_label()
+            .map_or(String::new(), |l| format!(" | {l}")),
         scene.rig.name(),
         scene.last_stats().triangles_submitted,
         if scene.culling { "" } else { " | culling off" },
@@ -209,6 +212,9 @@ pub fn fly(
                 look,
                 ..FlightInput::from_actions(actions)
             };
+            if scene.capture.enabled {
+                return scene.capture_step(&input, dt);
+            }
             match scene.flight {
                 FlightMode::Space => {
                     let (sources, shapes) = (scene.gravity_sources(), scene.collision_shapes());
@@ -241,23 +247,32 @@ pub fn step(
     look: Look,
     real_dt: f32,
 ) -> Vec<String> {
-    let messages = apply_toggles(scene, actions);
+    let mut messages = apply_toggles(scene, actions);
     scene.advance(real_dt);
     let dt = scene.clock.real_delta;
+    let state = scene.capture.label();
     fly(scene, actions, camera_actions, look, dt);
+    if scene.capture.label() != state {
+        messages.push(
+            scene
+                .capture_label()
+                .unwrap_or_else(|| format!("Orbit: {} flight", scene.flight.name())),
+        );
+    }
     messages
 }
 
 pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
     let mut scene = build_project3_scene(cli, lab6)?;
     scene.lod_live = true;
+    scene.capture.enabled = true;
     let mut mode = solar_mode(cli, lab6);
     let options = ShadedOptions {
         threads: lab6.threads.unwrap_or(0),
         ..ShadedOptions::default()
     };
     println!(
-        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight), L local flight, E/Q altitude (local), F1-F4 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
+        "Solar scene: {} bodies and the spacecraft, mode {mode}, camera {} ({} rig). Controls: mouse steers (follow) or orbits (orbit rig), TAB capture/free mouse, W/S thrust, A/D strafe, SPACE light speed (space flight) or tangential escape (orbital capture), L local flight (from a capture: local exploration), E/Q altitude (local), F1-F5 warp, V camera rig, H render counters, C frustum culling, X inertial dampers, G gravity, Q/E zoom, 1/2/3 mode, R reset, T/F/S views, P pause, ESC free mouse (again: quit)",
         scene.bodies.len(),
         scene.camera_mode.name(),
         scene.rig.name()
@@ -339,7 +354,10 @@ pub fn run(cli: &CliArgs, lab6: &CelestialArgs) -> Result<(), Box<dyn Error>> {
             lines.extend(planet_lines(&stats, &names));
             drop(stats);
             lines.push(format!("GRAV {}", on_off(scene.gravity).to_uppercase()));
+            lines.extend(scene.capture_label());
             draw_hud(&mut framebuffer, &lines);
+        } else if let Some(label) = scene.capture_label() {
+            draw_hud(&mut framebuffer, &[label]);
         }
         if !reported {
             println!(

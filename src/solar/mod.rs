@@ -3,6 +3,7 @@
 
 pub mod attach;
 pub mod camera;
+pub mod capture;
 pub mod card_ring;
 pub mod clock;
 pub mod comets;

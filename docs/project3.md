@@ -13,6 +13,7 @@ Cómo está hecho el sistema solar navegable del Proyecto 3: módulos, datos del
 | `src/solar/attach/` | Geometría pegada a un planeta: árboles y rocas (`props.rs`), cascadas, pirámide-corazón, tráfico neón y motos de luz con estelas (`traffic.rs`, `path.rs`). |
 | `src/solar/physics/` | Vuelo inercial a paso fijo (`motion.rs`), gravedad (`gravity.rs`) y colisión por barrido (`collision.rs`). |
 | `src/solar/flight.rs`, `src/solar/ship.rs`, `src/solar/thrusters.rs` | Controladores de vuelo espacial y local, estado de la nave y llamas de los motores. |
+| `src/solar/capture.rs` | Captura orbital con histéresis y escape tangencial, sobre los controladores de vuelo local y espacial. |
 | `src/solar/camera.rs`, `src/solar/viewer.rs`, `src/solar/input.rs`, `src/solar/hud.rs` | Cámaras Follow y Orbit, bucle de ventana, teclas y contadores en pantalla. |
 | `src/solar/record.rs` | Grabación sin ventana de los guiones `flight`, `tour` y `final-tour` (cuadros RGB crudos por `stdout`). |
 | `src/benchmark/solar.rs` | Escenarios medibles (A–M) y el benchmark final de C75. |
@@ -85,6 +86,38 @@ a(p) = Σ_i  mu_i (c_i − p) / (|c_i − p|² + ε_i²)^(3/2),     ε_i = 0.25 
   - en vuelo local, el suelo es el campo de altura del planeta.
 - **Planetas en movimiento:** el reloj coloca los planetas al final del cuadro antes del vuelo. Por eso cada forma de colisión arranca donde estaba su planeta al **inicio** del cuadro (`posición − v_planeta·dt`) y avanza con él en cada subpaso. La nave se compara así siempre con el planeta en el mismo instante, con su velocidad relativa.
 - **Corrección del 2026-11-20:** hasta entonces la forma arrancaba en la posición final y adelantaba al planeta un cuadro de su órbita (0.035 u dentro del trébol a 10 FPS). Con la corrección, la nave conserva el margen de 0.05 con los cinco planetas a 10, 15, 30, 60 y 144 FPS (`tests/p3_collision_moving_target_tests.rs`).
+
+### Captura orbital y escape tangencial (`src/solar/capture.rs`)
+
+Activa en el visor interactivo (`cargo run --release -- --scene project3`). Las grabaciones y las pruebas anteriores vuelan igual que antes (`OrbitCapture::enabled` queda apagado).
+
+- **Estados:** vuelo espacial → aproximación gravitatoria → captura orbital → escape tangencial. `L` desde la captura pasa a exploración local. Hay un solo estado a la vez, y el título de la ventana y el HUD muestran `ORBITAL CAPTURE - <planeta>`.
+- **Cáscaras por planeta (`CaptureZone`):**
+
+  ```
+  piso     = max(R·(1 + altura_máx) + holgura,  R·extensión_anillo + R_nave + 0.1 R)
+  órbita   = piso + 0.25 R
+  captura  = órbita + 0.35 R
+  suelta   = captura + 0.5 R
+  ```
+
+  El anillo solo existe en House of Cards (2.13 R). Allí el piso queda por encima de todas las cartas: la órbita asistida nunca cruza el anillo, ni siquiera con `Q`.
+- **Entrar:** la gravedad debe estar encendida (`G`). La nave tiene que estar entre el piso y la cáscara de captura, a no más de 1.25 × la velocidad de crucero respecto del planeta y sin alejarse, durante 0.25 s. A velocidad de la luz atraviesa la cáscara sin quedar capturada.
+- **Mantenerse:** es el vuelo local con un empuje automático de 0.6 a lo largo de la nariz y una altura objetivo.
+  - la nave se acerca a esa altura con constante de tiempo de 0.5 s;
+  - `E`/`Q` mueven el objetivo dentro de la banda;
+  - `W`/`S`, `A`/`D` y el ratón siguen funcionando;
+  - el planeta se mueve y la órbita lo acompaña.
+- **Escapar (`SPACE`):**
+  - la nave sale por la tangente de su órbita con la velocidad del planeta más `max(0.6 · v_local, 1.1 · √(2 mu / d))`, es decir, al menos 1.1 veces la velocidad de escape de esa altura;
+  - mientras se mantiene `SPACE`, empuja a fondo con velocidad de la luz, hasta 3 s o hasta salir de la cáscara de suelta;
+  - la distancia al planeta solo crece.
+- **Sin recaptura inmediata:** el planeta que soltó la nave no puede volver a capturarla hasta que salga de la cáscara de suelta. Esa es la histéresis entre `captura` y `suelta`.
+- **Viaje rápido, `G` y `L`:**
+  - el viaje rápido (F1–F5) termina la captura;
+  - `G` apagada la termina donde está la nave;
+  - `L` la cambia por exploración local, sin deriva.
+- **Pruebas:** `tests/p3_orbital_capture_tests.rs` cubre los cinco planetas, una vuelta completa sin teclas, el anillo, el escape, la recaptura, 10/30/60/144 FPS, el cambio de cámara, el viaje rápido, `G` y `L`.
 
 ### Nivel de detalle y descarte
 

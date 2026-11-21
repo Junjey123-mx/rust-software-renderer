@@ -20,6 +20,7 @@ use crate::solar::attach::traffic::{NEON_SIZE, Traffic};
 use crate::solar::attach::waterfalls::WaterfallSet;
 use crate::solar::attach::{AttachmentKind, AttachmentSpec, HostPose};
 use crate::solar::camera::{CameraRig, FollowRig, orbit_perspective};
+use crate::solar::capture::OrbitCapture;
 use crate::solar::card_ring::CardRing;
 use crate::solar::comets::{CometField, draw_comets};
 use crate::solar::effects::EffectShader;
@@ -135,6 +136,8 @@ pub struct SolarScene {
     pub follow: FollowRig,
     pub ship: ShipState,
     pub flight: FlightMode,
+    /// Orbital capture and tangential escape (off unless enabled).
+    pub capture: OrbitCapture,
     /// Background stars, generated once.
     pub stars: StarField,
     /// Colored backdrop behind the stars.
@@ -233,6 +236,7 @@ impl SolarScene {
             follow: FollowRig::default(),
             ship: ShipState::new(SHIP_SPAWN, SHIP_SCALE),
             flight: FlightMode::Space,
+            capture: OrbitCapture::default(),
             stars: StarField::generate_with(DEFAULT_SEED, DEFAULT_STARS, StarDensity::default()),
             nebula: Nebula::new(DEFAULT_SEED, 1.0),
             comets: None,
@@ -767,7 +771,12 @@ impl SolarScene {
     }
 
     /// `L`: toggles local flight; the ship is never moved by the toggle.
+    /// On the assisted orbit it ends the capture and stays in local flight
+    /// (local exploration).
     pub fn toggle_local(&mut self) -> Result<FlightMode, String> {
+        if self.leave_capture_for_local() {
+            return Ok(self.flight);
+        }
         self.flight = toggle_local_scaled(self.flight, &self.ship, &self.local_targets(), |t| {
             self.flight_scale(t.index)
         })?;
