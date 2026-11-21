@@ -20,8 +20,11 @@
 //! it does); E, F, J and M2 once more with the ship's automatic lights
 //! (`solar::ship_lights`: the ship is in a planet's shadow in those
 //! views); E, F and J once more when the headlight started lighting the
-//! ground (`ship_lights::light_surfaces`, second pass). `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49)
-//! and K3 (C52); `P3_HEARTS_M` the hearts planet scenarios M and M2 (C61).
+//! ground (`ship_lights::light_surfaces`, second pass); C, D, H and I once
+//! more with the Joker's harlequin masks, neon seams and jester spikes
+//! (second pass). `P3_CLOVER_K` adds the clover planet scenarios K, K2
+//! (C49) and K3 (C52); `P3_HEARTS_M` the hearts planet scenarios M and M2
+//! (C61).
 
 use rust_software_renderer::benchmark::SolarBenchConfig;
 use rust_software_renderer::benchmark::solar::{
@@ -149,13 +152,13 @@ fn scaled_hash(id: &str) -> u64 {
 const P3_SCALED_A_J: [(&str, u64); 10] = [
     ("A", 0x8a73f9d1b1215430),
     ("B", 0xd1a777942fd18077),
-    ("C", 0x197af2ab3a8822b4),
-    ("D", 0xfbacebbb11bdf406),
+    ("C", 0xc8cb3b3b4f087b4a),
+    ("D", 0xed6cdd5ab8f109da),
     ("E", 0xffd4a2cef04e692b),
     ("F", 0x3871dd1658c81aae),
     ("G", 0x43325ccd345dcfdf),
-    ("H", 0xfbacebbb11bdf406),
-    ("I", 0x4cbf545d12cced55),
+    ("H", 0xed6cdd5ab8f109da),
+    ("I", 0x0eac2bbf9a6d4628),
     ("J", 0x3b1ddbf5444e87fa),
 ];
 

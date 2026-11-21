@@ -1,6 +1,7 @@
 //! The Joker, fifth planet of Project 3: its own faceted relief and
 //! harlequin shader (not a recolor of another planet), static geometry
-//! under animated colors, and its place in the system (the fifth slot).
+//! under animated colors, its place in the system (the fifth slot) and
+//! the theatrical palette of the second pass.
 
 use raylib::math::Vector3;
 use rust_software_renderer::solar::planet::HeightField;
@@ -201,4 +202,25 @@ fn fifth_planet_of_the_system() {
     let ratio = j.radius() / ScaleProfile::project3().ship_radius;
     assert!((3.0..=6.0).contains(&ratio), "{ratio}");
     assert!(j.mu > 0.0);
+}
+
+#[test]
+fn theatrical_palette_and_neon_seams_show() {
+    // Second pass: black, purple, emerald, magenta and burgundy panels and
+    // bright neon seams each cover at least 300 of 4000 samples (before
+    // the masks and seams, magenta covered 234 and neon 115).
+    let s = samples(4000);
+    let j: Vec<[i32; 3]> = digest(s.iter().map(|&n| prepared(1.0).shade(n, n * 3.0)))
+        .iter()
+        .map(|v| v.map(i32::from))
+        .collect();
+    let count = |f: &dyn Fn(&[i32; 3]) -> bool| j.iter().filter(|c| f(c)).count();
+    let black = count(&|c| c.iter().all(|&v| v < 40));
+    let purple = count(&|c| c[2] > c[1] + 15 && c[0] > c[1] && c[0] < 200);
+    let emerald = count(&|c| c[1] > c[0] + 20 && c[1] > c[2]);
+    let magenta = count(&|c| c[0] > 160 && c[2] > 90 && c[1] < c[2] - 40);
+    let burgundy = count(&|c| c[0] > c[1] + 25 && c[0] > c[2] + 10 && c[0] < 160);
+    let neon = count(&|c| c.iter().copied().max().unwrap() > 220);
+    let counts = [black, purple, emerald, magenta, burgundy, neon];
+    assert!(counts.iter().all(|&n| n > 300), "{counts:?}");
 }
