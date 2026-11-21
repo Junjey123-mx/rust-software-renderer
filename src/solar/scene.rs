@@ -42,7 +42,7 @@ use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
 use crate::solar::ship::MESH_RADIUS;
 use crate::solar::ship::{render_ship_scratch, ship_color, ship_light, ship_options};
-use crate::solar::ship_lights::{draw_ship_lights, shadow};
+use crate::solar::ship_lights::{draw_ship_lights, light_surfaces, shadow};
 use crate::solar::skybox::{DEFAULT_SEED, DEFAULT_STARS, StarDensity, StarField, draw_stars};
 use crate::solar::stats::FrameStats;
 use crate::solar::system::layout::{FIFTH_SLOT_RESERVED_EXTENT, OrbitLayout};
@@ -1120,6 +1120,7 @@ impl SolarScene {
         if let (true, ViewProjection::Perspective(camera)) = (self.ship_lights, &shared.projection)
         {
             let level = self.ship_shadow();
+            light_surfaces(framebuffer, camera, &self.ship, level);
             draw_ship_lights(framebuffer, camera, &self.ship, level, self.clock.time);
         }
         Ok(scratch.batch_len())

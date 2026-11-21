@@ -3,7 +3,10 @@
 //! penumbra) and off again in sunlight. Red and green navigation lights on
 //! the wingtips, a white strobe on the tail and a warm headlight beam ahead
 //! of the nose, drawn after the frame resolves as glows behind the depth
-//! buffer (like the comets), so planets in front hide them.
+//! buffer (like the comets), so planets in front hide them. The headlight
+//! also lights the surfaces near the ship (`light_surfaces`): the ground,
+//! the city and the props it reaches brighten with their relief, rebuilt
+//! from the depth buffer.
 
 use raylib::math::Vector3;
 
@@ -96,6 +99,115 @@ pub fn draw_ship_lights(
         let p = ship.position + f * (r * (0.9 + BEAM_REACH * a));
         let fade = (1.0 - a) * (1.0 - a);
         spot(fb, p, r * (0.08 + 0.5 * a), BEAM * (0.35 * fade));
+    }
+    lit
+}
+
+/// Reach of the headlight on surfaces, ship radii.
+pub const LIGHT_REACH: f32 = 16.0;
+/// Cosines of the beam's half angles: full inside the inner one (about
+/// 22°), none outside the outer one (about 48°).
+const CONE_INNER: f32 = 0.93;
+const CONE_OUTER: f32 = 0.67;
+/// Share of the beam that lights all around the ship (the hull lights),
+/// within `AURA_REACH` ship radii, so the ground below reads too.
+const AURA: f32 = 0.45;
+const AURA_REACH: f32 = 7.0;
+/// Strength of the light on a white surface square to it.
+const GAIN: f32 = 2.4;
+/// Surfaces closer than this many ship radii are the hull itself.
+const HULL: f32 = 1.05;
+
+/// Albedo guessed from a resolved color in the dark (where only the dim
+/// ambient lit it): the color stretched back towards its full brightness,
+/// over a grey floor so black ground still shows the light.
+fn albedo_guess(c: Vector3) -> Vector3 {
+    let stretch = |v: f32| (v / 0.06).clamp(0.0, 1.0);
+    Vector3::new(stretch(c.x), stretch(c.y), stretch(c.z)) * 0.75 + Vector3::one() * 0.12
+}
+
+/// Lights what the depth buffer holds near the ship with its headlight at
+/// `level` (0 off, 1 full): a warm cone along the nose plus a short aura,
+/// Lambert-shaded with normals rebuilt from the depth of neighbouring
+/// pixels, fading to nothing at `LIGHT_REACH` ship radii. Works on every
+/// surface (terrain, city, props) after the frame resolved, so no planet
+/// shader changes. Returns the pixels lit.
+pub fn light_surfaces(
+    fb: &mut Framebuffer,
+    camera: &PerspectiveCamera,
+    ship: &ShipState,
+    level: f32,
+) -> usize {
+    if level.is_nan() || level <= 0.0 {
+        return 0;
+    }
+    let (w, h) = (fb.width(), fb.height());
+    let focal = camera.focal_px(h);
+    let b = camera.basis();
+    let r = ship.radius();
+    let reach = LIGHT_REACH * r;
+    let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+    let world = |x: i32, y: i32, z: f32| {
+        camera.eye
+            + b.right * ((x as f32 + 0.5 - cx) * z / focal)
+            + b.up * ((cy - y as f32 - 0.5) * z / focal)
+            + b.forward * z
+    };
+    let depth = |fb: &Framebuffer, x: i32, y: i32| fb.get_depth(x, y).filter(|z| z.is_finite());
+    // No surface farther than this from the eye can be within reach.
+    let z_max = (ship.position - camera.eye).length() + reach;
+    let mut lit = 0;
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let Some(z) = depth(fb, x, y).filter(|&z| z <= z_max) else {
+                continue;
+            };
+            let p = world(x, y, z);
+            let to_ship = ship.position - p;
+            let dist = to_ship.length();
+            if dist >= reach || dist < HULL * r {
+                continue;
+            }
+            // Normal from the nearer-depth neighbour on each axis (either
+            // side), facing the camera; the view direction where both sides
+            // jump (a silhouette).
+            let near = |dx: i32, dy: i32| {
+                [1, -1].into_iter().find_map(|s| {
+                    let (nx, ny) = (x + s * dx, y + s * dy);
+                    depth(fb, nx, ny)
+                        .filter(|&q| (q - z).abs() < 0.08 * z)
+                        .map(|q| (world(nx, ny, q) - p) * s as f32)
+                })
+            };
+            let view = (camera.eye - p).normalized();
+            let normal = match (near(1, 0), near(0, 1)) {
+                (Some(du), Some(dv)) => {
+                    let n = du.cross(dv).normalized();
+                    if n.dot(view) < 0.0 { -n } else { n }
+                }
+                _ => view,
+            };
+            let l = to_ship / dist;
+            let lambert = normal.dot(l).max(0.0);
+            if lambert <= 0.0 {
+                continue;
+            }
+            let spot = smoothstep(CONE_OUTER, CONE_INNER, (-l).dot(ship.forward));
+            let aura = AURA * (1.0 - smoothstep(0.0, AURA_REACH * r, dist));
+            let fade = 1.0 - (dist / reach) * (dist / reach);
+            let strength = GAIN * level * lambert * (spot + aura) * fade * fade;
+            if strength <= 1e-3 {
+                continue;
+            }
+            if let Some(c) = fb.get_pixel(x, y) {
+                let a = albedo_guess(c);
+                let add = Vector3::new(BEAM.x * a.x, BEAM.y * a.y, BEAM.z * a.z) * strength;
+                if let Some(row) = fb.row_mut(y as u32) {
+                    row[x as usize] = c + add;
+                    lit += 1;
+                }
+            }
+        }
     }
     lit
 }

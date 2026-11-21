@@ -104,3 +104,62 @@ fn earlier_scenes_have_no_lights() {
     };
     assert!(!scenario_scene_on("D", &config, false).unwrap().ship_lights);
 }
+
+/// Pixels whose color differs between two frames of the same size.
+fn changed(a: &[u8], b: &[u8]) -> usize {
+    a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p != q).count()
+}
+
+#[test]
+fn headlight_lights_the_dark_ground_around_the_ship() {
+    // E hovers over Crimson Entrance's night side, in full shadow.
+    let config = SolarBenchConfig {
+        width: 320,
+        height: 240,
+        ..SolarBenchConfig::default()
+    };
+    let on = scenario_scene_on("E", &config, true).unwrap();
+    assert_eq!(on.ship_shadow(), 1.0);
+    let mut off = on.clone();
+    off.ship_lights = false;
+    let (lit, dark) = (frame(&on), frame(&off));
+    // The glows alone change a few hundred pixels at this size; the light
+    // on the ground thousands, and only ever brighter.
+    let n = changed(&lit, &dark);
+    assert!(n > 2500, "{n}");
+    let brighter = lit
+        .chunks(4)
+        .zip(dark.chunks(4))
+        .filter(|(p, q)| p != q)
+        .all(|(p, q)| (0..3).all(|k| p[k] >= q[k]));
+    assert!(brighter);
+}
+
+#[test]
+fn light_surfaces_stays_within_its_reach() {
+    use rust_software_renderer::solar::ship_lights::{LIGHT_REACH, light_surfaces};
+    let config = SolarBenchConfig {
+        width: 320,
+        height: 240,
+        ..SolarBenchConfig::default()
+    };
+    let mut s = scenario_scene_on("E", &config, true).unwrap();
+    s.ship_lights = false;
+    let mut fb = Framebuffer::new(320, 240);
+    s.render_frame(
+        &mut fb,
+        TriangleMode::FilledScanline,
+        ShadedOptions::default(),
+    )
+    .unwrap();
+    let camera = s.follow.camera(&s.ship);
+    let before = fb.to_rgba_bytes();
+    // Off: nothing. Pushed beyond its reach: nothing either.
+    assert_eq!(light_surfaces(&mut fb, &camera, &s.ship, 0.0), 0);
+    let mut far = s.ship;
+    far.position += far.up * (3.0 * LIGHT_REACH * far.radius());
+    assert_eq!(light_surfaces(&mut fb, &camera, &far, 1.0), 0);
+    assert_eq!(fb.to_rgba_bytes(), before);
+    // On: thousands of pixels of the ground.
+    assert!(light_surfaces(&mut fb, &camera, &s.ship, 1.0) > 2500);
+}
