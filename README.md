@@ -109,11 +109,24 @@ La lista sale solo de las filas `VERIFICADO` de [docs/project3_rubric_claims.md]
 - **FPS del HUD en la captura 06:** es 1 / tiempo de `render_frame`, sin la presentación de la ventana.
 - **Video:** en cada pasada el planeta queda debajo de la cámara Follow por unos segundos.
 
-### Integrantes y contribuciones
+### Autor y contribuciones
+
+**Proyecto individual.** Lo desarrolló un único integrante, **Vernel Josue Hernández Cáceres** (carné 24584). No hay equipo ni otros colaboradores humanos, así que todas las responsabilidades del proyecto son suyas:
 
 | Integrante | Carné | Contribuciones |
 |---|---|---|
-| Vernel Josue Hernández Cáceres | 24584 | PENDIENTE: contribuciones (las confirma el integrante) |
+| Vernel Josue Hernández Cáceres | 24584 | Todas (proyecto individual), detalladas en la lista |
+
+- diseño conceptual del universo Red-Black y diseño artístico de la estrella y los planetas;
+- modelado de la nave original (`NaveBimotor`, Laboratorio 3, en Blender);
+- definición de la arquitectura del software (arquitectura B);
+- desarrollo e integración del rasterizador por CPU, los shaders procedurales, la geometría y los efectos visuales;
+- simulación orbital, física de navegación, gravedad y colisiones;
+- diseño de los controles y del vuelo;
+- pruebas, validación, optimización y documentación;
+- preparación de la demostración final.
+
+Los 251 commits del repositorio están hechos con la identidad Git del autor (`Junjey123-mx`) y no tienen coautores. La asistencia de herramientas de IA se declara en la sección siguiente: no convierte a la herramienta en integrante ni en coautora, y la responsabilidad académica del trabajo es del autor.
 
 ### Recursos externos
 
@@ -135,7 +148,7 @@ Este proyecto se desarrolló con asistencia de inteligencia artificial: **Claude
 - generar las capturas y ejecutar mediciones;
 - redactar documentación, incluida esta sección.
 
-El autor dirigió el trabajo, fijó el alcance y las decisiones de diseño, y revisa el resultado antes de publicarlo. Los commits se hacen con su identidad.
+No todo el código se escribió a mano: buena parte del código, las pruebas y la documentación la generó el asistente siguiendo instrucciones del autor. El autor dirigió el trabajo, fijó el alcance, el diseño artístico y las decisiones de arquitectura, y revisa el resultado antes de publicarlo. Los commits se hacen con su identidad.
 
 ---
 
