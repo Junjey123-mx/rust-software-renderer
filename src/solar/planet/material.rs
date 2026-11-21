@@ -13,6 +13,7 @@ use crate::solar::instance::{
 use crate::solar::planet::clover::{CloverParams, PreparedClover};
 use crate::solar::planet::field::{HeightField, NORMAL_EPS};
 use crate::solar::planet::hearts::{NeonGridParams, PreparedHearts, grid_fade};
+use crate::solar::planet::joker::{JokerParams, PreparedJoker};
 use raylib::math::Vector3;
 
 /// Material of one solar body.
@@ -27,6 +28,9 @@ pub enum PlanetMaterial {
     /// The Hearts planet: dark terraces under an emissive neon grid with
     /// pulses and a heart at each crossing.
     Hearts(NeonGridParams),
+    /// The Joker planet: a harlequin of emerald and purple diamonds with
+    /// black ridges, magenta pulses, color waves and a diamond glitch.
+    Joker(JokerParams),
 }
 
 /// A material with its per-frame values computed, ready for the fragments.
@@ -42,6 +46,7 @@ pub enum PreparedPlanet {
     },
     Clover(PreparedClover),
     Hearts(PreparedHearts),
+    Joker(PreparedJoker),
 }
 
 /// Object-space shading normal of a relief at `object_position`: the
@@ -98,6 +103,17 @@ impl PlanetMaterial {
                     time: frame.time,
                 })
             }
+            Self::Joker(params) => {
+                let transform = instance.transform;
+                let eye = eye_towards(&frame.projection, transform.position);
+                let u = instance_uniforms(&transform, frame.time, frame.light_world, eye);
+                PreparedPlanet::Joker(PreparedJoker {
+                    field: params.field(),
+                    params: *params,
+                    light: u.light_direction,
+                    time: frame.time,
+                })
+            }
         }
     }
 
@@ -106,7 +122,7 @@ impl PlanetMaterial {
     pub fn adapted(&self, quality: Quality, radius_px: f32) -> Self {
         match self {
             Self::Lab6(material) => Self::Lab6(adapted_material(material, quality, radius_px)),
-            Self::Clover(_) => *self,
+            Self::Clover(_) | Self::Joker(_) => *self,
             // The grid fades out while the planet is small on screen.
             Self::Hearts(p) => Self::Hearts(NeonGridParams {
                 detail: p.detail * grid_fade(radius_px),
@@ -136,6 +152,10 @@ impl PreparedPlanet {
                 clover.shade(s.object_position, eye)
             }
             Self::Hearts(hearts) => hearts.shade(s.object_position),
+            Self::Joker(joker) => {
+                let eye = transform.to_object_dir(v.view_direction).normalized();
+                joker.shade(s.object_position, eye)
+            }
         }
     }
 }

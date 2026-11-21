@@ -117,16 +117,17 @@ fn unknown_host_rejected() {
 }
 
 #[test]
-fn fifth_absent_while_pending() {
-    // C70: two concepts documented, none approved.
-    assert_eq!(FIFTH_PLANET, FifthPlanetStatus::ArtPendingApproval);
+fn fifth_is_the_approved_joker() {
+    // C70 documented two concepts with none approved (four planets); the
+    // author approved the Joker on 2026-11-20 and it is the fifth planet.
+    assert_eq!(FIFTH_PLANET, FifthPlanetStatus::Approved("Joker"));
     let spec = SystemSpec::project3();
-    assert_eq!(spec.planets.len(), 4, "the four suits only");
+    assert_eq!(spec.planets.len(), 5, "the four suits and the Joker");
     let ids: Vec<&str> = spec.planets.iter().map(|p| p.id.0).collect();
+    assert_eq!(ids, ["entrance", "clover", "hearts", "house", "joker"]);
     assert!(
         !ids.iter()
-            .any(|id| id.contains("joker") || id.contains("crystal") || id.contains("fifth")),
-        "{ids:?}"
+            .any(|id| id.contains("crystal") || id.contains("fifth"))
     );
     assert_eq!(spec.validate(), Ok(()));
 }

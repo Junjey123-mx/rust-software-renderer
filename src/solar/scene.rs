@@ -34,6 +34,7 @@ use crate::solar::physics::{CollisionShape, GravitySource};
 use crate::solar::planet::clover::CloverParams;
 use crate::solar::planet::geometry::{LodState, Relief, lod_for, lod_step};
 use crate::solar::planet::hearts::NeonGridParams;
+use crate::solar::planet::joker::JokerParams;
 use crate::solar::planet::{HeightField, PlanetMaterial, PreparedPlanet};
 use crate::solar::plasma_loops::{ArcShader, PlasmaLoops, plasma_options};
 use crate::solar::royal_crown::RoyalCrown;
@@ -346,6 +347,10 @@ impl SolarScene {
                     seed: p.seed as f32,
                     ..params
                 }),
+                PlanetMaterial::Joker(params) => PlanetMaterial::Joker(JokerParams {
+                    seed: p.seed as f32,
+                    ..params
+                }),
                 other => other,
             };
             bodies.push(
@@ -364,6 +369,9 @@ impl SolarScene {
             match scene.bodies[i].surface {
                 Some(PlanetMaterial::Clover(params)) => scene.add_clover_surface(i, &params)?,
                 Some(PlanetMaterial::Hearts(params)) => scene.add_hearts_surface(i, &params)?,
+                Some(PlanetMaterial::Joker(params)) => scene
+                    .set_relief(i, HeightField::Joker(params.field()))
+                    .map_err(|_| SpecError::Unsupported("joker relief"))?,
                 _ => {}
             }
         }

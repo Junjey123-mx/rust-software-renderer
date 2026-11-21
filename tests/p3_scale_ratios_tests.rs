@@ -36,8 +36,8 @@ fn ratios_within_targets() {
     }
     let radii: Vec<f32> = spec.planets.iter().map(|p| p.radius()).collect();
     // C49 adds the clover planet (1.45) and C61 the hearts planet (1.30)
-    // between the other two.
-    let expected = [1.10, 1.45, 1.30, 1.75];
+    // between the other two; the expansion adds the Joker (1.60) last.
+    let expected = [1.10, 1.45, 1.30, 1.75, 1.60];
     assert!(
         radii
             .iter()
@@ -47,7 +47,7 @@ fn ratios_within_targets() {
     // The scene builds, the orbits are the spec's and the shells apart.
     let s = build(&spec).unwrap();
     let layout = s.layout.clone().unwrap();
-    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0]);
+    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0, 49.0]);
     let mut edge = s.shell_of(0);
     for (i, r) in layout.radii.iter().enumerate() {
         assert!(r - s.shell_of(i + 1) >= edge + profile.min_gap);
@@ -100,7 +100,7 @@ fn window_scene_is_the_scaled_system() {
     let (cli, lab6) = args("--scene solar --time 2");
     let s = build_project3_scene(&cli, &lab6).unwrap();
     let layout = s.layout.as_ref().unwrap();
-    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0]);
+    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0, 49.0]);
     assert!(s.extent() <= layout.world_radius);
     assert!((s.time() - 2.0).abs() < 1e-6);
     // `--set` values go through the layout: an orbit into the star's shell

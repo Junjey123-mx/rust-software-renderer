@@ -53,9 +53,12 @@ fn above_ground(s: &SolarScene) -> f32 {
 fn hearts_between_clover_and_house() {
     let s = build(&SystemSpec::project3()).unwrap();
     let ids: Vec<&str> = s.bodies.iter().map(|b| b.id.0).collect();
-    assert_eq!(ids, ["crown", "entrance", "clover", "hearts", "house"]);
+    assert_eq!(
+        ids,
+        ["crown", "entrance", "clover", "hearts", "house", "joker"]
+    );
     let layout = s.layout.clone().unwrap();
-    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0]);
+    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0, 49.0]);
     let gap = s.scale.unwrap().min_gap;
     for i in 1..layout.radii.len() {
         let inner = layout.radii[i - 1] + s.shell_of(i);
@@ -80,17 +83,21 @@ fn hearts_between_clover_and_house() {
 
 #[test]
 fn hearts_after_house_in_the_spec_is_data() {
-    // The order of the spec is data: hearts moved after House of Cards on
-    // an orbit past House's shell is valid and keeps its place in the body
-    // list (the scaled system takes explicit orbits only).
+    // The order of the spec is data: hearts moved last (past House of
+    // Cards and the Joker) on an orbit past the Joker's shell is valid and
+    // keeps its place in the body list (the scaled system takes explicit
+    // orbits only).
     let mut spec = SystemSpec::project3();
     let at = spec.planets.iter().position(|p| p.id == HEARTS).unwrap();
     let mut moved = spec.planets.remove(at);
-    moved.orbit_radius = 50.0;
+    moved.orbit_radius = 58.0;
     spec.planets.push(moved.clone());
     let s = build(&spec).unwrap();
     let ids: Vec<&str> = s.bodies.iter().map(|b| b.id.0).collect();
-    assert_eq!(ids, ["crown", "entrance", "clover", "house", "hearts"]);
+    assert_eq!(
+        ids,
+        ["crown", "entrance", "clover", "house", "joker", "hearts"]
+    );
     let radii = s.layout.clone().unwrap().radii;
     assert!(radii[3] > radii[2], "{radii:?}");
     // Its old orbit, now inside House of Cards', is refused.

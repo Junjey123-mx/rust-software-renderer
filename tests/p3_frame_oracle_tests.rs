@@ -10,7 +10,8 @@
 //! at the project scale (`scenario_scene_on(.., true)`): B, C and D were
 //! captured in C23, the rest in C24 once the scenarios follow the layout,
 //! all recaptured in C49 with the clover planet and in C61 with the hearts
-//! planet. `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49) and
+//! planet; C, D, H and I recaptured on 2026-11-20 with the Joker, the
+//! fifth planet (they see the whole system). `P3_CLOVER_K` adds the clover planet scenarios K, K2 (C49) and
 //! K3 (C52); `P3_HEARTS_M` the hearts planet scenarios M and M2 (C61).
 
 use rust_software_renderer::benchmark::SolarBenchConfig;
@@ -139,13 +140,13 @@ fn scaled_hash(id: &str) -> u64 {
 const P3_SCALED_A_J: [(&str, u64); 10] = [
     ("A", 0x1dbb86321bfc4240),
     ("B", 0xe59e2a67ca2766b7),
-    ("C", 0x84b3ec0d151dde8c),
-    ("D", 0x6f0809c2c61bdadb),
+    ("C", 0xffadaf58ad71ac8f),
+    ("D", 0x2bdf6ae00090e1c2),
     ("E", 0xcf231405f64870a6),
     ("F", 0xbad58159c18ffe26),
     ("G", 0x833fb13d759a35d5),
-    ("H", 0x6f0809c2c61bdadb),
-    ("I", 0x0150a9073accf154),
+    ("H", 0x2bdf6ae00090e1c2),
+    ("I", 0xee50de94bda0fb7c),
     ("J", 0x7f402430390f26c9),
 ];
 

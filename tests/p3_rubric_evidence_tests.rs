@@ -121,7 +121,8 @@ fn seventeen_rows_sum_200() {
     let ids: Vec<u32> = rows.iter().map(|r| r.id).collect();
     assert_eq!(ids, (1..=17).collect::<Vec<_>>());
     assert_eq!(rows.iter().map(|r| r.max).sum::<u32>(), 200);
-    // With the fifth planet pending the ceiling is 190.
+    // With the fifth planet pending the ceiling was 190; approved, at most
+    // 200 (the menu counts five planets at most).
     let ceiling: u32 = rows.iter().map(|r| r.conditional).sum();
     match FIFTH_PLANET {
         FifthPlanetStatus::ArtPendingApproval => assert_eq!(ceiling, 190),
@@ -185,7 +186,7 @@ fn no_claim_without_proof() {
 #[test]
 fn planets_counted_without_star() {
     let planets = SystemSpec::project3().planets.len() as u32;
-    assert_eq!(planets, 4, "the star is not a planet");
+    assert_eq!(planets, 5, "the star is not a planet");
     let row = &rows()[0];
     assert_eq!((row.max, row.state.as_str()), (50, "VERIFICADO"));
     // Ten per planet, one close capture each, the star left out.

@@ -95,6 +95,14 @@ pub const HEARTS_SCENARIOS: [(&str, &str); 2] = [
     ("M2", "hearts planet from afar"),
 ];
 
+/// Joker cases, scaled system only (captures and the expansion benchmark;
+/// not part of the C75 final table): its diamonds up close and the planet
+/// from afar.
+pub const JOKER_SCENARIOS: [(&str, &str); 2] = [
+    ("N", "close flight over the joker diamonds"),
+    ("N2", "joker planet from afar"),
+];
+
 /// Test relief of the `L` scenarios (benchmark only).
 pub const BENCH_RELIEF: HeightField = HeightField::Test(TestField {
     amplitude: 0.04,
@@ -321,6 +329,30 @@ pub fn scenario_scene_on(
                 s.ship.position = t.position - Vector3::new(0.0, 0.0, 12.0 * r);
                 s.ship.forward = Vector3::new(0.0, 0.0, 1.0);
                 s.ship.up = Vector3::new(0.0, 1.0, 0.0);
+            }
+        }
+        "N" | "N2" if scaled => {
+            let joker = s.body_index(PlanetId("joker")).ok_or("no joker planet")?;
+            let t = s.bodies[joker].transform;
+            let r = s.radius_of(joker);
+            let sun = (s.center - t.position).normalized();
+            if id == "N" {
+                // Over the sunlit, taller (+X) side of the diamonds, half a
+                // radius up, looking across them at the horizon.
+                let side = t.to_world_dir(Vector3::new(1.0, 0.0, 0.0)).normalized();
+                let out = (side + sun).normalized();
+                let along = out.cross(Vector3::new(0.0, 1.0, 0.0)).normalized();
+                s.ship.position = t.position + out * (1.55 * r) - along * (0.9 * r);
+                s.ship.forward =
+                    (t.position + out * r + along * (0.4 * r) - s.ship.position).normalized();
+                s.ship.up = out;
+                s.ship.renormalize();
+            } else {
+                // 10 radii away on the sunlit side, facing it.
+                s.ship.position = t.position + sun * (10.0 * r);
+                s.ship.forward = -sun;
+                s.ship.up = Vector3::new(0.0, 1.0, 0.0);
+                s.ship.renormalize();
             }
         }
         "G" => s.ship.yaw(std::f32::consts::PI),

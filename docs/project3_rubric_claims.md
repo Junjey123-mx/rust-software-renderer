@@ -13,11 +13,11 @@ Esta tabla recoge los 17 rubros del menú oficial: el estado de cada uno, el com
 
 **Una prueba verde no es aceptación docente.** Un rubro suma solo si funciona en la demostración y el equipo sabe explicarlo. La nota es min(100, puntos aceptados), y ningún total de esta tabla está garantizado.
 
-**Quinto planeta:** `ART_PENDING_APPROVAL` (`docs/project3_fifth_planet_decision.md`). El sistema tiene cuatro planetas, sin contar la estrella. Con cuatro planetas, el techo condicionado es **190**.
+**Quinto planeta:** el autor aprobó el Joker el 2026-11-20 (`docs/project3_fifth_planet_decision.md`). El sistema tiene cinco planetas, sin contar la estrella, y el menú cuenta como máximo cinco: el techo condicionado es **200**.
 
 | # | Rubro | Máx. | Estado | Cnn | Suites | Comando | Captura | Seguro | Condicionado |
 |---|---|---:|---|---|---|---|---|---:|---:|
-| 1 | Planetas, 10 por planeta (4 de 5; sin la estrella) | 50 | VERIFICADO | C23, C49, C61 | `p3_clover_orbit_tests`, `p3_hearts_orbit_tests`, `p3_scale_ratios_tests` | `cargo test --release --test p3_clover_orbit_tests --test p3_hearts_orbit_tests --test p3_scale_ratios_tests` | `docs/screenshots/lab6/02-crimson-entrance.png`, `docs/results/project3/clover/k_close_flight.png`, `docs/results/project3/hearts/m_close_flight.png`, `docs/screenshots/lab6/03-house-of-cards.png` | 40 | 40 |
+| 1 | Planetas, 10 por planeta (5 de 5; sin la estrella) | 50 | VERIFICADO | C23, C49, C61, Joker | `p3_clover_orbit_tests`, `p3_hearts_orbit_tests`, `p3_scale_ratios_tests`, `p3_joker_planet_tests` | `cargo test --release --test p3_clover_orbit_tests --test p3_hearts_orbit_tests --test p3_scale_ratios_tests --test p3_joker_planet_tests` | `docs/screenshots/lab6/02-crimson-entrance.png`, `docs/results/project3/clover/k_close_flight.png`, `docs/results/project3/hearts/m_close_flight.png`, `docs/screenshots/lab6/03-house-of-cards.png`, `docs/screenshots/project3/07-joker-close.png` | 50 | 50 |
 | 2 | Tipos de modelo sobre la superficie, 5 por tipo | 20 | VERIFICADO | C46, C47, C57, C59, C62 | `p3_surface_model_rubric_tests`, `p3_tree_mesh_tests`, `p3_rock_mesh_tests`, `p3_neon_building_mesh_tests`, `p3_heart_pyramid_tests` | `cargo test --release --test p3_surface_model_rubric_tests --test p3_tree_mesh_tests --test p3_rock_mesh_tests --test p3_neon_building_mesh_tests --test p3_heart_pyramid_tests` | `docs/results/project3/clover/k_close_flight.png`, `docs/results/project3/hearts/m_close_flight.png` | 20 | 20 |
 | 3 | Distribución procedural con semilla y ruido | 10 | VERIFICADO | C45, C58 | `p3_scatter_seed_tests`, `p3_hearts_city_distribution_tests` | `cargo test --release --test p3_scatter_seed_tests --test p3_hearts_city_distribution_tests` | `docs/results/project3/clover/k2_from_afar.png` | 10 | 10 |
 | 4 | Posición y orientación sobre la superficie al girar | 5 | VERIFICADO | C48, C58, C62 | `p3_prop_sector_tests`, `p3_surface_model_rubric_tests` | `cargo test --release --test p3_prop_sector_tests --test p3_surface_model_rubric_tests` | `docs/results/project3/hearts/m_close_flight.png` | 5 | 5 |
@@ -37,7 +37,7 @@ Esta tabla recoge los 17 rubros del menú oficial: el estado de cada uno, el com
 
 ## Notas por fila
 
-- **1:** Crimson Entrance, Clover Haven, Neon Hearts y House of Cards. La estrella (The King's Crown) no cuenta como planeta. El quinto planeta no está aprobado, así que la fila reclama 40 de 50.
+- **1:** Crimson Entrance, Clover Haven, Neon Hearts, House of Cards y el Joker (expansión del 2026-11-20: relieve propio de rombos facetados y shader de arlequín, `p3_joker_planet_tests`). La estrella (The King's Crown) no cuenta como planeta.
 - **5:** hay más implementaciones que las cuatro que puntúan: corona, Crimson Entrance, House of Cards, lazos de plasma, cartas, llamas, trébol, cascada, rejilla neón y neón de las naves. Cada una tiene una implementación propia, no solo otro color.
 - **7:** el sombreado usa la normal del campo de altura y el bump procedural de Crimson Entrance. No hay mapas de normales en textura, y por eso solo 4 puntos son seguros.
 - **9, 11, 12, 14, 15, 17:** pasaron de `PARCIAL` a `VERIFICADO` en C79 con las capturas finales: la subdivisión L2/L5 (C76), el video del recorrido final (C77–C78), la gravedad con y sin `G` (C78) y el HUD con los contadores de descarte y el nivel de detalle por planeta (C78). Las cifras de descarte y LOD están en `docs/results/project3/benchmark_final.md` (C75).
@@ -47,7 +47,7 @@ Esta tabla recoge los 17 rubros del menú oficial: el estado de cada uno, el com
 ## Totales
 
 - **Máximo del menú:** 200.
-- **Seguro:** 178.
-- **Condicionado:** 190.
+- **Seguro:** 188 (178 hasta el 2026-11-20, más 10 del Joker).
+- **Condicionado:** 200.
 
 Ninguno de estos totales está garantizado: el profesor acepta o no cada rubro en la demostración. La nota es min(100, puntos aceptados).

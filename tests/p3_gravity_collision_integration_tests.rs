@@ -125,7 +125,7 @@ fn straight_vs_curved() {
 fn two_planet_superposition() {
     let s = scene();
     let sources = s.gravity_sources();
-    assert_eq!(sources.len(), 4, "the four planets, not the star");
+    assert_eq!(sources.len(), 5, "the five planets, not the star");
     // Between Crimson Entrance and the clover the pulls add up.
     let (a, b) = (sources[0], sources[1]);
     let p = (a.center + b.center) * 0.5 + Vector3::new(0.0, 2.0, 0.0);

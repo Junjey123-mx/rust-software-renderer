@@ -91,9 +91,9 @@ fn toggle_keeps_scene_and_camera() {
     assert!(status_line(&s, 0.0, 60.0).ends_with("grav on"));
     // The sources are the planets with mu, where they are now.
     let sources = s.gravity_sources();
-    // Crimson Entrance, the clover (C49) and hearts (C61) planets and House
-    // of Cards.
-    assert_eq!(sources.len(), 4);
+    // Crimson Entrance, the clover (C49) and hearts (C61) planets, House
+    // of Cards and the Joker (expansion).
+    assert_eq!(sources.len(), 5);
     assert_eq!(sources[0].center, s.bodies[1].transform.position);
     assert_eq!(sources[0].mu, s.bodies[1].mu);
 }

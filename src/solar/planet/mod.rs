@@ -7,9 +7,11 @@ pub mod field;
 pub mod geometry;
 pub mod hearts;
 pub mod icosphere;
+pub mod joker;
 pub mod material;
 
 pub use clover::CloverField;
 pub use field::{HeightField, TestField};
 pub use hearts::HeartsField;
+pub use joker::JokerField;
 pub use material::{PlanetMaterial, PreparedPlanet};

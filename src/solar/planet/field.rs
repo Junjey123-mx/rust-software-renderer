@@ -5,6 +5,7 @@
 
 use crate::solar::planet::clover::CloverField;
 use crate::solar::planet::hearts::HeartsField;
+use crate::solar::planet::joker::JokerField;
 use raylib::math::Vector3;
 
 /// Angular step of the central differences of `HeightField::normal` for
@@ -30,6 +31,8 @@ pub enum HeightField {
     Clover(CloverField),
     /// Terraces and canyons of the Hearts planet (`hearts.rs`).
     Hearts(HeartsField),
+    /// Faceted diamond pyramids of the Joker planet (`joker.rs`).
+    Joker(JokerField),
 }
 
 /// A unit vector perpendicular to `n`, built from the axis along which `n`
@@ -58,6 +61,7 @@ impl HeightField {
             }
             Self::Clover(c) => c.height(n),
             Self::Hearts(h) => h.height(n),
+            Self::Joker(j) => j.height(n),
         };
         if h.is_finite() { h } else { 0.0 }
     }
@@ -68,6 +72,7 @@ impl HeightField {
         match self {
             Self::Clover(c) => c.validate(),
             Self::Hearts(h) => h.validate(),
+            Self::Joker(j) => j.validate(),
             Self::Flat | Self::Test(_) => Ok(()),
         }
     }
@@ -87,7 +92,7 @@ impl HeightField {
             Self::Flat => None,
             Self::Test(t) => t.sea_level,
             Self::Clover(c) => Some(c.sea),
-            Self::Hearts(_) => None,
+            Self::Hearts(_) | Self::Joker(_) => None,
         }
     }
 
@@ -106,6 +111,7 @@ impl HeightField {
             Self::Test(_) => 0.0,
             Self::Clover(c) => c.max_height(),
             Self::Hearts(h) => h.max_height(),
+            Self::Joker(j) => j.max_height(),
         };
         ground.max(self.sea_level().unwrap_or(0.0))
     }

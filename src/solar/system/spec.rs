@@ -8,6 +8,7 @@ use crate::solar::physics::design_mu;
 use crate::solar::planet::PlanetMaterial;
 use crate::solar::planet::clover::CloverParams;
 use crate::solar::planet::hearts::NeonGridParams;
+use crate::solar::planet::joker::JokerParams;
 use std::collections::HashSet;
 
 /// Stable identity of a body (also its `--set` prefix).
@@ -24,6 +25,8 @@ pub enum GeometrySpec {
     /// The Hearts terraces (`planet::hearts`) with the city and the
     /// pyramid.
     Hearts,
+    /// The faceted harlequin diamonds of the Joker (`planet::joker`).
+    Joker,
 }
 
 /// Data of what moves over a planet besides its surface.
@@ -101,14 +104,16 @@ pub const AUTO_ORBIT: f32 = 0.0;
 /// Art decision on a fifth planet (`docs/project3_fifth_planet_decision.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FifthPlanetStatus {
-    /// Two concepts proposed, none approved: `project3()` keeps four planets.
+    /// Two concepts proposed, none approved: `project3()` keeps four planets
+    /// (the state until 2026-11-20).
     ArtPendingApproval,
     /// The concept the user approved, by name.
     Approved(&'static str),
 }
 
-/// No concept has been approved: no fifth `PlanetSpec` exists.
-pub const FIFTH_PLANET: FifthPlanetStatus = FifthPlanetStatus::ArtPendingApproval;
+/// The author approved the Joker concept on 2026-11-20: `project3()` has it
+/// as its fifth planet.
+pub const FIFTH_PLANET: FifthPlanetStatus = FifthPlanetStatus::Approved("Joker");
 
 /// The star and its planets.
 #[derive(Debug, Clone, PartialEq)]
@@ -230,6 +235,16 @@ impl SystemSpec {
                     .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
                 params.seed
             }
+            PlanetMaterial::Joker(params) => {
+                let spec = JokerParams::SPECS
+                    .iter()
+                    .find(|s| s.name == param)
+                    .ok_or(SpecError::Unsupported("joker material parameter"))?;
+                params
+                    .set(param, value)
+                    .map_err(|_| SpecError::OutOfRange(spec.name, value))?;
+                params.seed
+            }
             PlanetMaterial::Lab6(_) => return Ok(false),
         };
         if param == "seed" {
@@ -329,7 +344,8 @@ impl SystemSpec {
     /// King's Crown (radius 5.40) with, in the order of the suits, Crimson
     /// Entrance (1.10, orbit 14, 1 u/s), Clover Haven (1.45, orbit 21,
     /// 0.9 u/s, C49), Neon Hearts (1.30, orbit 29.5, 0.85 u/s, C61) and
-    /// House of Cards (1.75, orbit 40, 0.75 u/s). The pre-project bodies
+    /// House of Cards (1.75, orbit 40, 0.75 u/s) and the Joker (1.60, orbit
+    /// 49, 0.7 u/s, the fifth slot). The pre-project bodies
     /// keep their spins, phases and materials. Each planet pulls with
     /// `design_mu` for the 3 u/s^2 thrust and the 3 u/s cruise; the star
     /// does not pull (`mu` 0).
@@ -379,11 +395,30 @@ impl SystemSpec {
                 host: None,
             },
         );
+        // The fifth planet, approved by the author on 2026-11-20, takes
+        // the slot the four-planet layout kept (49).
+        let joker = JokerParams::default();
+        spec.planets.push(PlanetSpec {
+            id: PlanetId("joker"),
+            name: "Joker",
+            scale: 1.0,
+            orbit_radius: 0.0,
+            orbit_speed: 0.0,
+            phase: 3.6,
+            spin: 0.15,
+            seed: joker.seed as u32,
+            mu: 0.0,
+            material: PlanetMaterial::Joker(joker),
+            geometry: GeometrySpec::Joker,
+            attachments: Vec::new(),
+            host: None,
+        });
         for (p, (radius, orbit, speed)) in spec.planets.iter_mut().zip([
             (1.10, 14.0, 1.0),
             (1.45, 21.0, 0.9),
             (1.30, 29.5, 0.85),
             (1.75, 40.0, 0.75),
+            (1.60, 49.0, 0.7),
         ]) {
             p.scale = radius / SPHERE_RADIUS;
             p.orbit_radius = orbit;

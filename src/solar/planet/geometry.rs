@@ -57,6 +57,10 @@ impl GeometryKey {
                 let d = h.digest();
                 (3, [h.seed, d as u32, (d >> 32) as u32])
             }
+            HeightField::Joker(j) => {
+                let d = j.digest();
+                (4, [j.seed, d as u32, (d >> 32) as u32])
+            }
         };
         Self {
             radius_bits: radius.to_bits(),

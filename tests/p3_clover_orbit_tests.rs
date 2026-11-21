@@ -86,10 +86,14 @@ fn clover_orbits_and_spins() {
 fn orbit_between_crimson_and_house() {
     let s = scene();
     let ids: Vec<&str> = s.bodies.iter().map(|b| b.id.0).collect();
-    // C61 puts the hearts planet between the clover and House of Cards.
-    assert_eq!(ids, ["crown", "entrance", "clover", "hearts", "house"]);
+    // C61 puts the hearts planet between the clover and House of Cards;
+    // the Joker (expansion, 2026-11-20) takes the fifth slot beyond it.
+    assert_eq!(
+        ids,
+        ["crown", "entrance", "clover", "hearts", "house", "joker"]
+    );
     let layout = s.layout.clone().unwrap();
-    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0]);
+    assert_eq!(layout.radii, vec![14.0, 21.0, 29.5, 40.0, 49.0]);
     // Shells (body, relief, props and rings) apart, with the profile gap.
     let gap = s.scale.unwrap().min_gap;
     for i in 1..layout.radii.len() {

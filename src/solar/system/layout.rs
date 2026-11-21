@@ -32,6 +32,8 @@ fn max_relief(geometry: GeometrySpec) -> f32 {
                 + 0.75 * DISC_SIZE
                 + 0.02
         }
+        // The tallest diamond (the relief is static: nothing else rises).
+        GeometrySpec::Joker => crate::solar::planet::joker::JOKER_HEIGHT,
     }
 }
 
@@ -60,7 +62,8 @@ pub struct OrbitLayout {
     /// Outermost planet shell plus 5: the sphere the cameras frame.
     pub world_radius: f32,
     /// Orbit radius kept for a fifth planet of `FIFTH_SLOT_RESERVED_EXTENT`
-    /// (always computed; it counts in `world_radius` only once registered).
+    /// (computed while there are four planets; it counts in `world_radius`
+    /// only once registered, and then it is the fifth planet's orbit).
     pub fifth_slot: f32,
 }
 
@@ -105,10 +108,15 @@ impl OrbitLayout {
             edge = r + e;
             radii.push(r);
         }
+        // Once a fifth planet is registered its orbit is the slot.
+        let fifth_slot = match radii.get(4) {
+            Some(&r) => r,
+            None => ceil_half(edge + gap + FIFTH_SLOT_RESERVED_EXTENT),
+        };
         Ok(Self {
             radii,
             world_radius: edge + WORLD_MARGIN,
-            fifth_slot: ceil_half(edge + gap + FIFTH_SLOT_RESERVED_EXTENT),
+            fifth_slot,
         })
     }
 
