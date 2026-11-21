@@ -68,6 +68,10 @@ fn a_fast_dive_enters_the_atmosphere_and_settles_low() {
     dive(&mut s, CLOVER);
     run(&mut s, &[], 60.0, 1.0);
     assert!(matches!(s.flight, FlightMode::Local { planet: CLOVER, .. }));
+    assert_eq!(
+        s.capture_label().as_deref(),
+        Some("ATMOSPHERIC FLIGHT - Clover Haven")
+    );
     let target = s.surface_altitude.expect("atmospheric flight");
     let floor = s.atmosphere_floor(CLOVER);
     assert!((floor..=1.5 * floor + 1e-3).contains(&target), "{target}");

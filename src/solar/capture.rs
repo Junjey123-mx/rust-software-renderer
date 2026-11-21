@@ -143,8 +143,12 @@ impl SolarScene {
         ))
     }
 
-    /// `HUD label - planet name` while approaching, captured or escaping.
+    /// `HUD label - planet name` while approaching, captured or escaping,
+    /// or in atmospheric flight.
     pub fn capture_label(&self) -> Option<String> {
+        if let (Some(_), FlightMode::Local { planet, .. }) = (self.surface_altitude, self.flight) {
+            return Some(format!("ATMOSPHERIC FLIGHT - {}", self.bodies[planet].name));
+        }
         let label = self.capture.label()?;
         let planet = self.capture.planet()?;
         Some(format!("{label} - {}", self.bodies[planet].name))
