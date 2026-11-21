@@ -146,11 +146,24 @@ pub fn waterfall_from(field: &CloverField, center: usize, seed: u32) -> Result<W
         top,
         WATERFALL_WIDTH,
         WATERFALL_SEGMENTS,
+        false,
     )
 }
 
-/// Width of a monumental fall, radii (three classic ribbons).
-pub const MONUMENTAL_WIDTH: f32 = 0.06;
+/// Width of a monumental fall at its lip, radii (six classic ribbons); it
+/// spreads to `MONUMENTAL_SPREAD` times that at the sea.
+pub const MONUMENTAL_WIDTH: f32 = 0.12;
+/// How much wider a monumental curtain is at the sea than at its lip.
+pub const MONUMENTAL_SPREAD: f32 = 1.5;
+/// Radius of the spray dome where a monumental fall meets the sea, and
+/// its height over the water, radii.
+pub const SPRAY_RADIUS: f32 = 0.07;
+pub const SPRAY_HEIGHT: f32 = 0.03;
+/// Corners of the spray dome's rim.
+const SPRAY_SIDES: usize = 10;
+/// Highest the ground beside a curtain's rung may stand over the rung,
+/// radii, before the rung narrows.
+const CURTAIN_TILT: f32 = 0.006;
 /// Mountains that carry a monumental fall besides their classic one.
 pub const MONUMENTAL_FALLS: usize = 3;
 /// Segments of a monumental ribbon.
@@ -161,8 +174,10 @@ pub const MONUMENTAL_APART: f32 = 0.12;
 
 /// The monumental fall of clover `center`: it starts further up the
 /// mountain (40 % of the way from its center to the coast, the classic
-/// fall two thirds), on another flank than the classic fall, and is three
-/// times as wide; the same descent to the sea.
+/// fall two thirds), on another flank than the classic fall, six times as
+/// wide and spreading; a curtain that leaves its lip and drops in a
+/// parabola over the slope (never under the ground) into the sea, where a
+/// dome of spray rises.
 pub fn monumental_from(field: &CloverField, center: usize, seed: u32) -> Result<Waterfall, String> {
     let classic = waterfall_from(field, center, seed)?.top.normalized();
     let top = start_where(field, center, seed ^ 0x5eed, 0.4, |p| {
@@ -176,10 +191,13 @@ pub fn monumental_from(field: &CloverField, center: usize, seed: u32) -> Result<
         top,
         MONUMENTAL_WIDTH,
         MONUMENTAL_SEGMENTS,
+        true,
     )
 }
 
-/// A ribbon of `width` and `segments` from `top` down the gradient.
+/// A ribbon of `width` and `segments` from `top` down the gradient: on
+/// the ground, or a `curtain` falling in a parabola from the lip to the
+/// sea (spreading, with a spray dome at its foot).
 fn ribbon(
     field: &CloverField,
     center: usize,
@@ -187,6 +205,7 @@ fn ribbon(
     top: Vector3,
     width: f32,
     segments: usize,
+    curtain: bool,
 ) -> Result<Waterfall, String> {
     let (t1, t2) = (tangent(top), top.cross(tangent(top)));
     let path = (0..=RESTARTS)
@@ -201,22 +220,68 @@ fn ribbon(
         })
         .ok_or("the descent never reaches the sea")?;
     let points = resample(&path, segments);
-    let lift = |n: Vector3| n * (1.0 + field.height(n).max(field.sea) + WATERFALL_GAP);
-    let mut vertices = Vec::with_capacity(2 * points.len());
+    let ground = |n: Vector3| field.height(n).max(field.sea);
+    // Height of a curtain over the unit sphere at `s` (0 at the lip, 1 at
+    // the sea): the lip's ground falling in a parabola to the sea.
+    let lip = ground(points[0]);
+    let arc = |s: f32| field.sea + (lip - field.sea) * (1.0 - s * s);
+    let lift_at = |n: Vector3, h: f32| n * (1.0 + h.max(ground(n)) + WATERFALL_GAP);
+    let lift = |n: Vector3| lift_at(n, f32::MIN);
+    let mut vertices = Vec::with_capacity(2 * points.len() + SPRAY_SIDES + 1);
     for (i, &n) in points.iter().enumerate() {
+        let s = i as f32 / segments as f32;
         let next = points[(i + 1).min(points.len() - 1)];
         let prev = points[i.saturating_sub(1)];
         let along = next - prev;
-        let side = along.cross(n).normalized() * (width / 2.0);
+        let (spread, h) = if curtain {
+            (1.0 + (MONUMENTAL_SPREAD - 1.0) * s, arc(s))
+        } else {
+            (1.0, f32::MIN)
+        };
+        let mut side = along.cross(n).normalized() * (spread * width / 2.0);
         let p = lift(n);
-        vertices.push(lift((p - side).normalized()));
-        vertices.push(lift((p + side).normalized()));
+        if curtain {
+            // Narrowed where the ground beside it climbs over the curtain
+            // (a bay, a ravine), so its rungs stay level down to the sea.
+            let level = h.max(ground(n)) + CURTAIN_TILT;
+            for _ in 0..8 {
+                let high = |d: Vector3| ground((p + d).normalized()) > level;
+                if !(high(side) || high(-side)) {
+                    break;
+                }
+                side *= 0.75;
+            }
+        }
+        vertices.push(lift_at((p - side).normalized(), h));
+        vertices.push(lift_at((p + side).normalized(), h));
     }
-    let mut indices = Vec::with_capacity(6 * segments);
+    let mut indices = Vec::with_capacity(6 * segments + 3 * SPRAY_SIDES);
     for i in 0..segments {
         let (a, b, c, d) = (2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3);
         // Wound to face away from the planet.
         indices.extend([a, b, c, b, d, c]);
+    }
+    if curtain {
+        // The spray dome, centered one radius out to sea from the foot.
+        let foot = points[segments];
+        let out = foot - points[segments - 1];
+        let out = (out - foot * foot.dot(out)).normalized();
+        let center = walk(foot, out, SPRAY_RADIUS);
+        let (t1, t2) = (tangent(center), center.cross(tangent(center)));
+        let apex = vertices.len();
+        vertices.push(center * (1.0 + ground(center) + WATERFALL_GAP + SPRAY_HEIGHT));
+        for k in 0..SPRAY_SIDES {
+            let a = TAU * k as f32 / SPRAY_SIDES as f32;
+            vertices.push(lift(walk(
+                center,
+                t1 * a.cos() + t2 * a.sin(),
+                SPRAY_RADIUS,
+            )));
+        }
+        for k in 0..SPRAY_SIDES {
+            let (b, c) = (apex + 1 + k, apex + 1 + (k + 1) % SPRAY_SIDES);
+            indices.extend([apex, b, c]);
+        }
     }
     Ok(Waterfall {
         top: lift(points[0]),
@@ -233,14 +298,20 @@ pub const FLOW_BANDS: f32 = 7.0;
 /// Strength of the foam where the ribbon meets the sea.
 pub const BASE_FOAM: f32 = 0.85;
 
-const FALL_DEEP: Vector3 = hex(0x1C6FB8);
-const FALL_LIGHT: Vector3 = hex(0x7FD3F5);
-const FALL_FOAM: Vector3 = hex(0xF2FAFF);
+const FALL_DEEP: Vector3 = hex(0x2A8FD8);
+const FALL_LIGHT: Vector3 = hex(0xBDEFFF);
+const FALL_FOAM: Vector3 = hex(0xF4FBFF);
+
+/// Planet radius on screen, pixels, below which the waterfalls are not
+/// drawn: well under the props' `PROP_MIN_PX`, so the falls show from
+/// farther away than the trees and rocks.
+pub const FALL_MIN_PX: f32 = 16.0;
 
 /// Water running down a ribbon: light bands slide from the top to the
 /// bottom at `speed` bands per second over `bands` bands, broken by a
-/// little noise, with foam at the base. Opaque, lit by the star with a
-/// moderate glow. `top`, `bottom` and `light` live in the mesh's space;
+/// little noise, with foam at the base. Opaque and double-sided (both
+/// faces lit alike), bright white-cyan with a glow that keeps it readable
+/// in shade. `top`, `bottom` and `light` live in the mesh's space;
 /// `time` is the scene clock (frozen while paused).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterfallShader {
@@ -292,7 +363,9 @@ impl WaterfallShader {
         let water = mix3(FALL_DEEP, FALL_LIGHT, streak);
         let foam = self.foam * smoothstep(0.7, 1.0, v);
         let color = mix3(water, FALL_FOAM, foam.clamp(0.0, 1.0));
-        color * (0.25 + 0.6 * lambert(face_normal, self.light) + 0.15)
+        // Two-sided: the face turned to the star is lit, whichever it is.
+        let lit = lambert(face_normal, self.light).max(lambert(-face_normal, self.light));
+        color * (0.4 + 0.6 * lit)
     }
 }
 

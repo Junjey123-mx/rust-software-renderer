@@ -421,8 +421,11 @@ impl SolarScene {
                         continue;
                     };
                     let projection = self.projection();
-                    // Hidden with the props while the planet is small.
-                    if self.radius_px(host, &projection, height) < PROP_MIN_PX {
+                    // Hidden while the planet is small, but from farther
+                    // away than the props.
+                    if self.radius_px(host, &projection, height)
+                        < crate::solar::attach::waterfalls::FALL_MIN_PX
+                    {
                         continue;
                     }
                     let t = self.bodies[host].transform;
@@ -448,7 +451,11 @@ impl SolarScene {
                         draws.push(EffectDraw {
                             mesh: &placed.soup,
                             model,
-                            options: solid_options(threads),
+                            // Double-sided: seen from behind the curtain too.
+                            options: ShadedOptions {
+                                cull_back_faces: false,
+                                ..solid_options(threads)
+                            },
                             shader: EffectShader::Waterfall(
                                 placed.fall.shader(light, self.clock.time),
                             ),

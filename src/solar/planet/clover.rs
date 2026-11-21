@@ -5,7 +5,7 @@
 use crate::celestial::{ParamSpec, check_range, find_spec};
 use crate::shading::lighting::{blinn_phong, fresnel, lambert};
 use crate::shading::math::{hex, mix3, smoothstep};
-use crate::shading::noise::{fbm, hash3};
+use crate::shading::noise::{fbm, gradient3, hash3};
 use crate::shading::sdf::{P2, circle, smooth_min, triangle};
 use crate::solar::planet::field::{HeightField, NORMAL_EPS, tangent};
 use raylib::math::Vector3;
@@ -359,7 +359,52 @@ pub fn foam(coast_d: f32, t: f32) -> f32 {
     let x = -coast_d / FOAM_BAND;
     let t = wave_time(t, 1.0);
     let lines = 0.5 + 0.5 * (x * 18.0 + TAU * 6.0 * t / WAVE_PERIOD).sin();
-    (1.0 - x) * (0.35 + 0.65 * lines)
+    // A solid surf line hugs the shore so the coast reads from afar.
+    let surf = 1.0 - smoothstep(0.0, 0.18, x);
+    ((1.0 - x) * (0.35 + 0.65 * lines)).max(surf)
+}
+
+/// The two current flows: direction (object space), spatial frequency on
+/// the unit sphere and whole cycles per wave period.
+const CURRENTS: [(Vector3, f32, f32); 2] = [
+    (Vector3::new(0.62, 0.55, -0.56), 26.0, 5.0),
+    (Vector3::new(-0.35, 0.80, 0.49), 41.0, 7.0),
+];
+
+/// Current streaks on the open sea at the unit `n` and time `t`: thin
+/// bright lines meandering along two crossing flows and drifting with
+/// them (caustic-like where they meet), in [0, 1]. They run on the
+/// waves' clock, so `wave_speed` 0 freezes them.
+pub fn current(n: Vector3, t: f32, p: &CloverParams) -> f32 {
+    let t = wave_time(t, p.wave_speed);
+    let warp = 2.2 * gradient3(n * 4.0, 0xC10F);
+    let ridge = |(dir, k, cycles): (Vector3, f32, f32)| {
+        let a = k * n.dot(dir) + warp - TAU * cycles * t / WAVE_PERIOD;
+        (1.0 - a.sin().abs()).powi(6)
+    };
+    // Patches of calm between the streaky water.
+    let patches = smoothstep(-0.25, 0.35, gradient3(n * 3.0, 0xCA1));
+    (ridge(CURRENTS[0]) + 0.7 * ridge(CURRENTS[1])).min(1.0) * patches
+}
+
+/// Sun glitter at the unit `n` and time `t`: sparse cells of the sea that
+/// flash for a quarter second, 1 or 0. On the waves' clock too.
+pub fn sparkle(n: Vector3, t: f32, p: &CloverParams) -> f32 {
+    let t = wave_time(t, p.wave_speed);
+    let c = n * 260.0;
+    let h = hash3(
+        c.x.floor() as i32,
+        c.y.floor() as i32,
+        c.z.floor() as i32,
+        0x5A1E,
+    );
+    // A cell flashes in one of the 16 slots of its 4-second cycle.
+    let slot = (t * 4.0) as u32 % 16;
+    if h.is_multiple_of(23) && (h >> 8) % 16 == slot {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 impl CloverParams {
@@ -374,9 +419,15 @@ const MOSS: Vector3 = hex(0x2F6B3A);
 const ROCK: Vector3 = hex(0x7D7266);
 const SNOW: Vector3 = hex(0xF4F6FA);
 const SAND: Vector3 = hex(0xD9C98E);
-const SHALLOW: Vector3 = hex(0x1E9FB0);
-const DEEP: Vector3 = hex(0x0A2F66);
+/// Sea colors from the shore out: bright turquoise shallows, a cyan
+/// lagoon and a luminous open-sea blue (never the night's navy).
+const SHALLOW: Vector3 = hex(0x44E3D4);
+const LAGOON: Vector3 = hex(0x1FB4DC);
+const DEEP: Vector3 = hex(0x1A6FD0);
 const SKY: Vector3 = hex(0x9FD4FF);
+/// Pale cyan of the current streaks and the glow of the sea at night.
+const STREAK: Vector3 = hex(0xB8F4FF);
+const NIGHT_SEA: Vector3 = hex(0x0E4A6E);
 /// Light that reaches the night side (a dim sky glow).
 const AMBIENT: f32 = 0.035;
 
@@ -413,11 +464,17 @@ impl PreparedClover {
     /// Water color at the unit `n`, `depth` radii under the sea, with
     /// water normal `normal` and unit `eye` direction (object space).
     pub fn water(&self, normal: Vector3, depth: f32, eye: Vector3) -> Vector3 {
-        let base = mix3(SHALLOW, DEEP, smoothstep(0.0, 0.03, depth));
+        let base = mix3(SHALLOW, LAGOON, smoothstep(0.0, 0.006, depth));
+        let base = mix3(base, DEEP, smoothstep(0.006, 0.04, depth));
         let diffuse = lambert(normal, self.light);
         let rim = fresnel(normal, eye, 5.0) * diffuse.max(0.1);
         let glint = blinn_phong(normal, self.light, eye, self.params.water_gloss);
-        base * (AMBIENT + (1.0 - AMBIENT) * diffuse) + SKY * (0.35 * rim) + Vector3::one() * glint
+        // The night side keeps a faint teal glow: dark, not empty space.
+        let night = NIGHT_SEA * (0.05 * (1.0 - diffuse));
+        base * (AMBIENT + (1.0 - AMBIENT) * diffuse)
+            + SKY * (0.35 * rim)
+            + Vector3::one() * glint
+            + night
     }
 
     /// Color of the surface point `object_position` seen from the unit
@@ -432,8 +489,18 @@ impl PreparedClover {
         let h = self.field.height(n);
         if h <= self.field.sea {
             let depth = self.field.sea - h;
-            let water = self.water(wave_normal(n, self.time, &self.params), depth, eye)
-                + SKY * (SWELL_GLOW * swell(n, self.time, &self.params) * lambert(n, self.light));
+            let normal = wave_normal(n, self.time, &self.params);
+            let sun = lambert(n, self.light);
+            // Streaks of the currents (dim at night), the swell's glow and
+            // sun glitter in the broad highlight.
+            let streak = current(n, self.time, &self.params) * (0.012 + 0.32 * sun);
+            let glitter = sparkle(n, self.time, &self.params)
+                * blinn_phong(normal, self.light, eye, 6.0)
+                * sun;
+            let water = self.water(normal, depth, eye)
+                + SKY * (SWELL_GLOW * swell(n, self.time, &self.params) * sun)
+                + STREAK * streak
+                + Vector3::one() * (0.9 * glitter);
             // Only the shallow ring pays for the coast distance.
             if depth > 0.01 || self.params.foam <= 0.0 {
                 return water;

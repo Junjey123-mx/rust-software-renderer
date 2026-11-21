@@ -22,6 +22,8 @@
 //! views); E, F and J once more when the headlight started lighting the
 //! ground (`ship_lights::light_surfaces`, second pass); C, D, H and I once
 //! more with the Joker's harlequin masks, neon seams and jester spikes
+//! (second pass); C, D, H, I, K, K2, K3 and M2 once more with Clover
+//! Haven's luminous sea and the monumental falls dropping as curtains
 //! (second pass). `P3_CLOVER_K` adds the clover planet scenarios K, K2
 //! (C49) and K3 (C52); `P3_HEARTS_M` the hearts planet scenarios M and M2
 //! (C61).
@@ -152,13 +154,13 @@ fn scaled_hash(id: &str) -> u64 {
 const P3_SCALED_A_J: [(&str, u64); 10] = [
     ("A", 0x8a73f9d1b1215430),
     ("B", 0xd1a777942fd18077),
-    ("C", 0xc8cb3b3b4f087b4a),
-    ("D", 0xed6cdd5ab8f109da),
+    ("C", 0xc22b6a7539b157c5),
+    ("D", 0x27f7679fb393a802),
     ("E", 0xffd4a2cef04e692b),
     ("F", 0x3871dd1658c81aae),
     ("G", 0x43325ccd345dcfdf),
-    ("H", 0xed6cdd5ab8f109da),
-    ("I", 0x0eac2bbf9a6d4628),
+    ("H", 0x27f7679fb393a802),
+    ("I", 0x36ea4ff7deff7020),
     ("J", 0x3b1ddbf5444e87fa),
 ];
 
@@ -166,9 +168,9 @@ const P3_SCALED_A_J: [(&str, u64); 10] = [
 /// adds the waterfalls (K changes, K2 is too far to show them) and K3, a
 /// mountain and its waterfall up close.
 const P3_CLOVER_K: [(&str, u64); 3] = [
-    ("K", 0x2daf82f96e43e1e5),
-    ("K2", 0xbcdf55274adcc144),
-    ("K3", 0x862ceb6d5f4ec37a),
+    ("K", 0xd6828ecbff09ae7a),
+    ("K2", 0x43d4722442b168d8),
+    ("K3", 0x74634fe4e0d1961e),
 ];
 
 /// Hearts planet scenarios of the scaled benchmark, captured on C61: the
@@ -176,7 +178,7 @@ const P3_CLOVER_K: [(&str, u64); 3] = [
 /// Recaptured on C65: both show the neon ships now. C67 adds the
 /// lightcycles: M changes, M2 (planet under 60 px) does not. C68 adds the
 /// trails: both change (the ships' ribbons show from afar too).
-const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0xb912607e99d028d6), ("M2", 0x7e063a43e31fdf68)];
+const P3_HEARTS_M: [(&str, u64); 2] = [("M", 0xb912607e99d028d6), ("M2", 0x72dadffc61635f51)];
 
 #[test]
 fn p3_scaled_a_j_match() {
